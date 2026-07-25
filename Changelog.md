@@ -63,11 +63,34 @@ converter now emits the modern field names itself:
 - The asset cache stores file paths rather than response bodies; it previously
   grew to the full size of a campaign's media and could exhaust memory.
 - Asset destinations are verified to stay inside the output directory.
+- Fix the Windows executable doing nothing when launched. eel resolves its web
+  root through `sys._MEIPASS`, a PyInstaller attribute, whenever `sys.frozen` is
+  set; cx_Freeze sets `sys.frozen` without it, so `eel.init()` raised and the
+  GUI module failed to import. The program then silently fell through to command
+  line parsing and exited with a usage error no one could see.
+- A failed GUI launch now reports the underlying error instead of being
+  swallowed and printing an argparse usage message.
+- Launch the bundled Electron shell through eel's current `cmdline_args`
+  interface; the `custom_callback` hook it replaced no longer exists.
+- Resolve `client/dist` and the bundled Electron relative to the executable
+  rather than the working directory, so the program works when started from
+  somewhere other than its own folder.
+- Compendium pack load failures are logged instead of being silently ignored,
+  the most common cause of "my character sheets are empty".
 
 ### Project
 - Add a `pytest` suite and a GitHub Actions CI workflow (ADR-004).
 - Add `docs/adr/` recording the architectural decisions.
 - Replace the stale py2exe `Makefile` with working cx_Freeze targets.
+- Add `requirements.txt` pinning the exact dependency versions the build is
+  known to work with, and note the Electron runtime the Windows build needs
+  (ADR-001).
+- Mark the unused PyInstaller `R20Converter.spec` as deprecated; `setup.py`
+  with cx_Freeze is the supported build path.
+- Import `matplotlib` only where it is used, so the test suite no longer needs
+  the frozen build's heavy dependencies in order to import `entities`.
+- Add `.gitattributes` normalising line endings, after a change was committed
+  with the opposite convention and turned a 45-line diff into a 5,605-line one.
 
 ## v0.8
 

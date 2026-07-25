@@ -3,6 +3,8 @@ import io
 import sys
 import eel
 import json
+import socket
+import inspect
 import zipfile
 import subprocess
 import platform
@@ -23,11 +25,48 @@ from utils import getFVTTDataPath
 from version import version
 import messages
 
+
+def _resourceDir():
+    """Directory holding the bundled resources (``client/dist``, ``electron``).
+
+    A frozen build puts them next to the executable. Running from source they
+    live in the working directory the application is documented to be started
+    from. Resolving them explicitly means the app no longer only works when the
+    current directory happens to be the right one.
+    """
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.getcwd()
+
+
+# eel resolves its web root through ``sys._MEIPASS`` whenever ``sys.frozen`` is
+# set, but ``_MEIPASS`` is a PyInstaller attribute and this application is
+# packaged with cx_Freeze, which sets ``sys.frozen`` without it. Without this
+# shim ``eel.init()`` raises AttributeError, importing this module fails, and
+# the executable silently falls back to parsing command line arguments -- which
+# looks to the user like double-clicking the program does nothing at all.
+if getattr(sys, "frozen", False) and not hasattr(sys, "_MEIPASS"):
+    sys._MEIPASS = _resourceDir()
+
+# eel 0.14 replaced the ``custom_callback`` hook, which handed the browser
+# launch back to the caller, with a plain ``cmdline_args`` list.
+_EEL_HAS_CUSTOM_CALLBACK = "custom_callback" in inspect.signature(eel.start).parameters
+
+
+def _findFreePort():
+    sock = socket.socket()
+    try:
+        sock.bind(("localhost", 0))
+        return sock.getsockname()[1]
+    finally:
+        sock.close()
+
+
 class GUIClass:
     def __init__(self):
-        path = "client/dist"
-        if not os.path.exists(path) and platform.system() == "Darwin":
-            path = os.path.join(os.path.dirname(sys.executable), "client/dist")
+        path = os.path.join(_resourceDir(), "client", "dist")
+        if not os.path.exists(path):
+            path = "client/dist"
         eel.init(path)
         self.campaign = None
         self.loadedPath = None
@@ -42,7 +81,20 @@ class GUIClass:
     def start(self):
         # On windows and mac, use bundled electron
         if platform.system() in ['Windows', 'Darwin']:
-            return eel.start('index.html', port=0, mode="custom", custom_callback=self.PopenElectron)
+            if _EEL_HAS_CUSTOM_CALLBACK:
+                return eel.start('index.html', port=0, mode="custom",
+                                 custom_callback=self.PopenElectron)
+            # In "custom" mode current eel versions run cmdline_args verbatim
+            # and never append the page URL, so the port cannot be left as 0.
+            command = self.electronCommandLine()
+            if command is not None:
+                port = _findFreePort()
+                url = "http://localhost:%d/index.html" % port
+                return eel.start('index.html', port=port, mode="custom",
+                                 cmdline_args=command + [url])
+            # No bundled Electron: fall back to the user's browser rather than
+            # failing back into command line mode.
+            return eel.start('index.html', port=0, mode="default")
 
         # On linux, try chrome then default
         try:
@@ -50,15 +102,27 @@ class GUIClass:
         except:
             eel.start('index.html', port=0, mode="default")
 
-    def PopenElectron(self, args, urls):
+    def electronCommandLine(self):
+        """Command that launches the bundled Electron shell, or None."""
         if platform.system() == 'Darwin':
-            path = "Electron.app"
+            path = os.path.join(_resourceDir(), "Electron.app")
             if not os.path.exists(path):
-                path = os.path.join(os.path.dirname(os.path.dirname(sys.executable)), "Resources", "Electron.app")
-            cmd = ["open", "-a", path, "--args"]
-        else:
-            cmd = ["electron/electron"]
-        cmd += args + [';'.join(urls)]
+                path = os.path.join(os.path.dirname(os.path.dirname(sys.executable)),
+                                    "Resources", "Electron.app")
+            if not os.path.exists(path):
+                return None
+            return ["open", "-a", path, "--args"]
+        for name in ("electron.exe", "electron"):
+            path = os.path.join(_resourceDir(), "electron", name)
+            if os.path.exists(path):
+                return [path]
+        return None
+
+    def PopenElectron(self, args, urls):
+        cmd = self.electronCommandLine()
+        if cmd is None:
+            raise RuntimeError("Could not find the bundled Electron application")
+        cmd = cmd + args + [';'.join(urls)]
         return subprocess.Popen(cmd)
 
     def loadCampaign(self, file_type, path):

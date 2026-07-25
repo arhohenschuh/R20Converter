@@ -32,7 +32,13 @@ from R20Converter import R20Converter
 # behaviour and remain a pure CLI tool.
 try:
     from GUI import GUI
+    GUI_IMPORT_ERROR = None
 except Exception:
+    import traceback
+    # Record *why* the GUI was unavailable. Swallowing this silently makes a
+    # failed GUI launch look identical to "user ran us with no arguments",
+    # which surfaces to the user as the executable doing nothing at all.
+    GUI_IMPORT_ERROR = traceback.format_exc()
     GUI = None
 
 parser = argparse.ArgumentParser(description="R20Converter v{}".format(version), epilog="Convert Roll20 campaigns into Foundry VTT worlds or modules.")
@@ -100,13 +106,26 @@ parser.add_argument("--assets-directory", default="assets", help="The directory 
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 1 and GUI is not None:
+    if len(sys.argv) == 1:
+        # No arguments means the user launched us by double-clicking or from a
+        # bare command line, i.e. they want the GUI. If we cannot give them one,
+        # say so explicitly rather than printing an argparse usage error, which
+        # is baffling in that context (and invisible in a windowed build).
+        if GUI is None:
+            print("The graphical interface could not be loaded, so there is nothing to show.")
+            print("Run R20Converter with --help to see the command line options.")
+            print("\nThe underlying error was:\n%s" % GUI_IMPORT_ERROR)
+            sys.exit(1)
         try:
             GUI.start()
             sys.exit(0)
-        except Exception as e:
-            print(e)
-            pass
+        except Exception:
+            import traceback
+            print("The graphical interface failed to start.")
+            print("Run R20Converter with --help to see the command line options.")
+            print("\nThe underlying error was:")
+            traceback.print_exc(file=sys.stdout)
+            sys.exit(1)
 
     args = parser.parse_args()
 
