@@ -27,6 +27,7 @@ class FakeDatabase(object):
     def __init__(self, path, arguments=None):
         self._path = path
         self._arguments = arguments or {}
+        self._converter = None
         self.warnings = []
 
     def getArgument(self, name, default=None):

@@ -74,27 +74,32 @@ full of documents Foundry cannot read.
    emitted in its current form; the manifest work does not pretend the documents
    are ready.
 
-### Document schema port — remaining work
+### Document schema port — progress
 
-| Document | Change required | File |
-| --- | --- | --- |
-| all | `permission` → `ownership` | `journal.py`, `tables.py`, `playlists.py`, `macros.py`, `actors.py`, `items.py`, `scenes.py` |
-| Actor, Item | `data` → `system` | `actors.py`, `items.py`, `base.py` |
-| Actor | `token` → `prototypeToken` | `actors.py` |
-| JournalEntry | `content`/`img` → `pages[]` | `journal.py` |
-| Scene | `img`/`shiftX`/`shiftY` → `background.{src,offsetX,offsetY}` | `scenes.py` |
-| Scene | `gridType`/`gridColor`/`gridAlpha`/`gridDistance`/`gridUnits` → `grid.*` | `scenes.py` |
-| Token | `img`/`tint` → `texture.{src,tint}`; `scale`/`mirrorX`/`mirrorY` → `texture.scaleX/scaleY` | `scenes.py` |
-| Token | `vision`/`dimSight`/`brightSight`/`sightAngle` → `sight.*` | `scenes.py` |
-| Token | `dimLight`/`brightLight`/`lightAngle`/`lightColor`/`lightAlpha`/`lightAnimation` → `light.*` | `scenes.py` |
-| Tile | `img`/`tint` → `texture.*` | `scenes.py` |
-| Note | `icon`/`tint` → `texture.*` | `scenes.py` |
-| Drawing | `type`/`width`/`height`/`points` → `shape.*` | `scenes.py` |
-| AmbientLight | `dim`/`bright`/`angle`/`tintColor`/`tintAlpha`/`lightAnimation`/`darkness` → `config.*` | `scenes.py` |
-| Wall | `sense` → `sight` + `light` | `scenes.py` |
-| RollTableResult | `resultCollection`/`resultId` → `documentCollection`/`documentId` | `tables.py` |
-| Folder | `parent` → `folder` | `folders.py` |
-| ChatMessage | `roll` → `rolls` | `chat.py` |
+Ticked rows are done; the rest remain. The `scenes.py` rows are deliberately
+grouped into a single later milestone because they are restructurings rather
+than renames and share the same test scaffolding.
+
+| Done | Document | Change required | File |
+| --- | --- | --- | --- |
+| ✅ | all | `permission` → `ownership` | `journal.py`, `tables.py`, `playlists.py`, `macros.py`, `actors.py`, `items.py`, `scenes.py` |
+| ✅ | Actor, Item | `data` → `system` | `actors.py`, `items.py`, `base.py` |
+| ✅ | Actor | `token` → `prototypeToken` | `actors.py` |
+| ✅ | RollTableResult | reshaped — see [ADR-005](ADR-005-table-result-schema.md) | `tables.py` |
+| ✅ | Folder | `parent` → `folder` | `folders.py` |
+| ✅ | ChatMessage | `roll` → `rolls` | `chat.py` |
+| | Token | `actorData` → `delta` (an ActorDelta document) | `actors.py`, `scenes.py` |
+| | JournalEntry | `content`/`img` → `pages[]` | `journal.py` |
+| | Scene | `img`/`shiftX`/`shiftY` → `background.{src,offsetX,offsetY}` | `scenes.py` |
+| | Scene | `gridType`/`gridColor`/`gridAlpha`/`gridDistance`/`gridUnits` → `grid.*` | `scenes.py` |
+| | Token | `img`/`tint` → `texture.{src,tint}`; `scale`/`mirrorX`/`mirrorY` → `texture.scaleX/scaleY` | `scenes.py` |
+| | Token | `vision`/`dimSight`/`brightSight`/`sightAngle` → `sight.*` | `scenes.py` |
+| | Token | `dimLight`/`brightLight`/`lightAngle`/`lightColor`/`lightAlpha`/`lightAnimation` → `light.*` | `scenes.py` |
+| | Tile | `img`/`tint` → `texture.*` | `scenes.py` |
+| | Note | `icon`/`tint` → `texture.*` | `scenes.py` |
+| | Drawing | `type`/`width`/`height`/`points` → `shape.*` | `scenes.py` |
+| | AmbientLight | `dim`/`bright`/`angle`/`tintColor`/`tintAlpha`/`lightAnimation`/`darkness` → `config.*` | `scenes.py` |
+| | Wall | `sense` → `sight` + `light` | `scenes.py` |
 
 ## Alternatives considered
 

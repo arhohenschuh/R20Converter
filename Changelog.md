@@ -14,9 +14,23 @@ these changes.
   carry an `ownership` block, and use extension-less LevelDB-style paths.
 - Collect every Foundry version and compatibility constant in `src/foundry.py`,
   replacing literals that had drifted out of sync across three files.
-- **Known limitation**: the document writers still emit the Foundry v9 schema.
-  Foundry removed the v9 → v10 migrations in 12.316, so converted worlds are not
-  yet fully readable by v13. Porting each document type is tracked in ADR-002.
+### Document schema (ADR-002, ADR-005)
+Foundry deleted every automatic v9 → v10 document migration in 12.316, so the
+converter now emits the modern field names itself:
+- `permission` → `ownership` on every document (the 0–3 levels are unchanged).
+- Actors and items store their system data under `system` instead of `data`,
+  including the override block carried on a scene token.
+- The actor prototype token moved from `token` to `prototypeToken`.
+- Folders reference their parent through `folder` instead of `parent`.
+- Chat messages carry a `rolls` array instead of a single `roll` string.
+- Rollable table results use the v13 shape: string `type` values, a single
+  `documentUuid` in place of `collection`/`resultId`, and `name`/`description`
+  in place of `text`.
+- Compendium entries read from a source pack are up-converted to `system` on
+  load, so packs authored for older Foundry versions still work.
+- **Remaining**: scenes and their embedded documents (tokens, tiles, notes,
+  drawings, lights, walls) and journal entry pages are still written in the v9
+  shape. Progress is tracked in the table in ADR-002.
 
 ### Correctness
 - Add the `--disable-module-items` option. The conversion code honoured it but

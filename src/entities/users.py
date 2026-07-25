@@ -22,7 +22,10 @@ class Users(DatabaseFile):
 
     def getGM(self):
         for user in self.entities:
-            if user.entity["permission"] == 4:
+            # A User's privilege level is its `role`; `permission` was never a
+            # field on User (it is the ownership map on other documents, renamed
+            # to `ownership` in v10) so this used to raise KeyError.
+            if user.entity["role"] == User.ROLE_GM:
                 return user
         return self.entities[0]
 

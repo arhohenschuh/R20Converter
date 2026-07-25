@@ -83,7 +83,7 @@ class Decks(DatabaseFile):
 
                 item.entity["img"] = img
                 item.entity["folder"] = Entity.normalizeID("items-" + deck["id"])
-                item.entity["permission"] = table.entity["permission"]
+                item.entity["ownership"] = table.entity["ownership"]
                 self._converter.cards.addEntity(item)
 
 
@@ -91,19 +91,20 @@ class Decks(DatabaseFile):
         return tables
 
 class Table(Entity):
-    RESULT_TYPE_TEXT = 0
-    RESULT_TYPE_ENTITY = 1
-    RESULT_TYPE_COMPENDIUM = 2
+    # Foundry v12 changed CONST.TABLE_RESULT_TYPES from numbers to strings, and
+    # v13 merged the former "pack"/COMPENDIUM type into "document" (ADR-005).
+    RESULT_TYPE_TEXT = "text"
+    RESULT_TYPE_DOCUMENT = "document"
     def __init__(self, database, table, index, parent, with_replacement=True):
         Entity.__init__(self, database, table["id"])
         self.logInfo("Creating Rollable Table : %s" % table["name"])
-        permissions = {"default": Table.PERMISSION_OWNER if table["showplayers"] else Table.PERMISSION_NONE}
+        permissions = {"default": Table.OWNERSHIP_OWNER if table["showplayers"] else Table.OWNERSHIP_NONE}
         if self.getArgument("export_as_module", False):
             parent = None
         self.entity = {
             "_id": self._id,
             "name": table["name"] or "Unnamed Table",
-            "permission": permissions,
+            "ownership": permissions,
             "folder": Entity.normalizeID(parent),
             "flags": {},
             "sort": index * Entity.SORT_ORDER,
@@ -118,16 +119,18 @@ class Table(Entity):
         for result in self.entity["results"]:
             minRoll = result["range"][1] + 1
         maxRoll = minRoll + weight - 1
-        result_type = Table.RESULT_TYPE_TEXT
-        if entity:
-            result_type = Table.RESULT_TYPE_COMPENDIUM if self.getArgument("export_as_module", False) else Table.RESULT_TYPE_ENTITY
+        result_type = Table.RESULT_TYPE_DOCUMENT if entity else Table.RESULT_TYPE_TEXT
         entry = {
             "_id": self.genID(),
             "flags": {},
             "type": result_type,
-            "collection": collection,
-            "resultId": entity._id if entity else "",
-            "text": name,
+            # v13 replaced the documentCollection/documentId pair with a single
+            # document UUID (ADR-005). Text results carry no reference at all.
+            "documentUuid": Table.resultUuid(collection, entity) if entity else None,
+            # v13 split the old `text` field into `name` (document results) and
+            # `description` (plain text results); populating both is harmless.
+            "name": name,
+            "description": name,
             "img": img,
             "weight": weight,
             "range": [minRoll, maxRoll],
@@ -136,3 +139,19 @@ class Table(Entity):
         self.entity["results"].append(entry)
         self.entity["formula"] = "1d{}".format(maxRoll)
         return entry
+
+    @staticmethod
+    def resultUuid(collection, entity):
+        """Build the Foundry v13 UUID referenced by a table result.
+
+        `collection` is either a world collection name (e.g. "Item") or a
+        compendium key of the form "<packageId>.<packName>". World documents use
+        "<Collection>.<id>" while compendium documents use the longer
+        "Compendium.<packageId>.<packName>.<DocumentName>.<id>" form.
+        """
+        if not collection:
+            return None
+        parts = collection.split(".")
+        if len(parts) == 1:
+            return "{}.{}".format(collection, entity._id)
+        return "Compendium.{}.{}.{}".format(collection, "Item", entity._id)

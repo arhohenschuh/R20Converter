@@ -657,7 +657,7 @@ class Scene(Entity):
         self.entity = {"_id": self._id,
                        "name": name or "Unnamed Scene",
                        "navName": name,
-                       "permission": {"default": 0},
+                       "ownership": {"default": 0},
                        "folder": Entity.normalizeID(folder),
                        "flags": {},
                        "sort": page.get("placement", 0) * Entity.SORT_ORDER,

@@ -25,17 +25,17 @@ class Macro(Entity):
                 self._database._img_path = img_path
             else:
                 self._database._img_path = "icons/svg/dice-target.svg"
-        permissions = {"default": Macro.PERMISSION_NONE, Entity.normalizeID(macro["player_id"]): Macro.PERMISSION_OWNER}
+        permissions = {"default": Macro.OWNERSHIP_NONE, Entity.normalizeID(macro["player_id"]): Macro.OWNERSHIP_OWNER}
         for player in macro.get("visibleto", "").split(","):
             if player == "all":
-                permissions["default"] = Macro.PERMISSION_OBSERVER
+                permissions["default"] = Macro.OWNERSHIP_OBSERVER
             elif player != "":
                 player_id = Entity.normalizeID(player)
-                permissions[player_id] = Macro.PERMISSION_OBSERVER
+                permissions[player_id] = Macro.OWNERSHIP_OBSERVER
         self.entity = {
             "_id":self._id,
             "name": macro["name"] or "Unnamed Macro",
-            "permission": permissions,
+            "ownership": permissions,
             "type": "chat",
             "sort": index * Entity.SORT_ORDER,
             "flags":{},

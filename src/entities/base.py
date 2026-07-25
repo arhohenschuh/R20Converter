@@ -174,11 +174,14 @@ class DatabaseFile(object):
 
 
 class Entity(object):
-    PERMISSION_NONE = 0
-    PERMISSION_DEFAULT = -1
-    PERMISSION_LIMITED = 1
-    PERMISSION_OBSERVER = 2
-    PERMISSION_OWNER = 3
+    # Foundry's CONST.DOCUMENT_OWNERSHIP_LEVELS. The numeric values are
+    # unchanged since v9; only the document field they are written to was
+    # renamed from `permission` to `ownership` in v10 (ADR-002).
+    OWNERSHIP_NONE = 0
+    OWNERSHIP_DEFAULT = -1
+    OWNERSHIP_LIMITED = 1
+    OWNERSHIP_OBSERVER = 2
+    OWNERSHIP_OWNER = 3
     SORT_ORDER = 10000
     # Ensures ids are unique accross all entities
     id_database = {}
@@ -235,16 +238,27 @@ class Entity(object):
 
     def findCompendiumItem(self, compendium, item_name):
         item = self._database.findCompendiumItem(compendium, item_name)
-        if item and "system" in item.entity:
-            item.entity["data"] = item.entity["system"]
-            del item.entity["system"]
-        return item
+        return Entity.normalizeSystemData(item)
+
     def findCompendiumActor(self, actor_name):
         actor = self._database.findCompendiumActor(actor_name)
-        if actor and "system" in actor.entity:
-            actor.entity["data"] = actor.entity["system"]
-            del actor.entity["system"]
-        return actor
+        return Entity.normalizeSystemData(actor)
+
+    @staticmethod
+    def normalizeSystemData(entity):
+        """Ensure a compendium document uses the v10+ ``system`` key.
+
+        Documents read out of an installed game system's compendium packs may
+        predate the v10 rename of ``Document#data`` to ``Document#system``.
+        Foundry removed the automatic migration in 12.316 (ADR-002), so we
+        normalise on read and speak the v13 vocabulary everywhere downstream.
+
+        Accepts and returns ``None`` so callers can pass a lookup result
+        straight through.
+        """
+        if entity is not None and "data" in entity.entity and "system" not in entity.entity:
+            entity.entity["system"] = entity.entity.pop("data")
+        return entity
 
     def getArgument(self, name, default=None):
         return self._database.getArgument(name, default)

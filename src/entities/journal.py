@@ -53,19 +53,19 @@ class Handout(Entity):
         if gmnotes.strip() != "":
             content += "\n<section class=\"secret\"><p>GM Notes : </p>" + gmnotes + "</section>"
         content = self.replaceCompendiumLinks(self.replaceEntityLinks(content))
-        permissions = {"default": Handout.PERMISSION_NONE}
+        permissions = {"default": Handout.OWNERSHIP_NONE}
         for player in handout.get("inplayerjournals", []):
             if player == "all":
-                permissions["default"] = Handout.PERMISSION_OBSERVER
+                permissions["default"] = Handout.OWNERSHIP_OBSERVER
             elif player != "":
                 player_id = Entity.normalizeID(player)
-                permissions[player_id] = Handout.PERMISSION_OBSERVER
+                permissions[player_id] = Handout.OWNERSHIP_OBSERVER
         for player in handout.get("controlledby", []):
             if player == "all":
-                permissions["default"] = Handout.PERMISSION_OWNER
+                permissions["default"] = Handout.OWNERSHIP_OWNER
             elif player != "":
                 player_id = Entity.normalizeID(player)
-                permissions[player_id] = Handout.PERMISSION_OWNER
+                permissions[player_id] = Handout.OWNERSHIP_OWNER
         avatar_filename = ""
         if handout["avatar"] != "":
             if self.getArgument("use_original_image_urls", False):
@@ -83,7 +83,7 @@ class Handout(Entity):
             parent = None
         self.entity = {"_id": self._id,
                        "name": handout["name"] or "Handout",
-                       "permission": permissions,
+                       "ownership": permissions,
                        "folder": Entity.normalizeID(parent),
                        "flags": {"R20Converter": 
                                  {"handout-order" : index, 

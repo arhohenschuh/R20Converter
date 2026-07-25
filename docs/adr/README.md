@@ -19,6 +19,7 @@ referencing the ADR number, so the "why" is discoverable from the code.
 | [ADR-002](ADR-002-target-foundry-v13.md) | Target Foundry VTT v13+ and centralize version constants | Accepted |
 | [ADR-003](ADR-003-leveldb-pack-format.md) | Emit LevelDB world/pack data via the Foundry CLI | Accepted |
 | [ADR-004](ADR-004-testing-and-ci.md) | Automated test suite and CI safety net | Accepted |
+| [ADR-005](ADR-005-table-result-schema.md) | Emit the Foundry v13 `TableResult` schema | Accepted |
 
 ## Numbering
 

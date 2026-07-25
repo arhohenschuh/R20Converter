@@ -329,8 +329,11 @@ class Token(Entity):
                 "bar1": {"attribute": "attributes.bar1" if self.bar1_max != 0 or self.bar1_val != 0 else None},
                 "bar2": {"attribute": "attributes.bar2" if self.bar2_max != 0 or self.bar2_val != 0 else None},
                 "tint": self.tint,
+                # Foundry removed the migration of the v9 `data` key inside
+                # actorData in 12.316 (ADR-002). The surrounding `actorData` ->
+                # `delta` rename is part of the Token schema port.
                 "actorData": {
-                    "data": {
+                    "system": {
                         "attributes": {
                             "bar1": {
                                 "value": self.bar1_val,
@@ -353,19 +356,19 @@ class Actor(Entity):
 
         self.logInfo("Creating Character : %s" % character["name"])
         self.parseAttributes()
-        permissions = {"default": Handout.PERMISSION_NONE}
+        permissions = {"default": Handout.OWNERSHIP_NONE}
         for player in character.get("inplayerjournals", []):
             if player == "all":
-                permissions["default"] = Handout.PERMISSION_LIMITED
+                permissions["default"] = Handout.OWNERSHIP_LIMITED
             elif player != "":
                 player_id = Entity.normalizeID(player)
-                permissions[player_id] = Handout.PERMISSION_LIMITED
+                permissions[player_id] = Handout.OWNERSHIP_LIMITED
         for player in character.get("controlledby", []):
             if player == "all":
-                permissions["default"] = Handout.PERMISSION_OWNER
+                permissions["default"] = Handout.OWNERSHIP_OWNER
             elif player != "":
                 player_id = Entity.normalizeID(player)
-                permissions[player_id] = Handout.PERMISSION_OWNER
+                permissions[player_id] = Handout.OWNERSHIP_OWNER
 
         npc = self.isNPC()
 
@@ -477,7 +480,7 @@ class Actor(Entity):
         del token["hidden"]
         del token["elevation"]
         if token["actorLink"]:
-            del token["actorData"]["data"]
+            del token["actorData"]["system"]
 
         actor_data = {}
         owned_items = []
@@ -514,7 +517,7 @@ class Actor(Entity):
             compendium_actor = self.findCompendiumActor(character["name"])
             if compendium_actor:
                 actor_type = compendium_actor.entity["type"]
-                actor_data = compendium_actor.entity.get("data", compendium_actor.entity.get("system", None))
+                actor_data = compendium_actor.entity.get("system", None)
                 owned_items = compendium_actor.entity["items"]
 
         if self.getArgument("export_as_module", False):
@@ -527,13 +530,13 @@ class Actor(Entity):
         self.entity = {"_id": self._id,
                        "name": self.getName(),
                        "img": self._avatar_filename,
-                       "permission": permissions,
-                       "data": actor_data,
+                       "ownership": permissions,
+                       "system": actor_data,
                        "folder": Entity.normalizeID(folder),
                        "flags": {},
                        "sort": index * Entity.SORT_ORDER,
                        "type": actor_type,
-                       "token": token,
+                       "prototypeToken": token,
                        "items": owned_items,
                        "effects": []
                        }
@@ -1674,7 +1677,7 @@ class Actor(Entity):
                                                         activity, attack, specific, **kwargs)
         # Prevent a weapon (torch, shovel) from being transformed into loot and losing its damage/attack properties
         if compendium_item and (compendium_item.entity["type"] != "loot" or inventory_type == "loot"):
-            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["data"])
+            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
             item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
         owned_item = item.addToOwnedList(items)
@@ -1780,7 +1783,7 @@ class Actor(Entity):
 
             compendium_item = self.findCompendiumItem("Items", name)
             if compendium_item is not None and compendium_item.entity["type"] == "weapon":
-                weapon.type = compendium_item.entity["data"]["weaponType"]
+                weapon.type = compendium_item.entity["system"]["weaponType"]
             elif "Improvised Weapon" in properties:
                 weapon.type = ItemWeapon.IMPROVISED
             elif item_type == "Ammunition":
@@ -1867,7 +1870,7 @@ class Actor(Entity):
         compendium_item = self.findCompendiumItem("Class Features", name)
         item = self._converter.items.createItemFeat(None, name, description, activation, attack, recharge, **kwargs)
         if compendium_item and compendium_item.entity["type"] != "loot":
-            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["data"])
+            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
             item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
         owned_item = item.addToOwnedList(items)
@@ -2015,7 +2018,7 @@ class Actor(Entity):
                 is_feat = True
             elif compendium_item.entity["type"] == "weapon":
                 is_weapon = True
-                weapon_type = compendium_item.entity["data"]["weaponType"]
+                weapon_type = compendium_item.entity["system"]["weaponType"]
 
         if is_feat is False and (has_attack or is_weapon):
             attributes = ItemInventoryAttributes()
@@ -2115,7 +2118,7 @@ class Actor(Entity):
                 is_feat = True
             elif compendium_item.entity["type"] == "weapon":
                 is_weapon = True
-                weapon_type = compendium_item.entity["data"]["weaponType"]
+                weapon_type = compendium_item.entity["system"]["weaponType"]
 
         if is_feat is False and (has_attack or is_weapon):
             attributes = ItemInventoryAttributes()
@@ -2194,7 +2197,7 @@ class Actor(Entity):
                                                     level, school, components, preparation, scaling, **kwargs)
 
         if compendium_item and compendium_item.entity["type"] != "loot":
-            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["data"])
+            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
             item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
         owned_item = item.addToOwnedList(items)
@@ -2409,10 +2412,10 @@ class Actor(Entity):
         compendium_item = self.findCompendiumItem("Classes", name)
         item = self._converter.items.createItemClass(None, name, name, level, subclass, **kwargs)
         if compendium_item and compendium_item.entity["type"] != "loot":
-            del item.entity["data"]["saves"]
-            del item.entity["data"]["skills"]
-            del item.entity["data"]["spellcasting"]
-            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["data"])
+            del item.entity["system"]["saves"]
+            del item.entity["system"]["skills"]
+            del item.entity["system"]["spellcasting"]
+            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
             item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
         return item.addToOwnedList(items)

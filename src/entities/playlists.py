@@ -67,7 +67,7 @@ class Playlist(Entity):
 
         self.entity = {"_id": self._id,
                        "name": playlist["n"] or "Unnamed Playlist",
-                       "permission": {"default": 0},
+                       "ownership": {"default": 0},
                        "flags": {},
                        "sounds": sounds,
                        "mode": modes.get(playlist["s"], -1), # Default to soundboard only for the root folder
