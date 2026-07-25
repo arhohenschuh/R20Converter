@@ -178,7 +178,8 @@ class Entity(object):
     # unchanged since v9; only the document field they are written to was
     # renamed from `permission` to `ownership` in v10 (ADR-002).
     OWNERSHIP_NONE = 0
-    OWNERSHIP_DEFAULT = -1
+    # -1 means "inherit from the parent document" (Foundry's INHERIT level).
+    OWNERSHIP_INHERIT = -1
     OWNERSHIP_LIMITED = 1
     OWNERSHIP_OBSERVER = 2
     OWNERSHIP_OWNER = 3
@@ -228,6 +229,17 @@ class Entity(object):
         if not self.isCompendiumEntity:
             return self.getID()
         return "%s.%s.%s" % (self._database._package, self._database._pack_name, self.getID())
+
+    @staticmethod
+    def compendiumUuid(full_id, document):
+        """Turn a "<packageId>.<packName>.<id>" key into a Foundry v13 UUID.
+
+        Foundry v11 added the document type as an explicit segment, so a
+        compendium UUID reads
+        "Compendium.<packageId>.<packName>.<DocumentName>.<id>".
+        """
+        (package, pack, id) = full_id.rsplit(".", 2)
+        return "Compendium.%s.%s.%s.%s" % (package, pack, document, id)
 
     def addToOwnedList(self, parent_list):
         entity = copy.deepcopy(self.entity)
@@ -291,8 +303,9 @@ class Entity(object):
             compendium_item = self.findCompendiumItem(compendium, name)
             if self.getArgument("export_as_module", False):
                 if compendium_item:
-                    return "@Compendium[%s]{%s}" % (compendium_item.getFullID(), name)
-                return "@Item[%s]" % name
+                    return "@UUID[%s]{%s}" % (
+                        Entity.compendiumUuid(compendium_item.getFullID(), "Item"), name)
+                return "@UUID[Item.%s]" % name
             elif compendium_item:
                 converter.folders.ensureFolder(folder_id, folder, "Item")
                 item = converter.items.createItemFromCompendium(None, compendium_item)
@@ -315,12 +328,14 @@ class Entity(object):
             #icon = {"handout": "fa-book-open", "character": "fa-user", "item": "fa-suitcase"}[journal]
             #return '<a class="entity-link" data-entity=%s data-id=%s %s%s><i class="fas %s"></i>%s</a>' % (entity, self.normalizeID(id), before_href, after_href, icon, text)
             label = re.sub("[<>}{]", "_", text)
+            document = {"handout": "JournalEntry", "character": "Actor", "item": "Item"}[journal]
             if self.isCompendiumEntity:
-                compendium = {"handout": "journal", "character": "actors", "item": "items"}[journal]
-                return '@Compendium[%s.%s.%s]{%s}' % (self._database._package, compendium, self.normalizeID(id), label)
+                pack = {"handout": "journal", "character": "actors", "item": "items"}[journal]
+                target = Entity.compendiumUuid(
+                    "%s.%s.%s" % (self._database._package, pack, self.normalizeID(id)), document)
             else:
-                entity = {"handout": "JournalEntry", "character": "Actor", "item": "Item"}[journal]
-                return '@%s[%s]{%s}' % (entity, self.normalizeID(id), label)
+                target = "%s.%s" % (document, self.normalizeID(id))
+            return '@UUID[%s]{%s}' % (target, label)
         else:
             return match.group(0)
 

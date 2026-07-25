@@ -88,8 +88,9 @@ than renames and share the same test scaffolding.
 | ✅ | RollTableResult | reshaped — see [ADR-005](ADR-005-table-result-schema.md) | `tables.py` |
 | ✅ | Folder | `parent` → `folder` | `folders.py` |
 | ✅ | ChatMessage | `roll` → `rolls` | `chat.py` |
+| ✅ | JournalEntry | `content`/`img` → `pages[]` | `journal.py` |
+| ✅ | *(enriched text)* | `@Compendium[…]` / `@Actor[…]` → `@UUID[…]` | `base.py` |
 | | Token | `actorData` → `delta` (an ActorDelta document) | `actors.py`, `scenes.py` |
-| | JournalEntry | `content`/`img` → `pages[]` | `journal.py` |
 | | Scene | `img`/`shiftX`/`shiftY` → `background.{src,offsetX,offsetY}` | `scenes.py` |
 | | Scene | `gridType`/`gridColor`/`gridAlpha`/`gridDistance`/`gridUnits` → `grid.*` | `scenes.py` |
 | | Token | `img`/`tint` → `texture.{src,tint}`; `scale`/`mirrorX`/`mirrorY` → `texture.scaleX/scaleY` | `scenes.py` |

@@ -10,6 +10,7 @@ import pytest
 
 from entities.base import Entity
 from entities.folders import Folder
+from entities.journal import Handout
 from entities.tables import Table
 
 from conftest import FakeDatabase
@@ -116,3 +117,114 @@ class TestNormalizeSystemData(object):
         item.entity = {"_id": "x", "system": {"hp": 3}}
         Entity.normalizeSystemData(item)
         assert item.entity["system"] == {"hp": 3}
+
+
+class TestJournalPages(object):
+    """v10 replaced JournalEntry `content`/`img` with a `pages` array."""
+
+    def makeHandout(self, tmp_path, notes="", avatar=""):
+        handout = makeEntity(Handout, tmp_path, {"use_original_image_urls": True})
+        Handout.__init__(handout, handout._database,
+                         {"id": "h1", "name": "Note", "notes": notes,
+                          "gmnotes": "", "avatar": avatar,
+                          "archived": False, "inplayerjournals": [],
+                          "controlledby": []},
+                         0, None, "handouts")
+        return handout
+
+    def testOldFieldsAreGone(self, tmp_path):
+        handout = self.makeHandout(tmp_path, notes="<p>hello</p>")
+        assert "content" not in handout.entity
+        assert "img" not in handout.entity
+        assert "pages" in handout.entity
+
+    def testTextOnlyHandoutHasOneTextPage(self, tmp_path):
+        handout = self.makeHandout(tmp_path, notes="<p>hello</p>")
+        pages = handout.entity["pages"]
+        assert len(pages) == 1
+        assert pages[0]["type"] == "text"
+        assert pages[0]["text"]["content"] == "<p>hello</p>"
+        assert pages[0]["text"]["format"] == Handout.PAGE_FORMAT_HTML
+        assert pages[0]["src"] is None
+
+    def testImageOnlyHandoutHasOneImagePage(self, tmp_path):
+        handout = self.makeHandout(tmp_path, avatar="http://example.com/a.png")
+        pages = handout.entity["pages"]
+        assert len(pages) == 1
+        assert pages[0]["type"] == "image"
+        assert pages[0]["src"] == "http://example.com/a.png"
+
+    def testTextAndImageHandoutHasBothPagesInOrder(self, tmp_path):
+        handout = self.makeHandout(tmp_path, notes="<p>hello</p>",
+                                   avatar="http://example.com/a.png")
+        pages = handout.entity["pages"]
+        assert [page["type"] for page in pages] == ["text", "image"]
+        assert [page["sort"] for page in pages] == [0, Entity.SORT_ORDER]
+
+    def testEmptyHandoutStillHasAPage(self, tmp_path):
+        # An entry with no pages cannot be edited from the Foundry journal UI.
+        handout = self.makeHandout(tmp_path)
+        assert len(handout.entity["pages"]) == 1
+
+    def testPagesInheritEntryOwnership(self, tmp_path):
+        handout = self.makeHandout(tmp_path, notes="<p>hello</p>")
+        assert handout.entity["pages"][0]["ownership"]["default"] == -1
+        assert Entity.OWNERSHIP_INHERIT == -1
+
+    def testPageIdsAreUnique(self, tmp_path):
+        handout = self.makeHandout(tmp_path, notes="<p>hello</p>",
+                                   avatar="http://example.com/a.png")
+        ids = [page["_id"] for page in handout.entity["pages"]]
+        assert len(set(ids)) == len(ids)
+
+
+class TestDocumentLinks(object):
+    """v10 replaced the per-type enrichers (@Actor[], @Compendium[]) with @UUID[]."""
+
+    def testCompendiumUuidIncludesDocumentType(self):
+        # v11 added the document type as an explicit UUID segment.
+        assert Entity.compendiumUuid("r20-module.actors.abc", "Actor") == \
+            "Compendium.r20-module.actors.Actor.abc"
+
+    def makeLinker(self, tmp_path, compendium=False, package="r20-module"):
+        # Entity.isCompendiumEntity is derived from the database package, which
+        # is None for a world export and set for a module export.
+        linker = makeEntity(Entity, tmp_path)
+        linker._database._package = package if compendium else None
+        return linker
+
+    @pytest.mark.parametrize("kind,document", [
+        ("handout", "JournalEntry"),
+        ("character", "Actor"),
+        ("item", "Item"),
+    ])
+    def testWorldLink(self, tmp_path, kind, document):
+        linker = self.makeLinker(tmp_path)
+        html = '<a href="http://journal.roll20.net/%s/-ABC">See this</a>' % kind
+        assert linker.replaceEntityLinks(html) == \
+            "@UUID[%s.%s]{See this}" % (document, Entity.normalizeID("-ABC"))
+
+    def testCompendiumLink(self, tmp_path):
+        linker = self.makeLinker(tmp_path, compendium=True)
+        html = '<a href="http://journal.roll20.net/character/-ABC">Bob</a>'
+        assert linker.replaceEntityLinks(html) == \
+            "@UUID[Compendium.r20-module.actors.Actor.%s]{Bob}" % Entity.normalizeID("-ABC")
+
+    def testLegacySyntaxIsNotEmitted(self, tmp_path):
+        linker = self.makeLinker(tmp_path, compendium=True)
+        html = '<a href="http://journal.roll20.net/handout/-ABC">Note</a>'
+        result = linker.replaceEntityLinks(html)
+        assert "@Compendium[" not in result
+        assert "@JournalEntry[" not in result
+
+    def testUnknownLinkTypeIsLeftAlone(self, tmp_path):
+        linker = self.makeLinker(tmp_path)
+        html = '<a href="http://journal.roll20.net/deck/-ABC">Deck</a>'
+        assert linker.replaceEntityLinks(html) == html
+
+    def testBracesInLabelAreEscaped(self, tmp_path):
+        # Unescaped braces would terminate the @UUID label early.
+        linker = self.makeLinker(tmp_path)
+        html = '<a href="http://journal.roll20.net/item/-ABC">a{b}c</a>'
+        assert linker.replaceEntityLinks(html) == \
+            "@UUID[Item.%s]{a_b_c}" % Entity.normalizeID("-ABC")

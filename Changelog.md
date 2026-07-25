@@ -26,11 +26,16 @@ converter now emits the modern field names itself:
 - Rollable table results use the v13 shape: string `type` values, a single
   `documentUuid` in place of `collection`/`resultId`, and `name`/`description`
   in place of `text`.
+- Journal entries are written as a `pages` array instead of the removed
+  `content`/`img` fields. A handout becomes a text page and/or an image page,
+  and pages inherit their permissions from the entry.
+- Document links embedded in handout text use the `@UUID[…]` enricher rather
+  than the deprecated per-type `@Actor[…]` / `@Compendium[…]` forms.
 - Compendium entries read from a source pack are up-converted to `system` on
   load, so packs authored for older Foundry versions still work.
 - **Remaining**: scenes and their embedded documents (tokens, tiles, notes,
-  drawings, lights, walls) and journal entry pages are still written in the v9
-  shape. Progress is tracked in the table in ADR-002.
+  drawings, lights, walls) are still written in the v9 shape. Progress is
+  tracked in the table in ADR-002.
 
 ### Correctness
 - Add the `--disable-module-items` option. The conversion code honoured it but

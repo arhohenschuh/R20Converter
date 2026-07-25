@@ -151,7 +151,6 @@ class Table(Entity):
         """
         if not collection:
             return None
-        parts = collection.split(".")
-        if len(parts) == 1:
+        if "." not in collection:
             return "{}.{}".format(collection, entity._id)
-        return "Compendium.{}.{}.{}".format(collection, "Item", entity._id)
+        return Entity.compendiumUuid("{}.{}".format(collection, entity._id), "Item")
