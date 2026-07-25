@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased
+
+**Targeting Foundry VTT v13.** See `docs/adr/` for the decision records behind
+these changes.
+
+### Foundry v13 (ADR-002, ADR-003)
+- Emit `world.json` and `module.json` in the Foundry v13 manifest schema: `id`
+  instead of `name`, the now-required `type`, a `compatibility` object instead of
+  `minimumCoreVersion`/`compatibleCoreVersion`, `relationships` instead of
+  `dependencies`, and `authors` instead of `author`.
+- Compendium packs now declare `type` (the removed `entity` key is gone),
+  carry an `ownership` block, and use extension-less LevelDB-style paths.
+- Collect every Foundry version and compatibility constant in `src/foundry.py`,
+  replacing literals that had drifted out of sync across three files.
+- **Known limitation**: the document writers still emit the Foundry v9 schema.
+  Foundry removed the v9 → v10 migrations in 12.316, so converted worlds are not
+  yet fully readable by v13. Porting each document type is tracked in ADR-002.
+
+### Correctness
+- Add the `--disable-module-items` option. The conversion code honoured it but
+  the flag was never declared, so it could not be used.
+- Exit with a non-zero status when a conversion fails, so scripted and batch
+  conversions can detect failures.
+- `--folder-as-items` now replaces the default "Magic Items" folder instead of
+  appending to it, making the default possible to opt out of.
+- `--enable-fog` and `--disable-fog` are now mutually exclusive rather than
+  silently accepted together with undefined precedence.
+
+### Robustness
+- Asset downloads now use a timeout and bounded retry with backoff; a stalled
+  connection no longer hangs the entire conversion.
+- Download failures report their actual cause instead of being silently
+  swallowed, so a network error is distinguishable from a missing image.
+- The asset cache stores file paths rather than response bodies; it previously
+  grew to the full size of a campaign's media and could exhaust memory.
+- Asset destinations are verified to stay inside the output directory.
+
+### Project
+- Add a `pytest` suite and a GitHub Actions CI workflow (ADR-004).
+- Add `docs/adr/` recording the architectural decisions.
+- Replace the stale py2exe `Makefile` with working cx_Freeze targets.
+
 ## v0.8
 
 - Port database format to FVTT 0.4.4/0.4.5

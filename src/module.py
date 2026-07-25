@@ -1,6 +1,19 @@
 import json
 import os
+
+import foundry
 from version import version
+
+#: Default visibility for generated compendium packs. Replaces the pre-v10
+#: ``private`` boolean. Players can browse the imported content but only the GM
+#: and assistants can modify it, which matches how a converted Roll20 campaign
+#: was shared.
+DEFAULT_PACK_OWNERSHIP = {
+    "PLAYER": "OBSERVER",
+    "TRUSTED": "OBSERVER",
+    "ASSISTANT": "OWNER",
+    "GAMEMASTER": "OWNER",
+}
 
 class Module(object):
     def __init__(self, converter):
@@ -40,24 +53,36 @@ class Module(object):
 
 
     def _newPack(self, name, label, entity, filename):
+        """Build one v13 compendium pack definition (ADR-002).
+
+        ``entity`` was renamed to ``type`` in v10 and removed in v13, and
+        ``path`` now names a LevelDB *directory* rather than a NeDB ``.db``
+        file, so the extension is stripped here. We still write the ``.db`` file
+        itself -- Foundry v13 migrates it into a directory of that name on first
+        launch (ADR-003).
+        """
+        path = os.path.join("packs", os.path.splitext(filename)[0])
         return {"name": name,
                 "label": label + " (" + self._title + ")",
-                "path": os.path.join("packs", filename).replace(os.path.sep, "/"),
-                "module": self._name,
-                "entity": entity,
+                "path": path.replace(os.path.sep, "/"),
                 "type": entity,
-                "system": self._converter.game_system
+                "system": self._converter.game_system,
+                "ownership": DEFAULT_PACK_OWNERSHIP
             }
 
     def toDict(self):
-        return {"name": self._name,
+        """Build the ``module.json`` manifest in the Foundry v13 schema (ADR-002)."""
+        return {"id": self._name,
+                "type": foundry.PACKAGE_TYPE_MODULE,
                 "title": self._title,
                 "description": self._description,
-                "author": "R20Converter",
                 "version": version,
-                "minimumCoreVersion": "0.7.5",
-                "compatibleCoreVersion": "1.0.0",
-                "system": self._converter.game_system,
+                "authors": [{"name": foundry.PACKAGE_AUTHOR}],
+                "compatibility": foundry.compatibility(),
+                "relationships": {
+                    "systems": [foundry.systemRelationship(self._converter.game_system,
+                                                           self._converter.game_system_version)]
+                },
                 "packs": self._packs
             } 
 

@@ -17,6 +17,19 @@ It will automate the entire conversion process and all(*) of your campaign will 
 
 ![image](https://user-images.githubusercontent.com/27990/156877520-f350e333-4fd3-4dc4-9234-298818cf3231.png)
 
+## Foundry VTT compatibility
+
+R20Converter targets **Foundry VTT v13**. Generated worlds and modules declare
+`compatibility: { minimum: "13" }` and will not install on older Foundry
+versions.
+
+World data is written as NeDB `.db` files, which Foundry converts to its LevelDB
+storage format the first time the world is launched. The one-off "migrating world
+data" step you see on that first launch is expected, not an error.
+
+The rationale for these choices, and the remaining work to finish the v13
+document schema port, is recorded in [`docs/adr/`](docs/adr/).
+
 ## How to use
 Follow the instructions from the demo video to see it in action and how to use it : 
 
@@ -39,9 +52,9 @@ If using Linux, you will need `Python 3.6` or later to use R20Converter.
 
 You can run it with `python3 src/main.py` in a terminal. Use the --help option to see which options are available to you during conversion.
 
-Required dependencies are : `requests`, `pillow`, `python-slugify`, `matplotlib` and for the GUI `eel`
- 
-`sudo pip3 install requests pillow python-slugify eel matplotlib`
+Required dependencies are listed in `requirements.txt`; install them with
+`pip3 install -r requirements.txt`. At minimum you need `requests`, `pillow`,
+`python-slugify`, `matplotlib` and, for the GUI, `eel`.
 
 If you are running raspbian on a Raspberry Pi, you may also need to run the command `sudo apt-get install libopenjp2-7` to install one of the dependencies.
 In order to run the Graphics User Interface, you will also need to have python-tk installed. That one can be installed from your distribution's package manager using `sudo apt install python3-tk` or `sudo dnf install python3-tkinter`.

@@ -44,27 +44,31 @@ usage: R20Converter.py [-h] [--json] [--export-as-module]
                        [--player-password PLAYER_PASSWORD]
                        [--restrict-movement] [--force-hp-for-token-bar1]
                        [--force-hp-for-token-bar2] [--add-walls-around-map]
-                       [--enable-fog] [--disable-fog] [--cleanup-scenes]
+                       [--enable-fog | --disable-fog] [--cleanup-scenes]
                        [--interactive] [--auto-doors]
                        [--door-color DOOR_COLOR]
                        [--secret-door-color SECRET_DOOR_COLOR]
                        [--disable-archived] [--all-backgrounds-as-tiles]
                        [--minimum-wall-length MINIMUM_WALL_LENGTH]
                        [--maximum-wall-angle MAXIMUM_WALL_ANGLE]
+                       [--scene-padding SCENE_PADDING]
                        [--debug-page DEBUG_PAGE]
                        [--fvtt-data-path FVTT_DATA_PATH]
                        [--npc-source NPC_SOURCE] [--no-compendium-overwrite]
                        [--images-as-drawings] [--disable-module-journal]
                        [--disable-module-actors] [--disable-module-scenes]
                        [--disable-module-playlists] [--disable-module-tables]
-                       [--disable-module-decks] [--dont-convert-chat]
+                       [--disable-module-decks] [--disable-module-items]
+                       [--dont-convert-chat]
                        [--folder-as-items FOLDER_AS_ITEMS]
                        [--dont-export-actor-items]
                        [--no-duplicate-actor-items]
                        [--use-original-image-urls] [--max-path MAX_PATH]
+                       [--overwrite] [--game-system GAME_SYSTEM]
+                       [--dedup-assets] [--assets-directory ASSETS_DIRECTORY]
                        destination-directory exported.zip
 
-R20Converter v0.8
+R20Converter v0.14.0rc2
 
 positional arguments:
   destination-directory
@@ -72,7 +76,7 @@ positional arguments:
                         Data/modules/
   exported.zip          The exported ZIP file from R20Exporter
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   --json                Use campaign.json as input instead of a ZIP file
                         (playlist will be empty due to audio tracks being
@@ -136,6 +140,8 @@ optional arguments:
                         is related to a straight line, so a maximum angle of
                         30 means an angle between 150 and 210 degrees between
                         the 3 points (Default: 30)
+  --scene-padding SCENE_PADDING
+                        Side-table padding around each scene
   --debug-page DEBUG_PAGE
                         Only convert a specific page. Useful for debugging
   --fvtt-data-path FVTT_DATA_PATH
@@ -169,12 +175,16 @@ optional arguments:
   --disable-module-decks
                         Disable conversion of card decks in the module
                         (requires --export-as-module)
+  --disable-module-items
+                        Disable conversion of Items in the module (requires
+                        --export-as-module)
   --dont-convert-chat   Disable converting the chat and leave the chat log
                         empty
   --folder-as-items FOLDER_AS_ITEMS
                         Converts each entry in a journal folder into items.
                         Useful for 'Magic Items' folders. Can be passed
                         multiple times to convert more than one folder.
+                        (Default: Magic Items)
   --dont-export-actor-items
                         Items from actors will be exported as individual
                         Entity Items. This option disables that behavior and
@@ -194,6 +204,17 @@ optional arguments:
                         to a different FVTT path. Files that don't fit will be
                         written in an 'assets' directory instead of the usual
                         hierarchy.
+  --overwrite           Overwrite the destination directory if it exists.
+  --game-system GAME_SYSTEM
+                        Set the game system to use for actors and items's
+                        sheets (only dnd5e sheets will be converted)
+  --dedup-assets        Deduplicate same assets to minimize space usage. This
+                        will use store files in the assets directory and link
+                        to those files instead of copying it in a nice
+                        hierarchy. (Default: False)
+  --assets-directory ASSETS_DIRECTORY
+                        The directory where the assets will be copied to. This
+                        is relative to the world directory. (Default: assets)
 
 Convert Roll20 campaigns into Foundry VTT worlds or modules.
 ```
@@ -203,7 +224,7 @@ Convert Roll20 campaigns into Foundry VTT worlds or modules.
 
 ## Windows
 - Install Python 3.8 32 bits (see path set in `build_windows.bat`)
-- Run `pip install requests pillow python-slugify eel cx_freeze`
+- Run `pip install -r requirements.txt` (pinned versions verified to build, see `docs/adr/ADR-001-build-reproducibility.md`)
 - Download the Electron app from https://github.com/electron/electron/releases and extract under the directory `electron`
 - Run `build_windows.bat`
 

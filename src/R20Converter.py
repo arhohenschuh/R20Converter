@@ -11,6 +11,7 @@ from slugify import slugify
 from collections import OrderedDict
 
 import utils
+import foundry
 from version import version
 from world import World
 from module import Module
@@ -38,10 +39,10 @@ class R20Converter(object):
         self.packs = {}
         self.system_manifest = None
         self.system_templates = {}
-        self.game_system = self.getArgument("game_system", "dnd5e")
-        self.game_system_version = "1.5.6"
+        self.game_system = self.getArgument("game_system", foundry.DEFAULT_GAME_SYSTEM)
+        self.game_system_version = foundry.DEFAULT_SYSTEM_VERSION
         if (self.game_system == ""):
-            self.game_system = "dnd5e"
+            self.game_system = foundry.DEFAULT_GAME_SYSTEM
         self.fvtt_path = self.getArgument("fvtt_data_path", None)
         if self.fvtt_path is None:
             potential_path = os.path.abspath(os.path.join(self.path, "..", "..", ".."))
