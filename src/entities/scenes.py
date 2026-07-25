@@ -2,7 +2,6 @@ from .base import DatabaseFile, Entity
 from .actors import Token
 
 from PIL import Image, ImageFont, ImageDraw
-from matplotlib import font_manager
 
 import os
 import math
@@ -774,6 +773,10 @@ class Scene(Entity):
         #Find the path for a specific font:
         font_family = font_family.strip().strip("'").strip('"')
         try:
+            # Imported lazily: matplotlib is only needed to resolve a font file,
+            # and importing it at module scope would make every consumer of
+            # `entities` (including the test suite) depend on it.
+            from matplotlib import font_manager
             file = font_manager.findfont(font_family)
         except:
             file = None

@@ -1,0 +1,22 @@
+# Normalise line endings so a checkout on Windows and one on Linux produce the
+# same blobs. Without this, an editor or tool that rewrites a file with the
+# other convention turns a small change into a whole-file diff -- which is
+# exactly what happened to src/entities/actors.py during the Foundry v13 port,
+# where a ~45-line change was committed as a 5,605-line diff and could not be
+# meaningfully reviewed.
+* text=auto eol=lf
+
+# Binary assets must never be touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.lnk binary
+*.zip binary
+*.db binary
+
+# Windows-only files that genuinely need CRLF.
+*.bat text eol=crlf
