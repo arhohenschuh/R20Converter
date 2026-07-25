@@ -1,0 +1,14 @@
+# Test-only dependencies.
+#
+# The pinned runtime/build set in requirements.txt targets the frozen Windows
+# build (Python 3.8) and drags in cx_Freeze, eel, matplotlib and numpy. None of
+# that is needed to exercise the conversion logic, so CI and local test runs
+# install this much smaller set instead. See ADR-004.
+#
+# Lower bounds here are deliberately modern: unlike requirements.txt this set
+# never ships to users, so it is not constrained by the frozen build's Python
+# 3.8 target and should stay on patched releases.
+pytest>=8.0
+requests>=2.32.4
+python-slugify>=8.0.4
+Pillow>=12.3.0
