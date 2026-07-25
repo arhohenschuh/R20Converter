@@ -1,4 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
+#
+# DEPRECATED / UNUSED: this PyInstaller spec is not the active build path.
+# The real Windows build uses cx_Freeze via setup.py (`python setup.py build`),
+# see ADR-001. This file also hardcodes a stale pathex from the original
+# author's machine and will not run as-is. Kept for reference only.
 
 block_cipher = None
 

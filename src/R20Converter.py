@@ -98,8 +98,8 @@ class R20Converter(object):
             try:
                 db.load(path)
                 self.packs[file] = db
-            except:
-                pass
+            except Exception as e:
+                self.logWarning("Warning: Could not load dnd5e compendium pack '%s.db': %s" % (file, e))
 
     def loadSystemPacks(self):
         self.packs = {}
@@ -110,8 +110,8 @@ class R20Converter(object):
             try:
                 db.load(path)
                 self.packs[pack['name']] = db
-            except:
-                pass
+            except Exception as e:
+                self.logWarning("Warning: Could not load compendium pack '%s' (%s.db): %s" % (pack['name'], pack['name'], e))
     def loadSystemVersion(self):
         path = os.path.join(self.fvtt_path, "Data", "systems", self.game_system, "system.json")
         with open(path, "r", encoding='utf-8') as f:

@@ -1,0 +1,18 @@
+# Runtime/build dependencies for R20Converter (Windows, Python 3.8 target).
+# Pinned to versions verified to build & run successfully on 2026-07-25.
+# Install with: pip install -r requirements.txt
+#
+# Additional non-pip requirement for the Windows build:
+#   Electron runtime (win32-x64) must be downloaded and extracted to ./electron
+#   from https://github.com/electron/electron/releases (verified with v43.2.0).
+#   Referenced by setup.py (include_files) and src/GUI.py (PopenElectron).
+
+cx_Freeze==7.2.10
+eel==0.18.2
+python-slugify==8.0.4
+numpy==1.24.4
+bottle==0.13.4
+bottle-websocket==0.2.9
+requests==2.32.4
+Pillow==10.4.0
+matplotlib==3.7.5
