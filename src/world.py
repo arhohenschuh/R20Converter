@@ -2,6 +2,8 @@ import json
 import os
 import shutil
 
+import foundry
+
 class World(object):
     def __init__(self, converter):
         self._converter = converter
@@ -15,18 +17,29 @@ class World(object):
             
 
     def toDict(self):
+        """Build the ``world.json`` manifest in the Foundry v13 schema (ADR-002).
+
+        Notable differences from the pre-v10 manifest this used to emit:
+        ``id`` replaces ``name``; ``type`` is now required; the
+        ``minimumCoreVersion``/``compatibleCoreVersion`` pair is replaced by the
+        ``compatibility`` object; ``dependencies`` is replaced by
+        ``relationships``. ``resetKeys``/``safeMode`` are dropped -- they are
+        launch-time options Foundry manages itself, not manifest fields.
+        """
         return {
-            "name": self._name,
+            "id": self._name,
+            "type": foundry.PACKAGE_TYPE_WORLD,
             "title": self._title,
             "description": self._description,
-            "version": "1.0.0",
+            "version": foundry.PACKAGE_VERSION,
             "system": self._converter.game_system,
-            "coreVersion": "9.245",
+            # Declares which document schema this world was written with, and so
+            # which migrations Foundry runs on first launch. Must stay truthful.
+            "coreVersion": foundry.DOCUMENT_SCHEMA_CORE_VERSION,
             "systemVersion": self._converter.game_system_version,
-            "minimumCoreVersion": "0.0.0",
-            "compatibleCoreVersion": "1.0.0",
+            "compatibility": foundry.compatibility(),
             "authors": [{
-                "name": "R20Converter",
+                "name": foundry.PACKAGE_AUTHOR,
             }],
             "packs": [],
             "scripts":  ["templates/roll20-templates.js"] if self._copy_templates else [],
@@ -35,10 +48,11 @@ class World(object):
             "languages": [],
             "socket": False,
             "flags": {},
-            "dependencies": [],
-            "protected": False,
-            "resetKeys": False,
-            "safeMode": False
+            "relationships": {
+                "systems": [foundry.systemRelationship(self._converter.game_system,
+                                                       self._converter.game_system_version)]
+            },
+            "protected": False
         }
 
     # This is a json file, not a db file, so let's override the __str__ method

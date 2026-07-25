@@ -1,5 +1,74 @@
 # Changelog
 
+## Unreleased
+
+**Targeting Foundry VTT v13.** See `docs/adr/` for the decision records behind
+these changes.
+
+### Foundry v13 (ADR-002, ADR-003)
+- Emit `world.json` and `module.json` in the Foundry v13 manifest schema: `id`
+  instead of `name`, the now-required `type`, a `compatibility` object instead of
+  `minimumCoreVersion`/`compatibleCoreVersion`, `relationships` instead of
+  `dependencies`, and `authors` instead of `author`.
+- Compendium packs now declare `type` (the removed `entity` key is gone),
+  carry an `ownership` block, and use extension-less LevelDB-style paths.
+- Collect every Foundry version and compatibility constant in `src/foundry.py`,
+  replacing literals that had drifted out of sync across three files.
+### Document schema (ADR-002, ADR-005)
+Foundry deleted every automatic v9 → v10 document migration in 12.316, so the
+converter now emits the modern field names itself:
+- `permission` → `ownership` on every document (the 0–3 levels are unchanged).
+- Actors and items store their system data under `system` instead of `data`,
+  including the override block carried on a scene token.
+- The actor prototype token moved from `token` to `prototypeToken`.
+- Folders reference their parent through `folder` instead of `parent`.
+- Chat messages carry a `rolls` array instead of a single `roll` string.
+- Rollable table results use the v13 shape: string `type` values, a single
+  `documentUuid` in place of `collection`/`resultId`, and `name`/`description`
+  in place of `text`.
+- Journal entries are written as a `pages` array instead of the removed
+  `content`/`img` fields. A handout becomes a text page and/or an image page,
+  and pages inherit their permissions from the entry.
+- Document links embedded in handout text use the `@UUID[…]` enricher rather
+  than the deprecated per-type `@Actor[…]` / `@Compendium[…]` forms.
+- Compendium entries read from a source pack are up-converted to `system` on
+  load, so packs authored for older Foundry versions still work.
+- Scenes carry `background` and `grid` objects instead of the flat `img`,
+  `shiftX`/`shiftY` and `grid*` fields, plus the current `fog` and `environment`
+  groupings.
+- Tokens use `texture`, `sight` and `delta` in place of `img`/`tint`/`scale`/
+  `mirrorX`/`mirrorY`, `vision`/`dimSight`/`brightSight`/`sightAngle` and
+  `actorData`.
+- Tiles use `texture` plus `sort`/`elevation`/`restrictions`; drawings use a
+  `shape` object with a flat point array; ambient lights nest their emission
+  settings under `config`.
+- Mirrored tiles and tokens are written as a negative texture scale rather than
+  a negative width/height, which v13 rejects.
+
+### Correctness
+- Add the `--disable-module-items` option. The conversion code honoured it but
+  the flag was never declared, so it could not be used.
+- Exit with a non-zero status when a conversion fails, so scripted and batch
+  conversions can detect failures.
+- `--folder-as-items` now replaces the default "Magic Items" folder instead of
+  appending to it, making the default possible to opt out of.
+- `--enable-fog` and `--disable-fog` are now mutually exclusive rather than
+  silently accepted together with undefined precedence.
+
+### Robustness
+- Asset downloads now use a timeout and bounded retry with backoff; a stalled
+  connection no longer hangs the entire conversion.
+- Download failures report their actual cause instead of being silently
+  swallowed, so a network error is distinguishable from a missing image.
+- The asset cache stores file paths rather than response bodies; it previously
+  grew to the full size of a campaign's media and could exhaust memory.
+- Asset destinations are verified to stay inside the output directory.
+
+### Project
+- Add a `pytest` suite and a GitHub Actions CI workflow (ADR-004).
+- Add `docs/adr/` recording the architectural decisions.
+- Replace the stale py2exe `Makefile` with working cx_Freeze targets.
+
 ## v0.8
 
 - Port database format to FVTT 0.4.4/0.4.5

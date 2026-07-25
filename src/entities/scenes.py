@@ -319,7 +319,9 @@ class Scene(Entity):
                             token["bar2"]["attribute"] = "attributes.hp"
                         if not npc:
                             token["actorLink"] = True
-                            token["actorData"] = {}
+                            # A linked token stores no overrides of its own; v13
+                            # persists `delta` as null in that case (ADR-002).
+                            token["delta"] = None
                     token["_id"] = self.genID()
                     token["hidden"] = (layer == "gmlayer")
                     x = (left - (tile_width / 2))
@@ -371,22 +373,31 @@ class Scene(Entity):
                         rotation = 0
                     if angle != 0:
                         rotation = (rotation + 180) % 360
+                    # Foundry v10 moved every AmbientLight emission property into
+                    # a nested `config` object and dropped the migration in
+                    # 12.316 (ADR-002).
                     light = {"_id": self.genID(),
                              "flags": {},
-                             "t": "l",
                              # light object get placed at the center of the graphic
                              "x": int(margin_left + left * grid_multiplier),
                              "y": int(margin_top + top * grid_multiplier),
-                             "dim": dim,
                              "hidden": False,
-                             "bright": bright,
-                             "angle": angle,
                              "rotation": rotation,
-                             "tintAlpha": 0.5,
-                             "darknessThreshold": 0,
-                             "lightAnimation": {
-                                "speed": 5,
-                                "intensity": 5
+                             "walls": True,
+                             "vision": False,
+                             "config": {
+                                "dim": dim,
+                                "bright": bright,
+                                "angle": angle,
+                                "alpha": 0.5,
+                                "color": None,
+                                "darkness": {"min": 0, "max": 1},
+                                "animation": {
+                                    "type": None,
+                                    "speed": 5,
+                                    "intensity": 5,
+                                    "reverse": False
+                                },
                              },
                              }
                     x = (left - (tile_width / 2))
@@ -408,9 +419,10 @@ class Scene(Entity):
                             "flags": {},
                             "x": int(margin_left + x * grid_multiplier),
                             "y": int(margin_top + y * grid_multiplier),
-                            "z": 10 * len(drawings),
-                            "width": int(tile_width * grid_multiplier),
-                            "height": int(tile_height * grid_multiplier),
+                            "elevation": 0,
+                            "sort": 10 * len(drawings),
+                            "shape": Entity.shape(int(tile_width * grid_multiplier),
+                                                  int(tile_height * grid_multiplier)),
                             "rotation": rotation,
                             "hidden": layer == "gmlayer" or layer == "walls",
                             "locked": layer == "map",
@@ -427,9 +439,10 @@ class Scene(Entity):
                             "flags": {},
                             "x": int(margin_left + x * grid_multiplier),
                             "y": int(margin_top + y * grid_multiplier),
-                            "z": 10 * len(drawings),
-                            "width": int(tile_width * grid_multiplier),
-                            "height": int(tile_height * grid_multiplier),
+                            "elevation": 0,
+                            "sort": 10 * len(drawings),
+                            "shape": Entity.shape(int(tile_width * grid_multiplier),
+                                                  int(tile_height * grid_multiplier)),
                             "rotation": rotation,
                             "hidden": layer == "gmlayer" or layer == "walls",
                             "locked": layer == "map",
@@ -441,12 +454,14 @@ class Scene(Entity):
                 tile_height = drawing_height * path["scaleY"]
                 x = (left - (tile_width / 2))
                 y = (top - (tile_height / 2))
-                points = drawing["points"]
+                points = drawing["shape"]["points"]
                 if grid_multiplier != 1:
-                    points = [[int(x * grid_multiplier), int(y * grid_multiplier)] for (x, y) in points]
+                    points = [int(p * grid_multiplier) for p in points]
                 drawing.update({
                     "x": int(margin_left + x * grid_multiplier),
                     "y": int(margin_top + y * grid_multiplier),
+                })
+                drawing["shape"].update({
                     "width": int(tile_width * grid_multiplier),
                     "height": int(tile_height * grid_multiplier),
                     "points": points
@@ -579,14 +594,14 @@ class Scene(Entity):
                                     },
                                     "x": int(margin_left + x * grid_multiplier),
                                     "y": int(margin_top + y * grid_multiplier),
-                                    "z": 10 * len(drawings),
-                                    "width": int(tile_width * grid_multiplier),
-                                    "height": int(tile_height * grid_multiplier),
+                                    "elevation": 0,
+                                    "sort": 10 * len(drawings),
+                                    "shape": Entity.shape(int(tile_width * grid_multiplier),
+                                                          int(tile_height * grid_multiplier)),
                                     "rotation": rotation,
                                     "hidden": layer == "gmlayer" or layer == "walls",
                                     "locked": layer == "map",
                                     "author": Entity.normalizeID(obj["controlledby"]) or "", # invalid user (or export-as-module) will be invalid author, which means all GM
-                                    "type": "r",
                                     "fillType": 2,
                                     "fillColor": "#ffffff",
                                     "fillAlpha": 0,
@@ -600,29 +615,36 @@ class Scene(Entity):
                                     "textAlpha": 1,
                                     "textColor": "#ffffff",
                                     "bezierFactor": 0,
-                                    "points": [],
                                 }
                         drawings.append(drawing)
                     else:
-                        if graphic["flipv"]:
-                            tile_height *= -1
-                        if graphic["fliph"]:
-                            tile_width *= -1
+                        # v9 expressed a flip as a negative width/height. v13
+                        # requires both to be positive and takes the mirroring
+                        # from the texture scale instead (ADR-002).
                         tile = {
                             "_id": self.genID(),
                             "flags": {},
-                            "img": tile_image,
+                            "texture": Entity.texture(tile_image,
+                                                      scale_x=-1 if graphic["fliph"] else 1,
+                                                      scale_y=-1 if graphic["flipv"] else 1,
+                                                      anchor=0.5,
+                                                      alpha_threshold=0.75),
                             "width": int(tile_width * grid_multiplier),
                             "height": int(tile_height * grid_multiplier),
-                            "scale": 1, # Also seems unused
                             "x": int(margin_left + x * grid_multiplier),
                             "y": int(margin_top + y * grid_multiplier),
-                            "z": 10 * len(tiles),
+                            # v12 replaced the Tile `z` index with `sort`, and
+                            # `overhead`/`roof` with `elevation`/`restrictions`.
+                            "elevation": 0,
+                            "sort": 10 * len(tiles),
                             "rotation": rotation,
                             "locked": layer == "map",
                             "hidden": layer == "gmlayer" or layer == "walls",
                             "alpha": 1,
-                            "overhead": False,
+                            "restrictions": {
+                                "light": False,
+                                "weather": False
+                            },
                             "occlusion": {
                                 "mode": 1,
                                 "alpha": 0
@@ -657,33 +679,51 @@ class Scene(Entity):
         self.entity = {"_id": self._id,
                        "name": name or "Unnamed Scene",
                        "navName": name,
-                       "permission": {"default": 0},
+                       "ownership": {"default": 0},
                        "folder": Entity.normalizeID(folder),
                        "flags": {},
                        "sort": page.get("placement", 0) * Entity.SORT_ORDER,
                        "navOrder": page.get("placement", 0),
                        "navigation": not page["archived"],
                        "active": active_page == page["id"],
-                       "img": bg_image,
+                       # Foundry v10 folded the scene image and its offsets into
+                       # a TextureData object; the migration was dropped in
+                       # 12.316 (ADR-002).
+                       "background": Entity.texture(bg_image),
+                       "foreground": None,
                        "initial": None,
                        "thumb": thumb_image,
                        "width": int(width * grid_multiplier),
                        "height": int(height * grid_multiplier),
                        "padding": padding,
                        "backgroundColor": self.color(page["background_color"]),
-                       "gridType": grid_type,
-                       "grid": grid_size,
-                       "shiftX": 0,
-                       "shiftY": 0,
-                       "gridColor": self.color(page["gridcolor"]),
-                       "gridAlpha": page["grid_opacity"],
-                       "gridDistance": page["scale_number"] if float(page["scale_number"]) >= 1 else 1,
-                       "gridUnits": page["scale_units"] if float(page["scale_number"]) >= 1 else ("(" + str(page["scale_number"]) + " " + page["scale_units"] + ")"),
+                       # Likewise the seven flat grid* fields became one object.
+                       "grid": {
+                           "type": grid_type,
+                           "size": grid_size,
+                           "style": "solidLines",
+                           "thickness": 1,
+                           "color": self.color(page["gridcolor"]),
+                           "alpha": page["grid_opacity"],
+                           "distance": page["scale_number"] if float(page["scale_number"]) >= 1 else 1,
+                           "units": page["scale_units"] if float(page["scale_number"]) >= 1 else ("(" + str(page["scale_number"]) + " " + page["scale_units"] + ")"),
+                       },
                        "tokenVision": tokenVision,
-                       "fogExploration": fogExploration,
-                       "globalLight": globalLight,
-                       "globalLightThreshold": None,
-                       "darkness": 0,
+                       # v12 grouped the fog and lighting settings. These two are
+                       # still auto-migrated, but writing the current names keeps
+                       # the output free of deprecation warnings.
+                       "fog": {
+                           "exploration": fogExploration,
+                           "reset": int(time.time() * 1000),
+                           "overlay": None,
+                       },
+                       "environment": {
+                           "darknessLevel": 0,
+                           "globalLight": {
+                               "enabled": globalLight,
+                               "darkness": {"min": 0, "max": 1},
+                           },
+                       },
                        "tiles": tiles,
                        "tokens": tokens,
                        "walls": walls,
@@ -692,12 +732,10 @@ class Scene(Entity):
                        "sounds": [],
                        "templates": [],
                        "notes": [],
-                       "fogReset": int(time.time() * 1000),
                        "playlist": None,
                        "playlistSound": None,
                        "journal": None,
                        "weather": "",
-                       "folder": None,
                     }
 
     def filterItems(self, type, layer=None, exclude=None):
@@ -861,8 +899,10 @@ class Scene(Entity):
 
     def createTextDrawing(self, drawing, text):
         color = self.color(text["color"], "#ffffff", True)
-        drawing.update({"type": "t",
-                        "fillType": 0,
+        # v13 has no "t" shape type: a text drawing is a rectangle that carries
+        # text (ADR-002).
+        drawing["shape"]["type"] = Entity.SHAPE_RECTANGLE
+        drawing.update({"fillType": 0,
                         "fillColor": color,
                         "fillAlpha": 1.0,
                         "strokeColor": "#000000",
@@ -875,7 +915,6 @@ class Scene(Entity):
                         "textAlpha": 1,
                         "textColor": color,
                         "bezierFactor": 0,
-                        "points": [],
                     })
         return drawing
 
@@ -888,22 +927,26 @@ class Scene(Entity):
         tile_width = safeCast(int, path["width"], 0)
         tile_height = safeCast(int, path["height"], 0)
         (points, path_type, width, height) = self.pathToPolygonList(path, tile_width, tile_height)
+        # v13 dropped the freehand shape type; a freehand path is a polygon
+        # smoothed by a non-zero bezierFactor (ADR-002).
+        freehand = path_type == PATH_TYPE.FREEHAND
         if path_type == PATH_TYPE.CIRCLE:
-            drawing_type = "e"
+            drawing_type = Entity.SHAPE_ELLIPSE
             points = []
         elif path_type == PATH_TYPE.RECTANGLE:
-            drawing_type = "r"
+            drawing_type = Entity.SHAPE_RECTANGLE
             points = []
-        elif path_type == PATH_TYPE.FREEHAND:
-            drawing_type = "f"
         else:
-            drawing_type = "p"
+            drawing_type = Entity.SHAPE_POLYGON
 
         if scaleX != 1 or scaleY != 1:
             points = [(x * scaleX, y * scaleY) for (x, y) in points]
 
-        drawing.update({"type": drawing_type,
-                        "fillType": 0 if fill is None else 1,
+        drawing["shape"].update({"type": drawing_type,
+                                 # v13 stores polygon points as a flat
+                                 # [x0, y0, x1, y1, ...] array of numbers.
+                                 "points": [int(c) for point in points for c in point]})
+        drawing.update({"fillType": 0 if fill is None else 1,
                         "fillColor": fill,
                         "fillAlpha": 1.0,
                         "strokeColor": outline,
@@ -914,8 +957,7 @@ class Scene(Entity):
                         "fontSize": 45,
                         "textAlpha": 1,
                         "textColor": "#ffffff",
-                        "bezierFactor": 0.5 if drawing_type == "f" else 0,
-                        "points": points,
+                        "bezierFactor": 0.5 if freehand else 0,
                     })
         return (drawing, width, height)
 

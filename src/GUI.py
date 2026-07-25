@@ -21,6 +21,7 @@ else:
 
 from utils import getFVTTDataPath
 from version import version
+import messages
 
 class GUIClass:
     def __init__(self):
@@ -190,14 +191,9 @@ def startConversion(args):
         GUI.logError(e)
 
     if error:
-        message = "Error converting campaign with R20Converter v" + version + ": \n" + error
-        message += "\nPlease contact the author with the log of the error from the console window"
+        message = messages.conversionErrorMessage(version, error)
     else:
-        message = "\nConversion completed.\n\n"
-        message += "It is strongly suggested to check the sheets of the NPCs and player characters for any errors or missing information, or for adding special traits.\n"
-        message += "Some things may not have been carried over, especially to-hit, damage, AC or saving throw modifiers or more complicated weapon or spell macros\n"
-        message += "If using <a href='https://forge-vtt.com/setup' target='_blank'>The Forge</a> for hosting your Foundry games, you can now import the generated world using the Import Wizard.\n"
-        message += "\nThank you for your support!"
+        message = messages.conversionSuccessMessage(html=True)
     GUI.logInfo(message)
     return {
         "error": error is not None,

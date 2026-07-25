@@ -97,6 +97,8 @@ class Folder(Entity):
                        "flags": {},
                        "type": folder_type,
                        "color": "",
-                       "parent": Entity.normalizeID(parent),
+                       # Foundry renamed Folder#parent to Folder#folder in v10
+                       # and dropped the migration in 12.316 (ADR-002).
+                       "folder": Entity.normalizeID(parent),
                        "sort": 100000 * (index if index else 1)
                        }

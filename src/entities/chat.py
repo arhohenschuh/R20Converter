@@ -76,7 +76,9 @@ class ChatMessage(Entity):
         if sound:
             self.entity["sound"] = sound
         if roll:
-            self.entity["roll"] = json.dumps(roll.toJSON())
+            # v10 replaced the single ChatMessage#roll string with a `rolls`
+            # array; the migration was dropped in 12.316 (ADR-002).
+            self.entity["rolls"] = [json.dumps(roll.toJSON())]
 
     def getGMWhispers(self):
         whispers = []

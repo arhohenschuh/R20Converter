@@ -2,6 +2,7 @@ import os
 import base64
 import json
 import re
+import shutil
 import urllib
 import errno
 import hashlib
@@ -9,6 +10,45 @@ import requests
 import uuid
 import copy
 from urllib.parse import urlparse
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# --- Asset download tuning -------------------------------------------------
+# A campaign can reference thousands of remote assets. Without a timeout a
+# single stalled connection hangs the whole conversion, and without retries a
+# momentary blip loses an image permanently.
+#: (connect, read) timeout in seconds for every asset request.
+DOWNLOAD_TIMEOUT = (10, 60)
+#: How many times to retry a connection error or a retryable server response.
+DOWNLOAD_RETRIES = 3
+#: Exponential backoff factor between retries (0.5 -> 0.5s, 1s, 2s).
+DOWNLOAD_BACKOFF = 0.5
+
+_session = None
+
+
+def _resourceSession():
+    """Return the process-wide :class:`requests.Session` used for assets.
+
+    A single session lets us reuse HTTP connections across the thousands of
+    requests a large campaign makes, and gives one place to configure retries.
+    Only transient failures are retried: 404 is a real answer ("this resolution
+    does not exist") and is handled by the caller's resolution fallback.
+    """
+    global _session
+    if _session is None:
+        session = requests.Session()
+        retry = Retry(total=DOWNLOAD_RETRIES, connect=DOWNLOAD_RETRIES,
+                      read=DOWNLOAD_RETRIES, status=DOWNLOAD_RETRIES,
+                      backoff_factor=DOWNLOAD_BACKOFF,
+                      status_forcelist=(429, 500, 502, 503, 504),
+                      allowed_methods=frozenset(["GET"]),
+                      raise_on_status=False)
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        _session = session
+    return _session
 
 class DatabaseFile(object):
     def __init__(self, converter, filename, package=None, pack_name=None):
@@ -134,15 +174,31 @@ class DatabaseFile(object):
 
 
 class Entity(object):
-    PERMISSION_NONE = 0
-    PERMISSION_DEFAULT = -1
-    PERMISSION_LIMITED = 1
-    PERMISSION_OBSERVER = 2
-    PERMISSION_OWNER = 3
+    # Foundry's CONST.DOCUMENT_OWNERSHIP_LEVELS. The numeric values are
+    # unchanged since v9; only the document field they are written to was
+    # renamed from `permission` to `ownership` in v10 (ADR-002).
+    OWNERSHIP_NONE = 0
+    # -1 means "inherit from the parent document" (Foundry's INHERIT level).
+    OWNERSHIP_INHERIT = -1
+    OWNERSHIP_LIMITED = 1
+    OWNERSHIP_OBSERVER = 2
+    OWNERSHIP_OWNER = 3
+    # Foundry's ShapeData.TYPES. The v9 text ("t") and freehand ("f") drawing
+    # types no longer exist: text is a rectangle carrying text, and freehand is
+    # a polygon with a non-zero bezierFactor (ADR-002).
+    SHAPE_RECTANGLE = "r"
+    SHAPE_CIRCLE = "c"
+    SHAPE_ELLIPSE = "e"
+    SHAPE_POLYGON = "p"
     SORT_ORDER = 10000
     # Ensures ids are unique accross all entities
     id_database = {}
     uuids = []
+    #: Maps a source URL to the path of the file we already wrote for it, so a
+    #: URL referenced by many entities is fetched once. Deliberately stores
+    #: *paths* rather than response bodies: caching bytes made this dict grow to
+    #: the full size of the campaign's media, which exhausts memory on
+    #: map-heavy campaigns.
     resource_cache = {}
 
     def __init__(self, database, id):
@@ -181,6 +237,56 @@ class Entity(object):
             return self.getID()
         return "%s.%s.%s" % (self._database._package, self._database._pack_name, self.getID())
 
+    @staticmethod
+    def shape(width, height, shape_type=None, points=None):
+        """Build a Foundry ShapeData object for a Drawing.
+
+        Foundry v10 moved the drawing's `type`, `width`, `height` and `points`
+        into this nested object and the migration was removed in 12.316
+        (ADR-002). Points are a flat `[x0, y0, x1, y1, ...]` number array, not
+        a list of pairs.
+        """
+        return {
+            "type": shape_type or Entity.SHAPE_RECTANGLE,
+            "width": width,
+            "height": height,
+            "points": points or [],
+        }
+
+    @staticmethod
+    def texture(src, tint=None, scale_x=1, scale_y=1, anchor=0, fit="fill", alpha_threshold=0):
+        """Build a Foundry TextureData object.
+
+        Foundry v10 replaced the flat `img`/`tint`/`scale`/`mirrorX`/`mirrorY`
+        fields on scenes, tiles and tokens with this shared structure, and the
+        migration was removed in 12.316 (ADR-002). Mirroring is expressed as a
+        negative scale rather than a separate flag.
+        """
+        return {
+            "src": src or None,
+            "anchorX": anchor,
+            "anchorY": anchor,
+            "offsetX": 0,
+            "offsetY": 0,
+            "fit": fit,
+            "scaleX": scale_x,
+            "scaleY": scale_y,
+            "rotation": 0,
+            "tint": tint or "#ffffff",
+            "alphaThreshold": alpha_threshold,
+        }
+
+    @staticmethod
+    def compendiumUuid(full_id, document):
+        """Turn a "<packageId>.<packName>.<id>" key into a Foundry v13 UUID.
+
+        Foundry v11 added the document type as an explicit segment, so a
+        compendium UUID reads
+        "Compendium.<packageId>.<packName>.<DocumentName>.<id>".
+        """
+        (package, pack, id) = full_id.rsplit(".", 2)
+        return "Compendium.%s.%s.%s.%s" % (package, pack, document, id)
+
     def addToOwnedList(self, parent_list):
         entity = copy.deepcopy(self.entity)
         entity["_id"] = self.genID()
@@ -190,16 +296,27 @@ class Entity(object):
 
     def findCompendiumItem(self, compendium, item_name):
         item = self._database.findCompendiumItem(compendium, item_name)
-        if item and "system" in item.entity:
-            item.entity["data"] = item.entity["system"]
-            del item.entity["system"]
-        return item
+        return Entity.normalizeSystemData(item)
+
     def findCompendiumActor(self, actor_name):
         actor = self._database.findCompendiumActor(actor_name)
-        if actor and "system" in actor.entity:
-            actor.entity["data"] = actor.entity["system"]
-            del actor.entity["system"]
-        return actor
+        return Entity.normalizeSystemData(actor)
+
+    @staticmethod
+    def normalizeSystemData(entity):
+        """Ensure a compendium document uses the v10+ ``system`` key.
+
+        Documents read out of an installed game system's compendium packs may
+        predate the v10 rename of ``Document#data`` to ``Document#system``.
+        Foundry removed the automatic migration in 12.316 (ADR-002), so we
+        normalise on read and speak the v13 vocabulary everywhere downstream.
+
+        Accepts and returns ``None`` so callers can pass a lookup result
+        straight through.
+        """
+        if entity is not None and "data" in entity.entity and "system" not in entity.entity:
+            entity.entity["system"] = entity.entity.pop("data")
+        return entity
 
     def getArgument(self, name, default=None):
         return self._database.getArgument(name, default)
@@ -232,8 +349,9 @@ class Entity(object):
             compendium_item = self.findCompendiumItem(compendium, name)
             if self.getArgument("export_as_module", False):
                 if compendium_item:
-                    return "@Compendium[%s]{%s}" % (compendium_item.getFullID(), name)
-                return "@Item[%s]" % name
+                    return "@UUID[%s]{%s}" % (
+                        Entity.compendiumUuid(compendium_item.getFullID(), "Item"), name)
+                return "@UUID[Item.%s]" % name
             elif compendium_item:
                 converter.folders.ensureFolder(folder_id, folder, "Item")
                 item = converter.items.createItemFromCompendium(None, compendium_item)
@@ -256,12 +374,14 @@ class Entity(object):
             #icon = {"handout": "fa-book-open", "character": "fa-user", "item": "fa-suitcase"}[journal]
             #return '<a class="entity-link" data-entity=%s data-id=%s %s%s><i class="fas %s"></i>%s</a>' % (entity, self.normalizeID(id), before_href, after_href, icon, text)
             label = re.sub("[<>}{]", "_", text)
+            document = {"handout": "JournalEntry", "character": "Actor", "item": "Item"}[journal]
             if self.isCompendiumEntity:
-                compendium = {"handout": "journal", "character": "actors", "item": "items"}[journal]
-                return '@Compendium[%s.%s.%s]{%s}' % (self._database._package, compendium, self.normalizeID(id), label)
+                pack = {"handout": "journal", "character": "actors", "item": "items"}[journal]
+                target = Entity.compendiumUuid(
+                    "%s.%s.%s" % (self._database._package, pack, self.normalizeID(id)), document)
             else:
-                entity = {"handout": "JournalEntry", "character": "Actor", "item": "Item"}[journal]
-                return '@%s[%s]{%s}' % (entity, self.normalizeID(id), label)
+                target = "%s.%s" % (document, self.normalizeID(id))
+            return '@UUID[%s]{%s}' % (target, label)
         else:
             return match.group(0)
 
@@ -337,7 +457,7 @@ class Entity(object):
         url = urllib.parse.quote(filename.replace(os.path.sep, "/").replace(" ", "_"))
         # Url encoded characters won't resolve, since the URL would become invalid, so we replace them
         urlsafe = re.sub("%([0-9A-F]{2})", "_\\1", url)
-        urlsafe = re.sub("\.+/", "_/", urlsafe)
+        urlsafe = re.sub(r"\.+/", "_/", urlsafe)
         return urlsafe
 
     def getDirectoryName(self):
@@ -403,6 +523,12 @@ class Entity(object):
                     else:
                         break
 
+        # Defence in depth: destination names are derived from untrusted campaign
+        # JSON and ZIP entry names. urlsafe() neutralises "../" sequences, but a
+        # future change there must never be able to make us write outside the
+        # world/module directory, so assert containment before creating anything.
+        self._assertWithinOutputDirectory(dest_filename)
+
         try:
             os.makedirs(os.path.dirname(dest_filename))
         except OSError as e:
@@ -413,6 +539,13 @@ class Entity(object):
 
         config_path = os.path.join(self.getDirectoryName(), destination_safe)
         return (dest_filename, config_path.replace(os.path.sep, "/"))
+
+    def _assertWithinOutputDirectory(self, dest_filename):
+        """Raise if ``dest_filename`` resolves outside the output directory."""
+        root = os.path.abspath(self._database._path)
+        resolved = os.path.abspath(dest_filename)
+        if resolved != root and not resolved.startswith(root + os.path.sep):
+            raise ValueError("Refusing to write asset outside of the output directory: %s" % dest_filename)
     
     def fixImageUrl(self, url):
         if url == "":
@@ -440,33 +573,65 @@ class Entity(object):
         if os.path.exists(dest_filename):
             return (dest_filename, config_path)
         originalUrl = url
-        url = self.fixImageUrl(url)
-        content = Entity.resource_cache.get(originalUrl, None)
-        if content is None:
-            try:
-                r = requests.get(url)
-                if r.status_code != 200 and url != originalUrl:
-                    # Try again with max resolution
-                    url = re.sub(r"/original\.([^/]*)$", r"/max.\1", url)
-                    r = requests.get(url)
-                    if r.status_code != 200 and url != originalUrl:
-                        url = re.sub(r"/max\.([^/]*)$", r"/med.\1", url)
-                        r = requests.get(url)
-                        if r.status_code != 200 and url != originalUrl:
-                            url = re.sub(r"/med\.([^/]*)$", r"/thumb.\1", url)
-                            r = requests.get(url)
-                if r.status_code == 200:
-                    content = r.content
-                    Entity.resource_cache[originalUrl] = content
-            except:
-                pass
-        if content is not None:
-            with open(dest_filename, "wb") as f:
-                f.write(content)
+
+        # Cache hit: the same URL was already downloaded for another entity, so
+        # copy the file we wrote then rather than fetching it again. The cache
+        # deliberately stores paths, not bytes -- see the resource_cache comment
+        # on Entity.
+        cached = Entity.resource_cache.get(originalUrl, None)
+        if cached is not None and os.path.exists(cached):
+            shutil.copyfile(cached, dest_filename)
             return (dest_filename, config_path)
-        else:
+
+        content = self._fetchResource(self.fixImageUrl(url), originalUrl)
+        if content is None:
             self.logWarning("Failed to download URL : %s" % originalUrl)
             return (None, "")
+
+        with open(dest_filename, "wb") as f:
+            f.write(content)
+        Entity.resource_cache[originalUrl] = dest_filename
+        return (dest_filename, config_path)
+
+    def _fetchResource(self, url, originalUrl):
+        """Fetch ``url``, degrading through Roll20's image resolutions.
+
+        Roll20 serves each image under ``original``/``max``/``med``/``thumb``
+        names, but not every image exists at every resolution. ``fixImageUrl``
+        optimistically rewrites the URL to ``original``; if that 404s we walk
+        down to progressively smaller variants rather than losing the asset.
+        The walk only applies when ``fixImageUrl`` actually rewrote the URL --
+        for a non-Roll20 URL there is nothing to degrade to.
+
+        Returns the response body, or ``None`` if every attempt failed. All
+        failures are logged with their cause: a silent failure here used to be
+        indistinguishable from a legitimately missing image.
+        """
+        candidates = [url]
+        if url != originalUrl:
+            for pattern, replacement in ((r"/original\.([^/]*)$", r"/max.\1"),
+                                         (r"/max\.([^/]*)$", r"/med.\1"),
+                                         (r"/med\.([^/]*)$", r"/thumb.\1")):
+                nextUrl = re.sub(pattern, replacement, candidates[-1])
+                if nextUrl == candidates[-1]:
+                    break
+                candidates.append(nextUrl)
+
+        for candidate in candidates:
+            try:
+                # A timeout is mandatory here: without one a stalled connection
+                # blocks the entire conversion indefinitely. Connection errors
+                # and 5xx responses are retried with backoff by the session
+                # adapter; a 404 is not retried, we fall through to the next
+                # resolution instead.
+                response = _resourceSession().get(candidate, timeout=DOWNLOAD_TIMEOUT)
+            except requests.RequestException as e:
+                self.logWarning("Error downloading '%s': %s" % (candidate, e))
+                continue
+            if response.status_code == 200:
+                return response.content
+            self.logWarning("Error downloading '%s': HTTP %d" % (candidate, response.status_code))
+        return None
 
     @staticmethod
     def getImageFilename(base_path, url, base_filename, fallback=".png"):

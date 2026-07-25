@@ -275,30 +275,37 @@ class Token(Entity):
         return {"flags": {},
                 "name": self.token_name or "Unnamed token",
                 "displayName": self.display_name,
-                "img": img,
+                # v10 folded the token image, tint and mirroring into a
+                # TextureData object; mirroring is a negative scale (ADR-002).
+                "texture": Entity.texture(img,
+                                          tint=self.tint,
+                                          scale_x=-1 if self.mirrorX else 1,
+                                          scale_y=-1 if self.mirrorY else 1,
+                                          anchor=0.5,
+                                          fit="contain",
+                                          alpha_threshold=0.75),
                 "width": roundTenthStep(self.width / 70.0),
                 "height": roundTenthStep(self.height / 70.0),
-                "mirrorX": self.mirrorX,
-                "mirrorY": self.mirrorY,
 		        "alpha": 1,
-                "scale": 1,
                 "elevation": 0,
+                "sort": 0,
                 "rotation": rotation,
                 "lockRotation": lockRotation,
-                "effects": [], #TODO : support effects. Format is : ["icons/svg/frozen.svg", "icons/svg/skull.svg"], etc..
                 "hidden": False,
-                "dimLight": roundTenthStep(self.emits_dim_light),
-                "brightLight": roundTenthStep(self.emits_bright_light),
-                "dimSight": roundTenthStep(self.dim_sight),
-                "brightSight": roundTenthStep(self.bright_sight),
-                "sightAngle": self.sight_angle,
-                "lightAngle": self.light_angle,
-                "lightAlpha": self.light_alpha,
-                "lightAnimation": {
-                    "speed": 5,
-                    "intensity": 5,
-			        "reverse": False
+                # v10 replaced vision/dimSight/brightSight/sightAngle with a
+                # single `sight` object using one unified range.
+                "sight": {
+                    "enabled": self.has_vision,
+                    "range": roundTenthStep(max(self.dim_sight, self.bright_sight)),
+                    "angle": self.sight_angle,
+                    "visionMode": "basic",
+                    "color": None,
+                    "attenuation": 0.1,
+                    "brightness": 0,
+                    "saturation": 0,
+                    "contrast": 0
                 },
+                "detectionModes": [],
                 "light": {
                     "dim": roundTenthStep(self.emits_dim_light),
                     "bright": roundTenthStep(self.emits_bright_light),
@@ -306,12 +313,15 @@ class Token(Entity):
                     "color": self.light_color,
                     "alpha": self.light_alpha,
                     "animation": {
+                        "type": None,
                         "speed": 5,
                         "intensity": 5,
                         "reverse": False
                     },
                     "coloration": 1,
-                    "gradual": True,
+                    "attenuation": 0.5,
+                    "negative": False,
+                    "priority": 0,
                     "luminosity": 0.5,
                     "saturation": 0,
                     "contrast": 0,
@@ -321,16 +331,16 @@ class Token(Entity):
                         "max": 1
                     }
                 },
-                "vision": self.has_vision,
                 "actorId": self.actor_id,
                 "actorLink": False,
                 "disposition": -1,
                 "displayBars": self.display_bars,
                 "bar1": {"attribute": "attributes.bar1" if self.bar1_max != 0 or self.bar1_val != 0 else None},
                 "bar2": {"attribute": "attributes.bar2" if self.bar2_max != 0 or self.bar2_val != 0 else None},
-                "tint": self.tint,
-                "actorData": {
-                    "data": {
+                # v11 replaced the loose `actorData` override object with a
+                # `delta` ActorDelta document (ADR-002).
+                "delta": {
+                    "system": {
                         "attributes": {
                             "bar1": {
                                 "value": self.bar1_val,
@@ -353,19 +363,19 @@ class Actor(Entity):
 
         self.logInfo("Creating Character : %s" % character["name"])
         self.parseAttributes()
-        permissions = {"default": Handout.PERMISSION_NONE}
+        permissions = {"default": Handout.OWNERSHIP_NONE}
         for player in character.get("inplayerjournals", []):
             if player == "all":
-                permissions["default"] = Handout.PERMISSION_LIMITED
+                permissions["default"] = Handout.OWNERSHIP_LIMITED
             elif player != "":
                 player_id = Entity.normalizeID(player)
-                permissions[player_id] = Handout.PERMISSION_LIMITED
+                permissions[player_id] = Handout.OWNERSHIP_LIMITED
         for player in character.get("controlledby", []):
             if player == "all":
-                permissions["default"] = Handout.PERMISSION_OWNER
+                permissions["default"] = Handout.OWNERSHIP_OWNER
             elif player != "":
                 player_id = Entity.normalizeID(player)
-                permissions[player_id] = Handout.PERMISSION_OWNER
+                permissions[player_id] = Handout.OWNERSHIP_OWNER
 
         npc = self.isNPC()
 
@@ -473,11 +483,12 @@ class Actor(Entity):
                 token["bar2"]["attribute"] = "attributes.hp"
         token["randomImg"] = randomImg
         token["actorLink"] = not npc
-        del token["effects"]
-        del token["hidden"]
-        del token["elevation"]
+        # A PrototypeToken has no placement or identity fields of its own -- they
+        # only exist on a placed TokenDocument (ADR-002).
+        for field in ["hidden", "elevation", "sort"]:
+            del token[field]
         if token["actorLink"]:
-            del token["actorData"]["data"]
+            del token["delta"]["system"]
 
         actor_data = {}
         owned_items = []
@@ -514,7 +525,7 @@ class Actor(Entity):
             compendium_actor = self.findCompendiumActor(character["name"])
             if compendium_actor:
                 actor_type = compendium_actor.entity["type"]
-                actor_data = compendium_actor.entity.get("data", compendium_actor.entity.get("system", None))
+                actor_data = compendium_actor.entity.get("system", None)
                 owned_items = compendium_actor.entity["items"]
 
         if self.getArgument("export_as_module", False):
@@ -527,13 +538,13 @@ class Actor(Entity):
         self.entity = {"_id": self._id,
                        "name": self.getName(),
                        "img": self._avatar_filename,
-                       "permission": permissions,
-                       "data": actor_data,
+                       "ownership": permissions,
+                       "system": actor_data,
                        "folder": Entity.normalizeID(folder),
                        "flags": {},
                        "sort": index * Entity.SORT_ORDER,
                        "type": actor_type,
-                       "token": token,
+                       "prototypeToken": token,
                        "items": owned_items,
                        "effects": []
                        }
@@ -1674,7 +1685,7 @@ class Actor(Entity):
                                                         activity, attack, specific, **kwargs)
         # Prevent a weapon (torch, shovel) from being transformed into loot and losing its damage/attack properties
         if compendium_item and (compendium_item.entity["type"] != "loot" or inventory_type == "loot"):
-            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["data"])
+            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
             item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
         owned_item = item.addToOwnedList(items)
@@ -1780,7 +1791,7 @@ class Actor(Entity):
 
             compendium_item = self.findCompendiumItem("Items", name)
             if compendium_item is not None and compendium_item.entity["type"] == "weapon":
-                weapon.type = compendium_item.entity["data"]["weaponType"]
+                weapon.type = compendium_item.entity["system"]["weaponType"]
             elif "Improvised Weapon" in properties:
                 weapon.type = ItemWeapon.IMPROVISED
             elif item_type == "Ammunition":
@@ -1867,7 +1878,7 @@ class Actor(Entity):
         compendium_item = self.findCompendiumItem("Class Features", name)
         item = self._converter.items.createItemFeat(None, name, description, activation, attack, recharge, **kwargs)
         if compendium_item and compendium_item.entity["type"] != "loot":
-            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["data"])
+            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
             item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
         owned_item = item.addToOwnedList(items)
@@ -2015,7 +2026,7 @@ class Actor(Entity):
                 is_feat = True
             elif compendium_item.entity["type"] == "weapon":
                 is_weapon = True
-                weapon_type = compendium_item.entity["data"]["weaponType"]
+                weapon_type = compendium_item.entity["system"]["weaponType"]
 
         if is_feat is False and (has_attack or is_weapon):
             attributes = ItemInventoryAttributes()
@@ -2115,7 +2126,7 @@ class Actor(Entity):
                 is_feat = True
             elif compendium_item.entity["type"] == "weapon":
                 is_weapon = True
-                weapon_type = compendium_item.entity["data"]["weaponType"]
+                weapon_type = compendium_item.entity["system"]["weaponType"]
 
         if is_feat is False and (has_attack or is_weapon):
             attributes = ItemInventoryAttributes()
@@ -2194,7 +2205,7 @@ class Actor(Entity):
                                                     level, school, components, preparation, scaling, **kwargs)
 
         if compendium_item and compendium_item.entity["type"] != "loot":
-            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["data"])
+            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
             item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
         owned_item = item.addToOwnedList(items)
@@ -2409,10 +2420,10 @@ class Actor(Entity):
         compendium_item = self.findCompendiumItem("Classes", name)
         item = self._converter.items.createItemClass(None, name, name, level, subclass, **kwargs)
         if compendium_item and compendium_item.entity["type"] != "loot":
-            del item.entity["data"]["saves"]
-            del item.entity["data"]["skills"]
-            del item.entity["data"]["spellcasting"]
-            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["data"])
+            del item.entity["system"]["saves"]
+            del item.entity["system"]["skills"]
+            del item.entity["system"]["spellcasting"]
+            item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
             item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
         return item.addToOwnedList(items)

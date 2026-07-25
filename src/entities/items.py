@@ -83,12 +83,12 @@ class Item(Entity):
         
         self.entity = {"_id": self._id,
                 "name":  name or "Unknown Item",
-                "permission": {"default": Item.PERMISSION_NONE},
+                "ownership": {"default": Item.OWNERSHIP_NONE},
                 "folder": None,
                 "flags": {},
                 "type": item_type,
                 "img": img,
-                "data": data,
+                "system": data,
                 "sort": 0,
                 "effects": []
                 }
@@ -124,19 +124,19 @@ class Item(Entity):
         if gmnotes.strip() != "":
             content += "\n<section class=\"secret\"><p>GM Notes : </p>" + gmnotes + "</section>"
         content = item.replaceCompendiumLinks(item.replaceEntityLinks(content))
-        permissions = {"default": Item.PERMISSION_NONE}
+        permissions = {"default": Item.OWNERSHIP_NONE}
         for player in handout.get("inplayerjournals", []):
             if player == "all":
-                permissions["default"] = Item.PERMISSION_OBSERVER
+                permissions["default"] = Item.OWNERSHIP_OBSERVER
             elif player != "":
                 player_id = Entity.normalizeID(player)
-                permissions[player_id] = Item.PERMISSION_OBSERVER
+                permissions[player_id] = Item.OWNERSHIP_OBSERVER
         for player in handout.get("controlledby", []):
             if player == "all":
-                permissions["default"] = Item.PERMISSION_OWNER
+                permissions["default"] = Item.OWNERSHIP_OWNER
             elif player != "":
                 player_id = Entity.normalizeID(player)
-                permissions[player_id] = Item.PERMISSION_OWNER
+                permissions[player_id] = Item.OWNERSHIP_OWNER
         avatar_filename = None
         if handout["avatar"] != "":
             if item.getArgument("use_original_image_urls", False):
@@ -157,13 +157,13 @@ class Item(Entity):
         item.entity = {
             "_id": item._id,
             "name":  handout["name"],
-            "permission": permissions,
+            "ownership": permissions,
             "folder": Entity.normalizeID(parent),
             "flags": {},
             "type": "loot",
             "img": avatar_filename,
             "sort": index * Entity.SORT_ORDER,
-            "data": data
+            "system": data
         }
         return item
 
@@ -172,13 +172,12 @@ class Item(Entity):
         item = Item(database, id, compendium_item.entity["name"])
         item.entity = copy.deepcopy(compendium_item.entity)
         item.entity["_id"] = item.getID()
-        item.entity["permission"] = {"default": Item.PERMISSION_NONE}
+        item.entity["ownership"] = {"default": Item.OWNERSHIP_NONE}
         item.entity["folder"] = None
-        if "system" in item.entity:
-            item.entity["data"] = item.entity["system"]
-            del item.entity["system"]
+        # Older compendium packs may still use the pre-v10 `data` key (ADR-002).
+        Entity.normalizeSystemData(item)
         if custom_data and item.getArgument("no_compendium_overwrite", False) is False:
-            item.entity["data"].update(custom_data)
+            item.entity["system"].update(custom_data)
 
         return item
 

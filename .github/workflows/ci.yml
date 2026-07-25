@@ -1,0 +1,70 @@
+# Continuous integration for R20Converter. See docs/adr/ADR-004-testing-and-ci.md
+#
+# The project has no automated coverage historically, so this workflow is
+# deliberately cheap and fast: it verifies that every Python module still parses,
+# that the unit tests pass on the Python versions we support, and that the Vue
+# front-end still lints and builds.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the oldest interpreter the pinned build set still installs on;
+        # 3.12 guards against regressions on what contributors actually run.
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-dev.txt
+
+      - name: Byte-compile all sources
+        # Catches syntax errors in the many modules that no test imports yet.
+        run: python -m compileall -q src
+
+      - name: Run tests
+        run: python -m pytest
+
+  client:
+    name: Front-end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The build chain is vue-cli 4 / webpack 4, which needs the legacy
+          # OpenSSL provider on modern Node; the npm scripts already pass it.
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Lint
+        working-directory: client
+        run: npm run lint -- --no-fix
+
+      - name: Build
+        working-directory: client
+        run: npm run build
