@@ -21,16 +21,19 @@ if sys.stdout is None:
         sys.stdout = io.BytesIO()
         sys.stderr = io.BytesIO()
 
+import messages
 from version import version
 from R20Converter import R20Converter
+
+# The GUI is optional: it pulls in eel/tkinter/wx, which are not installed in
+# headless or CLI-only environments, and which cx_freeze sometimes fails to
+# resolve on the first import attempt inside a frozen bundle. A failure here is
+# not fatal — we simply lose the "launch the GUI when given no arguments"
+# behaviour and remain a pure CLI tool.
 try:
     from GUI import GUI
-except:
-    # Because fuck you python and cx_freeze and mac and everything
-    try:
-        from GUI import GUI
-    except:
-        GUI = None
+except Exception:
+    GUI = None
 
 parser = argparse.ArgumentParser(description="R20Converter v{}".format(version), epilog="Convert Roll20 campaigns into Foundry VTT worlds or modules.")
 parser.add_argument("path", metavar="destination-directory", help="The destination directory in Data/worlds/ or Data/modules/")
@@ -45,8 +48,12 @@ parser.add_argument("--restrict-movement", action="store_true", help="Force all 
 parser.add_argument("--force-hp-for-token-bar1", action="store_true", help="Forces the use of HP attribute for all tokens' first bar")
 parser.add_argument("--force-hp-for-token-bar2", action="store_true", help="Forces the use of HP attribute for all tokens' second bar")
 parser.add_argument("--add-walls-around-map", action="store_true", help="Add 4 walls to enclose the map and cut off view/movement to the side table")
-parser.add_argument("--enable-fog", action="store_true", help="Enable Fog Exploration on all Scenes with Dynamic Lighting regardless of Advanced Fog of War setting")
-parser.add_argument("--disable-fog", action="store_true", help="Disable Fog Exploration on all Scenes with Dynamic Lighting regardless of Advanced Fog of War setting")
+# --enable-fog and --disable-fog are direct opposites; passing both used to be
+# accepted silently with undefined precedence. argparse now rejects the
+# combination for us.
+fog_group = parser.add_mutually_exclusive_group()
+fog_group.add_argument("--enable-fog", action="store_true", help="Enable Fog Exploration on all Scenes with Dynamic Lighting regardless of Advanced Fog of War setting")
+fog_group.add_argument("--disable-fog", action="store_true", help="Disable Fog Exploration on all Scenes with Dynamic Lighting regardless of Advanced Fog of War setting")
 parser.add_argument("--cleanup-scenes", action="store_true", help="Remove any tiles, tokens or walls that are outside of a scene's boundary")
 parser.add_argument("--interactive", action="store_true", help="Ask questions about decisions to be made during the conversion process.")
 parser.add_argument("--auto-doors", action="store_true", help="Automatically detect doors and set them as such.")
@@ -73,8 +80,15 @@ parser.add_argument("--disable-module-scenes", action="store_true", help="Disabl
 parser.add_argument("--disable-module-playlists", action="store_true", help="Disable conversion of Playlists in the module (requires --export-as-module)")
 parser.add_argument("--disable-module-tables", action="store_true", help="Disable conversion of rollable tables in the module (requires --export-as-module)")
 parser.add_argument("--disable-module-decks", action="store_true", help="Disable conversion of card decks in the module (requires --export-as-module)")
+# The conversion code in R20Converter.convert() has always honoured this option,
+# but the flag itself was never declared, so it was unreachable from the CLI.
+parser.add_argument("--disable-module-items", action="store_true", help="Disable conversion of Items in the module (requires --export-as-module)")
 parser.add_argument("--dont-convert-chat", action="store_true", help="Disable converting the chat and leave the chat log empty")
-parser.add_argument("--folder-as-items", action="append", default=["Magic Items"], help="Converts each entry in a journal folder into items. Useful for 'Magic Items' folders. Can be passed multiple times to convert more than one folder.")
+# argparse's "append" action appends to the default list rather than replacing
+# it, so a non-empty default here would make "Magic Items" impossible to opt out
+# of. We default to an empty list and apply the fallback after parsing instead.
+DEFAULT_FOLDERS_AS_ITEMS = ["Magic Items"]
+parser.add_argument("--folder-as-items", action="append", default=[], help="Converts each entry in a journal folder into items. Useful for 'Magic Items' folders. Can be passed multiple times to convert more than one folder. (Default: %s)" % ", ".join(DEFAULT_FOLDERS_AS_ITEMS))
 parser.add_argument("--dont-export-actor-items", action="store_true", help="Items from actors will be exported as individual Entity Items. This option disables that behavior and no items will be created.")
 parser.add_argument("--no-duplicate-actor-items", action="store_true", help="This option causes items with the same name from different actors to be exported under a single item. The first processed actor with the item of that name gets their item in the item entities.")
 parser.add_argument("--use-original-image-urls", action="store_true", help="Do not copy images to the world folder but use Roll20 URL instead. (NOT recommended)")
@@ -95,6 +109,12 @@ if __name__ == "__main__":
             pass
 
     args = parser.parse_args()
+
+    # See DEFAULT_FOLDERS_AS_ITEMS: apply the default only when the user gave no
+    # --folder-as-items at all, so that passing the option replaces the default
+    # instead of adding to it.
+    if not args.folder_as_items:
+        args.folder_as_items = list(DEFAULT_FOLDERS_AS_ITEMS)
 
     if os.path.exists(args.path):
         if args.overwrite:
@@ -121,16 +141,13 @@ if __name__ == "__main__":
         try:
             import traceback
             traceback.print_exc()
-        except:
+        except Exception:
             pass
 
     if error:
-        message = "Error converting campaign with R20Converter v" + version + ": \n" + str(error)
-        message += "\nPlease contact the author with the log of the error from the console window"
-    else:
-        message = "\nConversion completed.\n\n"
-        message += "It is strongly suggested to check the sheets of the NPCs and player characters for any errors or missing information, or for adding special traits.\n"
-        message += "Some things may not have been carried over, especially to-hit, damage, AC or saving throw modifiers or more complicated weapon or spell macros\n"
-        message += "If using The Forge (https://forge-vtt.com) for hosting your Foundry games, you can now import the generated world using the Import Wizard.\n"
-        message += "\nThank you for your support!"
-    print(message)
+        print(messages.conversionErrorMessage(version, error))
+        # Exit non-zero so that shell scripts, CI and batch conversions can
+        # actually detect a failed run; previously every outcome exited 0.
+        sys.exit(1)
+
+    print(messages.conversionSuccessMessage())

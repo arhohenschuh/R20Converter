@@ -121,10 +121,18 @@ class R20Converter(object):
         self.game_system = module.get("name", self.game_system)
 
     def mergeDictionaries(self, destination, source):
-        """
-        >>> a = { 'first' : { 'all_rows' : { 'pass' : 'dog', 'number' : '1' } } }
-        >>> b = { 'first' : { 'all_rows' : { 'fail' : 'cat', 'number' : '5' } } }
-        >>> merge(b, a) == { 'first' : { 'all_rows' : { 'pass' : 'dog', 'fail' : 'cat', 'number' : '5' } } }
+        """Recursively merge ``source`` into ``destination`` and return it.
+
+        Values in ``source`` win over values already in ``destination``; nested
+        dictionaries are merged rather than replaced wholesale. Used to flatten
+        a game system's ``template.json`` inheritance ("templates" lists) into a
+        single concrete actor template.
+
+        >>> converter = R20Converter.__new__(R20Converter)
+        >>> a = {'first': {'all_rows': {'pass': 'dog', 'number': '1'}}}
+        >>> b = {'first': {'all_rows': {'fail': 'cat', 'number': '5'}}}
+        >>> converter.mergeDictionaries(b, a) == {'first': {'all_rows': {'pass': 'dog', 'fail': 'cat', 'number': '1'}}}
+        True
         """
         for key, value in source.items():
             if isinstance(value, dict):
