@@ -33,9 +33,17 @@ converter now emits the modern field names itself:
   than the deprecated per-type `@Actor[…]` / `@Compendium[…]` forms.
 - Compendium entries read from a source pack are up-converted to `system` on
   load, so packs authored for older Foundry versions still work.
-- **Remaining**: scenes and their embedded documents (tokens, tiles, notes,
-  drawings, lights, walls) are still written in the v9 shape. Progress is
-  tracked in the table in ADR-002.
+- Scenes carry `background` and `grid` objects instead of the flat `img`,
+  `shiftX`/`shiftY` and `grid*` fields, plus the current `fog` and `environment`
+  groupings.
+- Tokens use `texture`, `sight` and `delta` in place of `img`/`tint`/`scale`/
+  `mirrorX`/`mirrorY`, `vision`/`dimSight`/`brightSight`/`sightAngle` and
+  `actorData`.
+- Tiles use `texture` plus `sort`/`elevation`/`restrictions`; drawings use a
+  `shape` object with a flat point array; ambient lights nest their emission
+  settings under `config`.
+- Mirrored tiles and tokens are written as a negative texture scale rather than
+  a negative width/height, which v13 rejects.
 
 ### Correctness
 - Add the `--disable-module-items` option. The conversion code honoured it but

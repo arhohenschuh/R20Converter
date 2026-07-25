@@ -228,3 +228,53 @@ class TestDocumentLinks(object):
         html = '<a href="http://journal.roll20.net/item/-ABC">a{b}c</a>'
         assert linker.replaceEntityLinks(html) == \
             "@UUID[Item.%s]{a_b_c}" % Entity.normalizeID("-ABC")
+
+
+class TestTextureData(object):
+    """v10 replaced flat `img`/`tint`/`scale`/`mirror*` fields with TextureData."""
+
+    def testDefaults(self):
+        texture = Entity.texture("worlds/r20/map.png")
+        assert texture["src"] == "worlds/r20/map.png"
+        assert texture["tint"] == "#ffffff"
+        assert texture["scaleX"] == 1 and texture["scaleY"] == 1
+        assert texture["offsetX"] == 0 and texture["offsetY"] == 0
+        assert texture["fit"] == "fill"
+
+    def testEmptySourceBecomesNull(self):
+        # An empty string is not a valid FilePathField value.
+        assert Entity.texture("")["src"] is None
+
+    def testMirroringIsANegativeScale(self):
+        texture = Entity.texture("a.png", scale_x=-1, scale_y=-1)
+        assert texture["scaleX"] == -1
+        assert texture["scaleY"] == -1
+
+    def testTintIsNeverNull(self):
+        # ColorField on TextureData is nullable:false.
+        assert Entity.texture("a.png", tint=None)["tint"] == "#ffffff"
+        assert Entity.texture("a.png", tint="#ff0000")["tint"] == "#ff0000"
+
+
+class TestShapeData(object):
+    """v10 moved Drawing `type`/`width`/`height`/`points` into `shape`."""
+
+    def testDefaultsToRectangle(self):
+        shape = Entity.shape(100, 50)
+        assert shape["type"] == "r"
+        assert shape["width"] == 100
+        assert shape["height"] == 50
+        assert shape["points"] == []
+
+    def testValidShapeTypes(self):
+        # v13's ShapeData.TYPES has exactly four values; the v9 text ("t") and
+        # freehand ("f") types no longer exist.
+        assert Entity.SHAPE_RECTANGLE == "r"
+        assert Entity.SHAPE_CIRCLE == "c"
+        assert Entity.SHAPE_ELLIPSE == "e"
+        assert Entity.SHAPE_POLYGON == "p"
+
+    def testPointsArePassedThrough(self):
+        shape = Entity.shape(10, 10, Entity.SHAPE_POLYGON, [0, 0, 10, 0, 10, 10])
+        assert shape["type"] == "p"
+        assert shape["points"] == [0, 0, 10, 0, 10, 10]

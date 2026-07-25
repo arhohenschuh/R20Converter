@@ -90,17 +90,38 @@ than renames and share the same test scaffolding.
 | ✅ | ChatMessage | `roll` → `rolls` | `chat.py` |
 | ✅ | JournalEntry | `content`/`img` → `pages[]` | `journal.py` |
 | ✅ | *(enriched text)* | `@Compendium[…]` / `@Actor[…]` → `@UUID[…]` | `base.py` |
-| | Token | `actorData` → `delta` (an ActorDelta document) | `actors.py`, `scenes.py` |
-| | Scene | `img`/`shiftX`/`shiftY` → `background.{src,offsetX,offsetY}` | `scenes.py` |
-| | Scene | `gridType`/`gridColor`/`gridAlpha`/`gridDistance`/`gridUnits` → `grid.*` | `scenes.py` |
-| | Token | `img`/`tint` → `texture.{src,tint}`; `scale`/`mirrorX`/`mirrorY` → `texture.scaleX/scaleY` | `scenes.py` |
-| | Token | `vision`/`dimSight`/`brightSight`/`sightAngle` → `sight.*` | `scenes.py` |
-| | Token | `dimLight`/`brightLight`/`lightAngle`/`lightColor`/`lightAlpha`/`lightAnimation` → `light.*` | `scenes.py` |
-| | Tile | `img`/`tint` → `texture.*` | `scenes.py` |
-| | Note | `icon`/`tint` → `texture.*` | `scenes.py` |
-| | Drawing | `type`/`width`/`height`/`points` → `shape.*` | `scenes.py` |
-| | AmbientLight | `dim`/`bright`/`angle`/`tintColor`/`tintAlpha`/`lightAnimation`/`darkness` → `config.*` | `scenes.py` |
-| | Wall | `sense` → `sight` + `light` | `scenes.py` |
+| ✅ | Token | `actorData` → `delta` (an ActorDelta document) | `actors.py`, `scenes.py` |
+| ✅ | Scene | `img`/`shiftX`/`shiftY` → `background.{src,offsetX,offsetY}` | `scenes.py` |
+| ✅ | Scene | `gridType`/`gridColor`/`gridAlpha`/`gridDistance`/`gridUnits` → `grid.*` | `scenes.py` |
+| ✅ | Scene | `fogExploration`/`fogReset` → `fog.*`; `globalLight`/`darkness` → `environment.*` | `scenes.py` |
+| ✅ | Token | `img`/`tint` → `texture.{src,tint}`; `scale`/`mirrorX`/`mirrorY` → `texture.scaleX/scaleY` | `actors.py` |
+| ✅ | Token | `vision`/`dimSight`/`brightSight`/`sightAngle` → `sight.*` | `actors.py` |
+| ✅ | Tile | `img`/`tint`/`scale` → `texture.*`; `z` → `sort`; `overhead`/`roof` → `elevation`/`restrictions` | `scenes.py` |
+| ✅ | Drawing | `type`/`width`/`height`/`points` → `shape.*`; `z` → `elevation` | `scenes.py` |
+| ✅ | AmbientLight | `dim`/`bright`/`angle`/`tintAlpha`/`lightAnimation` → `config.*`; `t` removed | `scenes.py` |
+| n/a | Wall | `sense` → `sight` + `light` | already emitted the split fields |
+| n/a | Note | `icon`/`tint` → `texture.*` | the converter emits no notes |
+
+Three Foundry behaviours discovered while doing this work are worth recording,
+because they are not obvious from the field names alone:
+
+* **Text and freehand drawings no longer exist as shape types.** `ShapeData.TYPES`
+  has exactly four values — `r`, `c`, `e`, `p`. A v9 text drawing (`"t"`) becomes
+  a rectangle that carries `text`, and a v9 freehand drawing (`"f"`) becomes a
+  polygon with a non-zero `bezierFactor`.
+* **`shape.points` is a flat `[x0, y0, x1, y1, …]` number array**, not a list of
+  `[x, y]` pairs as in v9. Writing pairs produces a drawing that fails schema
+  validation rather than one that merely looks wrong.
+* **Negative width/height is no longer how you mirror a tile or token.** Both
+  are constrained to be positive; mirroring is a negative `texture.scaleX` or
+  `texture.scaleY`.
+
+A handful of the changes above (`z` → `elevation`/`sort`, `fog.*`,
+`environment.*`) *are* still auto-migrated by v13, because they were v11 → v12
+changes and those shims survive until v14. They are written in the current form
+anyway: it costs nothing, removes deprecation warnings, and avoids a second pass
+over the same code when v14 lands.
+
 
 ## Alternatives considered
 

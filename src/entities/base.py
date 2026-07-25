@@ -183,6 +183,13 @@ class Entity(object):
     OWNERSHIP_LIMITED = 1
     OWNERSHIP_OBSERVER = 2
     OWNERSHIP_OWNER = 3
+    # Foundry's ShapeData.TYPES. The v9 text ("t") and freehand ("f") drawing
+    # types no longer exist: text is a rectangle carrying text, and freehand is
+    # a polygon with a non-zero bezierFactor (ADR-002).
+    SHAPE_RECTANGLE = "r"
+    SHAPE_CIRCLE = "c"
+    SHAPE_ELLIPSE = "e"
+    SHAPE_POLYGON = "p"
     SORT_ORDER = 10000
     # Ensures ids are unique accross all entities
     id_database = {}
@@ -229,6 +236,45 @@ class Entity(object):
         if not self.isCompendiumEntity:
             return self.getID()
         return "%s.%s.%s" % (self._database._package, self._database._pack_name, self.getID())
+
+    @staticmethod
+    def shape(width, height, shape_type=None, points=None):
+        """Build a Foundry ShapeData object for a Drawing.
+
+        Foundry v10 moved the drawing's `type`, `width`, `height` and `points`
+        into this nested object and the migration was removed in 12.316
+        (ADR-002). Points are a flat `[x0, y0, x1, y1, ...]` number array, not
+        a list of pairs.
+        """
+        return {
+            "type": shape_type or Entity.SHAPE_RECTANGLE,
+            "width": width,
+            "height": height,
+            "points": points or [],
+        }
+
+    @staticmethod
+    def texture(src, tint=None, scale_x=1, scale_y=1, anchor=0, fit="fill", alpha_threshold=0):
+        """Build a Foundry TextureData object.
+
+        Foundry v10 replaced the flat `img`/`tint`/`scale`/`mirrorX`/`mirrorY`
+        fields on scenes, tiles and tokens with this shared structure, and the
+        migration was removed in 12.316 (ADR-002). Mirroring is expressed as a
+        negative scale rather than a separate flag.
+        """
+        return {
+            "src": src or None,
+            "anchorX": anchor,
+            "anchorY": anchor,
+            "offsetX": 0,
+            "offsetY": 0,
+            "fit": fit,
+            "scaleX": scale_x,
+            "scaleY": scale_y,
+            "rotation": 0,
+            "tint": tint or "#ffffff",
+            "alphaThreshold": alpha_threshold,
+        }
 
     @staticmethod
     def compendiumUuid(full_id, document):

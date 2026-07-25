@@ -275,30 +275,37 @@ class Token(Entity):
         return {"flags": {},
                 "name": self.token_name or "Unnamed token",
                 "displayName": self.display_name,
-                "img": img,
+                # v10 folded the token image, tint and mirroring into a
+                # TextureData object; mirroring is a negative scale (ADR-002).
+                "texture": Entity.texture(img,
+                                          tint=self.tint,
+                                          scale_x=-1 if self.mirrorX else 1,
+                                          scale_y=-1 if self.mirrorY else 1,
+                                          anchor=0.5,
+                                          fit="contain",
+                                          alpha_threshold=0.75),
                 "width": roundTenthStep(self.width / 70.0),
                 "height": roundTenthStep(self.height / 70.0),
-                "mirrorX": self.mirrorX,
-                "mirrorY": self.mirrorY,
 		        "alpha": 1,
-                "scale": 1,
                 "elevation": 0,
+                "sort": 0,
                 "rotation": rotation,
                 "lockRotation": lockRotation,
-                "effects": [], #TODO : support effects. Format is : ["icons/svg/frozen.svg", "icons/svg/skull.svg"], etc..
                 "hidden": False,
-                "dimLight": roundTenthStep(self.emits_dim_light),
-                "brightLight": roundTenthStep(self.emits_bright_light),
-                "dimSight": roundTenthStep(self.dim_sight),
-                "brightSight": roundTenthStep(self.bright_sight),
-                "sightAngle": self.sight_angle,
-                "lightAngle": self.light_angle,
-                "lightAlpha": self.light_alpha,
-                "lightAnimation": {
-                    "speed": 5,
-                    "intensity": 5,
-			        "reverse": False
+                # v10 replaced vision/dimSight/brightSight/sightAngle with a
+                # single `sight` object using one unified range.
+                "sight": {
+                    "enabled": self.has_vision,
+                    "range": roundTenthStep(max(self.dim_sight, self.bright_sight)),
+                    "angle": self.sight_angle,
+                    "visionMode": "basic",
+                    "color": None,
+                    "attenuation": 0.1,
+                    "brightness": 0,
+                    "saturation": 0,
+                    "contrast": 0
                 },
+                "detectionModes": [],
                 "light": {
                     "dim": roundTenthStep(self.emits_dim_light),
                     "bright": roundTenthStep(self.emits_bright_light),
@@ -306,12 +313,15 @@ class Token(Entity):
                     "color": self.light_color,
                     "alpha": self.light_alpha,
                     "animation": {
+                        "type": None,
                         "speed": 5,
                         "intensity": 5,
                         "reverse": False
                     },
                     "coloration": 1,
-                    "gradual": True,
+                    "attenuation": 0.5,
+                    "negative": False,
+                    "priority": 0,
                     "luminosity": 0.5,
                     "saturation": 0,
                     "contrast": 0,
@@ -321,18 +331,15 @@ class Token(Entity):
                         "max": 1
                     }
                 },
-                "vision": self.has_vision,
                 "actorId": self.actor_id,
                 "actorLink": False,
                 "disposition": -1,
                 "displayBars": self.display_bars,
                 "bar1": {"attribute": "attributes.bar1" if self.bar1_max != 0 or self.bar1_val != 0 else None},
                 "bar2": {"attribute": "attributes.bar2" if self.bar2_max != 0 or self.bar2_val != 0 else None},
-                "tint": self.tint,
-                # Foundry removed the migration of the v9 `data` key inside
-                # actorData in 12.316 (ADR-002). The surrounding `actorData` ->
-                # `delta` rename is part of the Token schema port.
-                "actorData": {
+                # v11 replaced the loose `actorData` override object with a
+                # `delta` ActorDelta document (ADR-002).
+                "delta": {
                     "system": {
                         "attributes": {
                             "bar1": {
@@ -476,11 +483,12 @@ class Actor(Entity):
                 token["bar2"]["attribute"] = "attributes.hp"
         token["randomImg"] = randomImg
         token["actorLink"] = not npc
-        del token["effects"]
-        del token["hidden"]
-        del token["elevation"]
+        # A PrototypeToken has no placement or identity fields of its own -- they
+        # only exist on a placed TokenDocument (ADR-002).
+        for field in ["hidden", "elevation", "sort"]:
+            del token[field]
         if token["actorLink"]:
-            del token["actorData"]["system"]
+            del token["delta"]["system"]
 
         actor_data = {}
         owned_items = []
