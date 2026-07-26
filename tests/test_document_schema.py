@@ -1,4 +1,4 @@
-"""Regression tests for the Foundry v13 document schema (ADR-002, ADR-005).
+"""Regression tests for the Foundry v13 document schema (ADR-002, ADR-005, ADR-006).
 
 Foundry removed every automatic v9 -> v10 document migration in 12.316, so the
 converter has to emit the modern field names itself. These tests pin the
@@ -10,6 +10,7 @@ import pytest
 
 from entities.base import Entity
 from entities.folders import Folder
+from entities.items import Item
 from entities.journal import Handout
 from entities.tables import Table
 
@@ -278,3 +279,59 @@ class TestShapeData(object):
         shape = Entity.shape(10, 10, Entity.SHAPE_POLYGON, [0, 0, 10, 0, 10, 10])
         assert shape["type"] == "p"
         assert shape["points"] == [0, 0, 10, 0, 10, 10]
+
+
+class TestClassIdentifier(object):
+    """dnd5e 2.1 replaced the `subclass` string with a linked document (ADR-006)."""
+
+    def makeClass(self, tmp_path, name="Wizard", level=10):
+        database = FakeDatabase(str(tmp_path))
+        return Item.createItemClass(database, None, name, "", level)
+
+    def testClassCarriesAnIdentifier(self, tmp_path):
+        item = self.makeClass(tmp_path)
+        assert item.entity["system"]["identifier"] == "wizard"
+
+    def testDeadSubclassFieldIsGone(self, tmp_path):
+        # The whole point of ADR-006: writing this key looked like it worked,
+        # because Foundry drops unknown keys silently instead of complaining.
+        item = self.makeClass(tmp_path)
+        assert "subclass" not in item.entity["system"]
+
+    def testMultiWordClassIsSlugified(self, tmp_path):
+        item = self.makeClass(tmp_path, name="Blood Hunter")
+        assert item.entity["system"]["identifier"] == "blood-hunter"
+
+    def testLevelStillSurvives(self, tmp_path):
+        item = self.makeClass(tmp_path, level=7)
+        assert item.entity["system"]["levels"] == 7
+
+
+class TestSubclassDocument(object):
+    """The companion document, bound to its class by identifier (ADR-006)."""
+
+    def makeSubclass(self, tmp_path, name="School of Evocation", class_name="Wizard"):
+        database = FakeDatabase(str(tmp_path))
+        return Item.createItemSubclass(database, None, name, "", class_name)
+
+    def testIsASubclassDocument(self, tmp_path):
+        assert self.makeSubclass(tmp_path).entity["type"] == "subclass"
+
+    def testLinksToItsClass(self, tmp_path):
+        system = self.makeSubclass(tmp_path).entity["system"]
+        assert system["classIdentifier"] == "wizard"
+        assert system["identifier"] == "school-of-evocation"
+
+    def testIdentifierMatchesTheClassItWasBuiltFrom(self, tmp_path):
+        # If these two ever diverge the sheet shows an orphaned subclass, so
+        # pin that they are derived the same way from the same name.
+        database = FakeDatabase(str(tmp_path))
+        klass = Item.createItemClass(database, None, "Warlock", "", 3)
+        subclass = Item.createItemSubclass(database, None, "The Hexblade", "", "Warlock")
+        assert (subclass.entity["system"]["classIdentifier"]
+                == klass.entity["system"]["identifier"])
+
+    def testKeepsTheRoll20NameVerbatim(self, tmp_path):
+        # ADR-006 deliberately does not resolve the name against a compendium.
+        item = self.makeSubclass(tmp_path, name="Tempest Domain", class_name="Cleric")
+        assert item.entity["name"] == "Tempest Domain"

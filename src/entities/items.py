@@ -1,7 +1,19 @@
 from .base import DatabaseFile, Entity
-from .base import DatabaseFile, Entity
+from slugify import slugify
 import os
 import copy
+
+
+def identifierFor(name):
+    """Slugify a class or subclass name into a dnd5e ``identifier``.
+
+    dnd5e links a subclass to its class by matching the subclass's
+    ``system.classIdentifier`` against the class's ``system.identifier``
+    (ADR-006), so both sides have to derive the same string from the same name.
+    Mirrors Foundry's ``String#slugify({strict: true})``: lower case, runs of
+    non-alphanumerics collapsed to a single dash, no leading or trailing dash.
+    """
+    return slugify(name or "")
 
 class Items(DatabaseFile):
     def __init__(self, converter, filename="items.db"):
@@ -72,8 +84,11 @@ class Items(DatabaseFile):
         return Item.createItemSpell(self, id, name, description, activation, attack,
                         level, school, components, preparation, scaling, **kwargs)
 
-    def createItemClass(self, id, name, description, level, subclass, **kwargs):
-        return Item.createItemClass(self, id, name, description, level, subclass, **kwargs)
+    def createItemClass(self, id, name, description, level, **kwargs):
+        return Item.createItemClass(self, id, name, description, level, **kwargs)
+
+    def createItemSubclass(self, id, name, description, class_name, **kwargs):
+        return Item.createItemSubclass(self, id, name, description, class_name, **kwargs)
 
 class Item(Entity):
     def __init__(self, database, item_id, name, item_type="loot", img=None, data={}):
@@ -283,11 +298,24 @@ class Item(Entity):
 
         
     @staticmethod
-    def createItemClass(database, id, name, description, level, subclass, **kwargs):
-        classData = ItemClass(name, level, subclass)
+    def createItemClass(database, id, name, description, level, **kwargs):
+        classData = ItemClass(name, level)
         kwargs.update(classData.getDict())
         data = Item.createStandardData(description, **kwargs)
         return Item(database, id, name, "class", None, data)
+
+    @staticmethod
+    def createItemSubclass(database, id, name, description, class_name, **kwargs):
+        """Build the ``subclass`` document that dnd5e 2.1+ expects (ADR-006).
+
+        ``class_name`` is the *class* this subclass belongs to, not the
+        subclass itself; it is slugified into ``classIdentifier``, which is the
+        only thing tying the two documents together on the sheet.
+        """
+        subclassData = ItemSubclass(name, class_name)
+        kwargs.update(subclassData.getDict())
+        data = Item.createStandardData(description, **kwargs)
+        return Item(database, id, name, "subclass", None, data)
 
 
 # Generic item variables
@@ -887,12 +915,12 @@ class ItemBackpack:
 
 # Class specific item variables
 class ItemClass:
-    def __init__(self, name, level, subclass, hitdice=None):
+    def __init__(self, name, level, hitdice=None):
         try:
             self.level = int(level)
         except:
             self.level = 1
-        self.subclass = subclass
+        self.identifier = identifierFor(name)
         self.hitdice = hitdice
         cl = name.strip().lower()
         # Set class hitdice
@@ -929,7 +957,9 @@ class ItemClass:
     def getDict(self):
         return {
             "levels": self.level,
-            "subclass": self.subclass,
+            # dnd5e dropped `subclass` in 2.1; the subclass is its own document
+            # now and finds this class by matching `identifier` (ADR-006).
+            "identifier": self.identifier,
             "hitDice": self.hitdice,
             "hitDiceUsed": 0,
             "saves": [],
@@ -942,4 +972,24 @@ class ItemClass:
                 "progression": self.spell_progression,
                 "ability": self.spell_ability
             }
+        }
+
+
+class ItemSubclass:
+    """The ``subclass`` document dnd5e has expected since 2.1 (ADR-006).
+
+    Deliberately thin. Roll20's OGL sheet stores the subclass as a bare string,
+    so a name is genuinely all we have; inventing features here would mean
+    guessing which book the table plays with. The GM links it to real content.
+    """
+
+    def __init__(self, name, class_name):
+        self.identifier = identifierFor(name)
+        self.class_identifier = identifierFor(class_name)
+
+    def getDict(self):
+        return {
+            "identifier": self.identifier,
+            "classIdentifier": self.class_identifier,
+            "advancement": [],
         }

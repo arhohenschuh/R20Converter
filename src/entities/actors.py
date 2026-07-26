@@ -2418,7 +2418,7 @@ class Actor(Entity):
     def createItemClass(self, items, name, level, subclass="", **kwargs):
         name = name if name != "" else "<unknown class>"
         compendium_item = self.findCompendiumItem("Classes", name)
-        item = self._converter.items.createItemClass(None, name, name, level, subclass, **kwargs)
+        item = self._converter.items.createItemClass(None, name, name, level, **kwargs)
         if compendium_item and compendium_item.entity["type"] != "loot":
             del item.entity["system"]["saves"]
             del item.entity["system"]["skills"]
@@ -2426,6 +2426,16 @@ class Actor(Entity):
             item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
             item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
+        owned_class = item.addToOwnedList(items)
+        # dnd5e stopped reading `system.subclass` in 2.1: the subclass is now a
+        # document of its own, linked by identifier (ADR-006).
+        if subclass and str(subclass).strip():
+            self.createItemSubclass(items, str(subclass).strip(), name)
+        return owned_class
+
+    def createItemSubclass(self, items, name, class_name):
+        item = self._converter.items.createItemSubclass(None, name, "", class_name)
+        item.entity["img"] = self._avatar_filename
         return item.addToOwnedList(items)
 
     def addClasses(self, items):
