@@ -9,6 +9,7 @@ are gone rather than merely accompanied by their replacements.
 import pytest
 
 from entities.base import Entity
+from entities.actors import Actor
 from entities.folders import Folder
 from entities.items import Item
 from entities.journal import Handout
@@ -335,3 +336,142 @@ class TestSubclassDocument(object):
         # ADR-006 deliberately does not resolve the name against a compendium.
         item = self.makeSubclass(tmp_path, name="Tempest Domain", class_name="Cleric")
         assert item.entity["name"] == "Tempest Domain"
+
+
+class FakeItems(object):
+    """Minimal stand-in for the converter's Items database.
+
+    ``Actor.createItemOrigin`` reaches through ``self._converter.items``; these
+    two factories are the whole surface it uses.
+    """
+
+    def __init__(self, database):
+        self._database = database
+
+    def createItemRace(self, id, name, description=""):
+        return Item.createItemRace(self._database, id, name, description)
+
+    def createItemBackground(self, id, name, description=""):
+        return Item.createItemBackground(self._database, id, name, description)
+
+
+class FakeConverter(object):
+    def __init__(self, database):
+        self.items = FakeItems(database)
+
+
+class TestOriginDocuments(object):
+    """dnd5e 4.0 made species and background documents (ADR-007)."""
+
+    def makeActor(self, tmp_path):
+        database = FakeDatabase(str(tmp_path))
+        actor = Actor.__new__(Actor)
+        actor._database = database
+        actor._converter = FakeConverter(database)
+        actor._avatar_filename = None
+        return actor
+
+    def addOrigins(self, tmp_path, **details):
+        """Run the emission and hand back both sides of the link."""
+        actor = self.makeActor(tmp_path)
+        items = []
+        actor.addOrigins(items, details)
+        return items, details
+
+    # -- TC-01/TC-02: the link fields, the reason this ADR was amended --------
+
+    def testActorLinksToTheRaceDocument(self, tmp_path):
+        items, details = self.addOrigins(tmp_path, race="Half-Elf")
+        assert len(items) == 1
+        # The id, not the name. Writing the name leaves the actor pointing at
+        # nothing, and dnd5e's own hook that would fix it never runs on import.
+        assert details["race"] == items[0]["_id"]
+        assert details["race"] != "Half-Elf"
+
+    def testActorLinksToTheBackgroundDocument(self, tmp_path):
+        items, details = self.addOrigins(tmp_path, background="Spy (Smuggler)")
+        assert len(items) == 1
+        assert details["background"] == items[0]["_id"]
+        assert details["background"] != "Spy (Smuggler)"
+
+    # -- TC-03/TC-04: empty values must not produce junk documents -----------
+
+    def testEmptyValuesEmitNothing(self, tmp_path):
+        # 15 of 23 character actors in a real conversion are Roll20 area
+        # templates carrying neither value; emitting for them would add 30
+        # documents named "" to the world.
+        items, details = self.addOrigins(tmp_path, race="", background="")
+        assert items == []
+        assert details == {"race": "", "background": ""}
+
+    def testWhitespaceOnlyValueEmitsNothing(self, tmp_path):
+        items, details = self.addOrigins(tmp_path, race="   ")
+        assert items == []
+        assert details["race"] == ""
+
+    def testMissingKeysAreLeftAlone(self, tmp_path):
+        items, details = self.addOrigins(tmp_path)
+        assert items == []
+        assert details == {}
+
+    # -- TC-05/TC-06/TC-13: document types ------------------------------------
+
+    def testRaceIsARaceDocument(self, tmp_path):
+        items, _ = self.addOrigins(tmp_path, race="Dragonborn")
+        assert items[0]["type"] == "race"
+
+    def testBackgroundIsABackgroundDocument(self, tmp_path):
+        items, _ = self.addOrigins(tmp_path, background="Noble")
+        assert items[0]["type"] == "background"
+
+    def testEachSideIsIndependent(self, tmp_path):
+        items, details = self.addOrigins(tmp_path, race="Elf", background="")
+        assert [i["type"] for i in items] == ["race"]
+        assert details["background"] == ""
+
+    # -- TC-07: no normalisation ---------------------------------------------
+
+    def testKeepsTheRoll20NameVerbatim(self, tmp_path):
+        # "Variant Human" is not an SRD entry. ADR-007 keeps what the campaign
+        # said rather than downgrading it to the nearest match.
+        items, _ = self.addOrigins(tmp_path, race="Variant Human")
+        assert items[0]["name"] == "Variant Human"
+
+    # -- TC-08/TC-09: identifier ----------------------------------------------
+
+    def testIdentifierIsSlugified(self, tmp_path):
+        items, _ = self.addOrigins(tmp_path, race="High Elf")
+        assert items[0]["system"]["identifier"] == "high-elf"
+
+    def testIdentifierHandlesPunctuation(self, tmp_path):
+        items, _ = self.addOrigins(tmp_path, background="Sage (Researcher)")
+        assert items[0]["system"]["identifier"] == "sage-researcher"
+
+    def testIdentifierIsAlwaysPresent(self, tmp_path):
+        # ItemDescriptionTemplate declares it required for every item type.
+        items, _ = self.addOrigins(tmp_path, race="Elf", background="Acolyte")
+        assert all("identifier" in i["system"] for i in items)
+
+    # -- TC-10/TC-11: singleton ----------------------------------------------
+
+    def testOneDocumentPerKind(self, tmp_path):
+        # dnd5e declares metadata.singleton on both types.
+        items, _ = self.addOrigins(tmp_path, race="Elf", background="Acolyte")
+        assert [i["type"] for i in items].count("race") == 1
+        assert [i["type"] for i in items].count("background") == 1
+
+
+class TestOriginalClassLink(object):
+    """`details.originalClass` holds the primary class's id (ADR-007)."""
+
+    def testCreateItemClassReturnsTheOwnedDocument(self, tmp_path):
+        # addClasses() derives originalClass from this return value, so pin
+        # that it hands back the owned copy carrying the final id rather than
+        # the pre-embed item.
+        database = FakeDatabase(str(tmp_path))
+        item = Item.createItemClass(database, None, "Rogue", "", 7)
+        owned = []
+        entity = item.addToOwnedList(owned)
+        assert entity is owned[0]
+        assert entity["_id"]
+        assert entity["type"] == "class"

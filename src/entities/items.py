@@ -90,6 +90,12 @@ class Items(DatabaseFile):
     def createItemSubclass(self, id, name, description, class_name, **kwargs):
         return Item.createItemSubclass(self, id, name, description, class_name, **kwargs)
 
+    def createItemRace(self, id, name, description="", **kwargs):
+        return Item.createItemRace(self, id, name, description, **kwargs)
+
+    def createItemBackground(self, id, name, description="", **kwargs):
+        return Item.createItemBackground(self, id, name, description, **kwargs)
+
 class Item(Entity):
     def __init__(self, database, item_id, name, item_type="loot", img=None, data={}):
         Entity.__init__(self, database, item_id)
@@ -316,6 +322,24 @@ class Item(Entity):
         kwargs.update(subclassData.getDict())
         data = Item.createStandardData(description, **kwargs)
         return Item(database, id, name, "subclass", None, data)
+
+    @staticmethod
+    def createItemRace(database, id, name, description="", **kwargs):
+        """Build the ``race`` document dnd5e 4.0+ expects (ADR-007).
+
+        The actor's ``system.details.race`` holds this document's id, not its
+        name; the caller is responsible for writing that link.
+        """
+        kwargs.update(ItemOrigin(name).getDict())
+        data = Item.createStandardData(description, **kwargs)
+        return Item(database, id, name, "race", None, data)
+
+    @staticmethod
+    def createItemBackground(database, id, name, description="", **kwargs):
+        """Build the ``background`` document dnd5e 4.0+ expects (ADR-007)."""
+        kwargs.update(ItemOrigin(name).getDict())
+        data = Item.createStandardData(description, **kwargs)
+        return Item(database, id, name, "background", None, data)
 
 
 # Generic item variables
@@ -991,5 +1015,24 @@ class ItemSubclass:
         return {
             "identifier": self.identifier,
             "classIdentifier": self.class_identifier,
+            "advancement": [],
+        }
+
+
+class ItemOrigin:
+    """Shared shape for the ``race`` and ``background`` documents (ADR-007).
+
+    Thin for the same reason ``ItemSubclass`` is: Roll20 stores both as bare
+    strings, so a name is all we have, and guessing at traits would attach
+    mechanics the character never had. ``identifier`` is required by
+    ``ItemDescriptionTemplate``, which dnd5e mixes into every item type.
+    """
+
+    def __init__(self, name):
+        self.identifier = identifierFor(name)
+
+    def getDict(self):
+        return {
+            "identifier": self.identifier,
             "advancement": [],
         }

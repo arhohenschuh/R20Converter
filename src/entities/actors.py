@@ -507,7 +507,12 @@ class Actor(Entity):
                 ("resources", self.createActorResources()),
                 ("bonuses", self.createActorBonuses()),
             ])
-            self.addClasses(owned_items)
+            original_class = self.addClasses(owned_items)
+            if original_class:
+                actor_data["details"]["originalClass"] = original_class
+            # Species and background are documents since dnd5e 4.0, and the
+            # `details` entries built above become links to them (ADR-007).
+            self.addOrigins(owned_items, actor_data["details"])
             self.addTraits(owned_items)
             self.addSpells(owned_items)
             # Add actions before inventory so attack items get added first
@@ -2438,7 +2443,47 @@ class Actor(Entity):
         item.entity["img"] = self._avatar_filename
         return item.addToOwnedList(items)
 
+    def createItemOrigin(self, items, kind, name):
+        """Emit a ``race`` or ``background`` document and return its owned id.
+
+        dnd5e 4.0 promoted both from strings on the actor to documents, and
+        links them from ``system.details`` by id (ADR-007). Returns ``None`` for
+        an empty name so callers leave the link field alone rather than
+        pointing it at a document named "".
+        """
+        name = str(name or "").strip()
+        if not name:
+            return None
+        if kind == "race":
+            item = self._converter.items.createItemRace(None, name)
+        else:
+            item = self._converter.items.createItemBackground(None, name)
+        item.entity["img"] = self._avatar_filename
+        return item.addToOwnedList(items)["_id"]
+
+    def addOrigins(self, items, details):
+        """Emit the species/background documents and link them from ``details``.
+
+        ``details`` already carries the Roll20 names, which is what dnd5e used
+        to read. Since 4.0 the same keys hold the id of the embedded document,
+        so each name is replaced by the id of the document built from it. The
+        hooks dnd5e would normally use to maintain these links only run for
+        documents created through its API, never for a raw import (ADR-007).
+        """
+        for kind in ("race", "background"):
+            if kind not in details:
+                continue
+            item_id = self.createItemOrigin(items, kind, details[kind])
+            details[kind] = item_id if item_id else ""
+
     def addClasses(self, items):
+        """Emit the class documents and return the primary class's id.
+
+        dnd5e keeps the primary class in ``system.details.originalClass`` and
+        normally fills it from ``ClassData._onCreate``; that hook does not run
+        for a raw import, so the caller writes the returned id (ADR-007).
+        """
+        original_class = None
         if not self.isNPC():
             if self._shaped:
                 classes = self.getRepeatingAttributes("class")
@@ -2447,12 +2492,14 @@ class Actor(Entity):
                         continue
                     name = self.getAttribute("name", "", from_dict=pc_class)[0]
                     level = self.getAttributeInt("level", 1, from_dict=pc_class)
-                    self.createItemClass(items, name, level)
+                    owned = self.createItemClass(items, name, level)
+                    original_class = original_class or owned["_id"]
             else:
                 pc_class = self.getAttribute("class", "")[0]
                 base_level = self.getAttribute("base_level", "1")[0]
                 subclass = self.getAttribute("subclass", "")[0]
-                self.createItemClass(items, pc_class, base_level, subclass)
+                owned = self.createItemClass(items, pc_class, base_level, subclass)
+                original_class = original_class or owned["_id"]
                 for i in range(3):
                     flag = self.getAttributeInt("multiclass%d_flag" % (i + 1), 0)
                     if bool(flag):
@@ -2460,6 +2507,7 @@ class Actor(Entity):
                         level = self.getAttribute("multiclass%d_lvl" % (i + 1), "1")[0]
                         subclass = self.getAttribute("multiclass%d_subclass" % (i + 1), "")[0]
                         self.createItemClass(items, pc_class, level, subclass)
+        return original_class
 
     def _parseShapedAttacks(self, attack, repeating):
         save = ""
