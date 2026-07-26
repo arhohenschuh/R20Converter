@@ -45,6 +45,13 @@ converter now emits the modern field names itself:
 - Mirrored tiles and tokens are written as a negative texture scale rather than
   a negative width/height, which v13 rejects.
 
+### Game system data (ADR-006)
+- Character subclasses are emitted as their own `subclass` documents linked to
+  the class by identifier, instead of `system.subclass` on the class item. That
+  field stopped being read in dnd5e 2.1, and because Foundry silently discards
+  unknown keys, every conversion since had dropped the subclass with nothing
+  logged. Class items now also carry the `identifier` the link relies on.
+
 ### Correctness
 - Add the `--disable-module-items` option. The conversion code honoured it but
   the flag was never declared, so it could not be used.
