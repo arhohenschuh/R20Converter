@@ -41,7 +41,8 @@ except Exception:
     GUI_IMPORT_ERROR = traceback.format_exc()
     GUI = None
 
-parser = argparse.ArgumentParser(description="R20Converter v{}".format(version), epilog="Convert Roll20 campaigns into Foundry VTT worlds or modules.")
+parser = argparse.ArgumentParser(prog="R20Converter",
+                                 description="R20Converter v{}".format(version), epilog="Convert Roll20 campaigns into Foundry VTT worlds or modules.")
 parser.add_argument("path", metavar="destination-directory", help="The destination directory in Data/worlds/ or Data/modules/")
 parser.add_argument("zip_file", metavar="exported.zip", help="The exported ZIP file from R20Exporter")
 parser.add_argument("--json", action="store_true", help="Use campaign.json as input instead of a ZIP file (playlist will be empty due to audio tracks being accessible only when logged into Roll20)")

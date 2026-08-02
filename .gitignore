@@ -17,3 +17,6 @@ client/dist
 electron/
 stdout.log
 stderr.log
+
+# cx_Freeze writes this next to the sources during a build.
+*.egg-info/
