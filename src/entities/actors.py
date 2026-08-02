@@ -2,6 +2,7 @@ from .base import DatabaseFile, Entity
 from .journal import Handout
 from .items import *
 from collections import OrderedDict
+import dnd5e
 import re
 import os
 import copy
@@ -718,16 +719,15 @@ class Actor(Entity):
         """Map ``{"str": mod, ...}`` for this actor, used to un-bake damage bonuses.
 
         Returns an empty dict before the abilities block has been built, which
-        makes the modifier extraction a no-op rather than a wrong guess.
+        makes the modifier extraction a no-op rather than a wrong guess. The
+        modifier is read from the cached derived values, not the emitted
+        document — dnd5e 5.x computes ``mod`` itself and does not store it.
         """
-        abilities = getattr(self, "_actor_abilities", None)
-        if not abilities:
+        derived = getattr(self, "_ability_derived", None)
+        if not derived:
             return {}
-        mods = {}
-        for key, values in abilities.items():
-            if isinstance(values, dict) and isinstance(values.get("mod"), int):
-                mods[key] = values["mod"]
-        return mods
+        return {key: values["mod"] for key, values in derived.items()
+                if isinstance(values.get("mod"), int)}
 
     def calculateSaveBonus(self):
         if self.isNPC():
@@ -761,24 +761,44 @@ class Actor(Entity):
 
         return {
             "value": ability,
-            "min": 3,
             "proficient": 1 if proficient else 0,
-            "mod": mod,
-            "save": save,
+            "max": None,
             "bonuses": {
                 "check": "",
                 "save": ""
             },
+            # 5.x replaced the numeric `save` with a RollConfigField and computes
+            # `mod` itself. Emitting the old shape puts a number where a schema
+            # object is expected and carries two derived keys that are dropped.
+            "check": {"roll": {"min": None, "max": None, "mode": 0}},
+            "save": {"roll": {"min": None, "max": None, "mode": 0}},
         }
 
     def createActorAbilities(self):
-        return OrderedDict([("str", self.createActorAbility("Strength")),
-                            ("dex", self.createActorAbility("Dexterity")),
-                            ("con", self.createActorAbility("Constitution")),
-                            ("int", self.createActorAbility("Intelligence")),
-                            ("wis", self.createActorAbility("Wisdom")),
-                            ("cha", self.createActorAbility("Charisma"))
-                            ])
+        """Build ``system.abilities`` and cache the derived values separately.
+
+        dnd5e 5.x computes ``mod`` and the save bonus itself, so neither belongs
+        in the emitted document — but the converter needs both while it is
+        translating attacks and DCs. They are kept in ``_ability_derived`` rather
+        than smuggled through the document.
+        """
+        self._ability_derived = {}
+        abilities = OrderedDict()
+        for key, name in (("str", "Strength"), ("dex", "Dexterity"),
+                          ("con", "Constitution"), ("int", "Intelligence"),
+                          ("wis", "Wisdom"), ("cha", "Charisma")):
+            mod = self.getAttributeInt(name.lower() + "_mod", 0)
+            if self.isNPC():
+                save = self.getAttributeInt("npc_" + name.lower()[0:3] + "_save", 0)
+            else:
+                save = self.getAttributeInt(name.lower() + "_save_bonus", mod)
+            self._ability_derived[key] = {"mod": mod, "save": save}
+            abilities[key] = self.createActorAbility(name)
+        return abilities
+
+    def abilityDerived(self, key, field, default=0):
+        """The cached ``mod`` or save bonus for an ability key."""
+        return getattr(self, "_ability_derived", {}).get(key, {}).get(field, default)
 
     def createAttributeNumber(self, name, attribute_name, default=0, extra={}, from_dict=None):
         (current, max, _) = self.getAttribute(attribute_name, default, from_dict=from_dict)
@@ -1078,7 +1098,8 @@ class Actor(Entity):
                     ("environment", ""),
                     ("cr", self.getChallengeRating()),
                     ("xp", self.createAttributeNumber("Kill Experience", "npc_xp", 0)),
-                    ("source", self.getArgument("npc_source", "Roll 20")),
+                    ("source", dnd5e.sourceData(
+                        custom=self.getArgument("npc_source", "Roll 20"))),
                     ("spellLevel", 0)
                     ])
         else:
@@ -1130,11 +1151,14 @@ class Actor(Entity):
         return {
             "value": value,
             "ability": ability.lower()[0:3],
-            "mod": mod,
+            # 5.x computes `mod` itself and stores the bonuses as formulas, not
+            # numbers. `roll` comes from RollConfigField, which skills share with
+            # ability checks.
             "bonuses": {
-                "check": bonus,
-                "passive": (passive - mod - 10)
+                "check": str(bonus) if bonus else "",
+                "passive": str(passive - mod - 10) if (passive - mod - 10) else ""
             },
+            "roll": {"min": None, "max": None, "mode": 0},
         }
     def createActorSkills(self):
         skills = OrderedDict([
@@ -1192,7 +1216,7 @@ class Actor(Entity):
                 if ability_key and ability_key != "0":
                     ability_key = ability_key.lower()[0:3]
                     if ability_key in self._actor_abilities:
-                        base_mod = self._actor_abilities[ability_key]["mod"]
+                        base_mod = self.abilityDerived(ability_key, "mod")
                     
                 if mod >= base_mod + prof * 2:
                     value = 2
@@ -2026,7 +2050,7 @@ class Actor(Entity):
                     attack.damages.addDamage(dmg2, dmg2_type.lower())
                 proficiency_bonus = self.getProficiencyBonus()
                 for ability in ["str", "dex", "con", "wis", "int", "cha"]:
-                    mod = self._actor_abilities[ability]["mod"]
+                    mod = self.abilityDerived(ability, "mod")
                     if mod + proficiency_bonus == tohit:
                         attack.ability = ItemAbility.fromString(ability)
                         break
@@ -2034,7 +2058,7 @@ class Actor(Entity):
                     # TODO: FVTT 0.4.3 so far will still force strength ability to get added
                     # even if ability is set to EMPTY
                     attack.ability = ItemAbility.STRENGTH
-                    attack.bonus = tohit - self._actor_abilities["str"]["mod"]
+                    attack.bonus = tohit - self.abilityDerived("str", "mod")
             else:
                 atktype = "None"
         
@@ -2145,7 +2169,7 @@ class Actor(Entity):
                 else:
                     ability = ItemAbility.fromString(savedc)
                     if attack.save.ability != ItemAbility.NONE:
-                        mod = self._actor_abilities[attack.save.ability]["mod"]
+                        mod = self.abilityDerived(attack.save.ability, "mod")
                         attack.save.dc = 10 + int(mod) + self.getProficiencyBonus()
 
         # Convert range
@@ -2326,7 +2350,7 @@ class Actor(Entity):
                         try:
                             attack.save.dc = int(savedc)
                         except:
-                            mod = self._actor_abilities[attack.save.ability]["mod"]
+                            mod = self.abilityDerived(attack.save.ability, "mod")
                             attack.save.dc = 10 + int(mod) + self.getProficiencyBonus()
 
                     if atktype == "Ranged":
@@ -2567,7 +2591,7 @@ class Actor(Entity):
                     try:
                         attack.save.dc = int(savedc)
                     except:
-                        mod = self._actor_abilities[attack.save.ability]["mod"]
+                        mod = self.abilityDerived(attack.save.ability, "mod")
                         attack.save.dc = 10 + int(mod) + self.getProficiencyBonus()
             if prefix == "heal":
                 damages = [""]
@@ -2615,7 +2639,7 @@ class Actor(Entity):
                 attack.save.dc = int(savedc)
             except:
                 try:
-                    mod = self._actor_abilities[attack.save.ability]["mod"]
+                    mod = self.abilityDerived(attack.save.ability, "mod")
                     attack.save.dc = 10 + int(mod) + self.getProficiencyBonus()
                 except:
                     pass

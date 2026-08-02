@@ -582,6 +582,24 @@ def damageScaling(mode="", formula="", denomination=None):
     return "whole", scaling_number, scaling_formula
 
 
+def sourceData(book="", page="", custom="", license_="", rules="2014"):
+    """Build ``system.source``.
+
+    v1.5.6 stored a bare string. 5.x uses a ``SourceField`` object, so a string
+    is dropped on load and every converted document loses its attribution. The
+    free-text Roll20 gives us maps onto ``custom``, which is what dnd5e displays
+    when ``book`` is unset.
+    """
+    return {
+        "book": book or "",
+        "page": str(page or ""),
+        "custom": custom or "",
+        "license": license_ or "",
+        "revision": 1,
+        "rules": rules or "2014",
+    }
+
+
 def stats(core_version, system_version=SYSTEM_VERSION):
     """Build the ``_stats`` block carried by every document.
 

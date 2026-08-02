@@ -118,6 +118,29 @@ Fixed during 0.16.0 (see `ROADMAP.md`):
 - **B018/F018** — save activities emitted `save.dc.value` and `damage.critical`,
   neither of which is in the 5.3.3 schema.
 
+#### 0.17.0 — the documents around the items
+
+None of these carries damage, which is why R2 left them alone and why a suite
+that only exercises the interesting path never looked at them.
+
+- **Class documents** now emit `hd = {additional, denomination, spent}`,
+  `primaryAbility` and `properties`. 5.x replaced `hitDice` / `hitDiceUsed` with
+  `hd`, so every converted class arrived at the `d6` default whatever its real
+  hit die was — a Barbarian included. `primaryAbility` comes from an explicit PHB
+  table, not from the spellcasting ability: a Fighter has a primary ability and
+  no spellcasting, and a Paladin's are STR *and* CHA.
+- **Actor abilities** emit the 5.x shape. `save` was a number where dnd5e
+  declares a `RollConfigField` object, and `mod` / `min` were carried despite
+  being derived. The converter still needs those values while translating attacks
+  and DCs, so they moved to `_ability_derived` instead of riding in the document.
+- **Actor skills** emit formula-string bonuses and the `roll` block.
+- **`source`** is a `SourceField` object. As a bare string it was dropped on load,
+  which silently removed the attribution from every item and NPC the converter has
+  ever produced.
+
+Fixed during 0.17.0 (see `ROADMAP.md`): **B019/F019**, **B020/F020**,
+**B021/F021**, **B022/F022**. Suite: 429 → 455.
+
 ### Foundry v13 (ADR-002, ADR-003)
 - Emit `world.json` and `module.json` in the Foundry v13 manifest schema: `id`
   instead of `name`, the now-required `type`, a `compatibility` object instead of

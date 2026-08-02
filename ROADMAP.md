@@ -40,8 +40,8 @@ converted 760 MB modules:
 |---|---|---|:--:|---|
 | **R1** | 0.15.0 | Foundation — `src/dnd5e.py`, shape builders, tests | No | **Done** |
 | **R2** | 0.16.0 | The Switch — atomic dnd5e 5.x emission | Yes, breaking | **Done** |
-| **R3** | 0.17.0 | Cleanup — origin documents, actor fields, remaining `_stats` | Yes | Next |
-| **R4** | 1.0.0 | Acceptance — real exports through a real Foundry | No | Planned |
+| **R3** | 0.17.0 | Cleanup — origin documents, actor fields, remaining `_stats` | Yes | **Done** |
+| **R4** | 1.0.0 | Acceptance — real exports through a real Foundry | No | Next |
 
 ---
 
@@ -127,15 +127,28 @@ none of them looked at that half of the schema.
 
 ---
 
-### R3 · 0.17.0 — Cleanup
+### R3 · 0.17.0 — Cleanup ✅
 
-- Validate class / subclass / species / background documents (ADR-006, ADR-007)
-  against dnd5e 5.3.3 — claiming 5.3.3 means their migrations are skipped too
-- Actor-level fields: `abilities.*` still carries the derived `mod` / `save` /
-  `min` keys 5.x computes for itself
-- Scene, journal and table `_stats`
+The documents *around* the ones R2 fixed. None of these carries damage, which is
+why they survived R2 unnoticed — and why they are exactly the kind of thing a
+suite that only tests the interesting path never looks at.
 
-*(B003 and B004 were scheduled here but landed in R2 — see F003 / F004.)*
+- **Class documents** — 5.x replaced `hitDice` / `hitDiceUsed` with the `hd`
+  block. The old keys are not in `ClassData`, so every converted class arrived
+  with the `d6` default whatever it really was. `saves` and `skills` were not in
+  the schema either; `primaryAbility` and `properties` were missing.
+- **Actor abilities** — `save` was emitted as a *number* where 5.x declares a
+  `RollConfigField` object, and `mod` / `min` were carried even though dnd5e
+  derives them. The derived values are still needed while translating attacks
+  and DCs, so they now live in `_ability_derived` rather than being smuggled
+  through the document.
+- **Actor skills** — `bonuses.check` and `bonuses.passive` are `FormulaField`s in
+  5.x, not numbers, and the block needs `roll`.
+- **`source`** — a `SourceField` object in 5.x, a bare string in 1.5.6. It is on
+  every item and every NPC, so the string form silently dropped attribution from
+  every document the converter has ever produced.
+
+**Gate:** suite green · `tools/verify_dnd5e.py` PASS on a real converted export.
 
 ---
 
@@ -179,6 +192,10 @@ damage loss above went unnoticed.
 | **B016** | R2 | `createItemFromCompendium()` replaces the whole entity with the compendium copy *after* the constructor stamped `_stats`, so those items carried whatever version their pack was built with — and would be migrated. | **F016** |
 | **B017** | R2 | `ItemFeatRecharge.getDict()` returned a complete `uses` block that overwrote the one from `ItemActivation`, so a feature with both a charge count and a recharge ("2/day, Recharge 5-6") lost the charge count. | **F017** |
 | **B018** | R2 | Save activities emitted `save.dc.value` and `damage.critical`. Neither is in the 5.3.3 `SaveActivityData` schema; both are dropped on load, leaving the stored document non-native. | **F018** |
+| **B019** | R3 | `ItemClass` emitted `hitDice` and `hitDiceUsed`. 5.x replaced both with `hd = {additional, denomination, spent}`, so every converted class arrived at the `d6` default whatever its real hit die was — a Barbarian included. `saves` and `skills` were emitted too and are not in `ClassData`. | **F019** |
+| **B020** | R3 | Actor `abilities.<key>.save` was a **number** where 5.x declares a `RollConfigField` object, and `mod` / `min` were emitted despite being derived. Seven places in `actors.py` read those derived values back out of the emitted document. | **F020** |
+| **B021** | R3 | `system.source` was a bare string. 5.x uses a `SourceField` object, so the string is dropped and every item and NPC the converter has ever produced loses its attribution. | **F021** |
+| **B022** | R3 | Actor `skills.<key>.bonuses.check` / `.passive` were numbers where 5.x declares `FormulaField`s, and the block was missing `roll`. `mod` was emitted despite being derived. | **F022** |
 
 ### B001 in detail
 
@@ -252,6 +269,10 @@ Two corrections followed:
 | **F016** | B016 | `createItemFromCompendium()` restamps `_stats` after the copy. |
 | **F017** | B017 | `_mergeRecharge()` appends the recharge rule to the existing `recovery` list and keeps the charge maximum, replacing the block only when there is nothing to preserve. |
 | **F018** | B018 | `saveActivity()` emits `save.dc = {calculation, formula}` and `damage = {onSave, parts}`. The two tests that asserted `dc.value` were themselves ratifying the defect and now assert its absence. |
+| **F019** | B019 | `ItemClass.getDict()` emits `hd`, `primaryAbility` and `properties`, and drops `saves` / `skills`. `CLASS_PRIMARY_ABILITY` is an explicit PHB table rather than a guess from the spellcasting ability — a Fighter has a primary ability and no spellcasting, and a Paladin's primary abilities are STR *and* CHA. A regression test asserts the hit die of all twelve PHB classes against the book, not against the implementation's own table. |
+| **F020** | B020 | `createActorAbilities()` caches `mod` and the save bonus in `_ability_derived` and emits the 5.x shape. The seven readers now call `abilityDerived()`. |
+| **F021** | B021 | `dnd5e.sourceData()` builds the `SourceField` object; the Roll20 free-text maps onto `custom`, which is what dnd5e displays when `book` is unset. |
+| **F022** | B022 | Skill bonuses are emitted as formula strings, `roll` is present, and the derived `mod` is gone. |
 
 
 ## Per-step cycle

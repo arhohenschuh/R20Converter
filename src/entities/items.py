@@ -345,7 +345,7 @@ class Item(Entity):
                            scaling=None, spell_level=None, **kwargs):
         data = {
             "description": {"value": description, "chat": "", "unidentified": ""},
-            "source": source,
+            "source": dnd5e.sourceData(custom=source),
         }
         if activation:
             # `activation`, `range`, `duration` and `target` live on the document
@@ -1167,6 +1167,27 @@ class ItemBackpack:
         }
 
 # Class specific item variables
+#: The primary ability each class uses, from the PHB multiclassing table. dnd5e
+#: 5.x stores this in ``system.primaryAbility``; it is not derivable from the
+#: spellcasting ability (a Fighter has one and no spellcasting; a Paladin's
+#: spellcasting ability is not its only primary).
+CLASS_PRIMARY_ABILITY = {
+    "artificer": ["int"],
+    "barbarian": ["str"],
+    "bard": ["cha"],
+    "cleric": ["wis"],
+    "druid": ["wis"],
+    "fighter": ["str"],
+    "monk": ["dex"],
+    "paladin": ["str", "cha"],
+    "ranger": ["dex"],
+    "rogue": ["dex"],
+    "sorcerer": ["cha"],
+    "warlock": ["cha"],
+    "wizard": ["int"],
+}
+
+
 class ItemClass:
     def __init__(self, name, level, hitdice=None):
         try:
@@ -1176,6 +1197,7 @@ class ItemClass:
         self.identifier = identifierFor(name)
         self.hitdice = hitdice
         cl = name.strip().lower()
+        self.primary_ability = CLASS_PRIMARY_ABILITY.get(cl, [])
         # Set class hitdice
         if self.hitdice is None:
             if cl in ["artificer", "bard", "cleric", "druid", "monk", "rogue", "warlock"]:
@@ -1213,17 +1235,23 @@ class ItemClass:
             # dnd5e dropped `subclass` in 2.1; the subclass is its own document
             # now and finds this class by matching `identifier` (ADR-006).
             "identifier": self.identifier,
-            "hitDice": self.hitdice,
-            "hitDiceUsed": 0,
-            "saves": [],
-            "skills": {
-                "number": 2,
-                "choices": [],
-                "value": []
+            # 5.x replaced `hitDice`/`hitDiceUsed` with the `hd` block. The old
+            # keys are not in ClassData, so they are dropped on load and the
+            # class arrives with the d6 default whatever it really is.
+            "hd": {
+                "additional": "",
+                "denomination": self.hitdice,
+                "spent": 0,
             },
+            "primaryAbility": {
+                "value": list(self.primary_ability),
+                "all": True,
+            },
+            "properties": [],
             "spellcasting": {
                 "progression": self.spell_progression,
-                "ability": self.spell_ability
+                "ability": self.spell_ability,
+                "preparation": {"formula": ""},
             }
         }
 
