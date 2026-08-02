@@ -271,7 +271,7 @@ def parseDamageFormula(formula):
 class ModifierExtraction(object):
     """How a baked-in ability modifier should be split out of damage.
 
-    dnd5e always appends ``@mod`` to weapon damage, resolved from the activity's
+    dnd5e appends ``@mod`` to weapon damage, resolved from the activity's
     ability. Roll20 bakes that modifier into the damage instead — ``"Bite
     1d10+2"`` where the SRD writes ``"1d10"`` plus the modifier. Attaching a
     default activity without compensating therefore rolls ``1d10+2+mod``.
@@ -288,9 +288,10 @@ class ModifierExtraction(object):
         self.ability = ability
         #: Bonus left on the damage after the modifier was taken out.
         self.bonus = bonus
-        #: ``True`` when ``@mod`` must NOT be added — used when no ability
-        #: modifier matches the baked bonus, so the printed total is preserved
-        #: by leaving the bonus alone rather than subtracting a wrong value.
+        #: ``attack.flat``. Always ``False`` from this function — see B005. It
+        #: is an *attack-roll* concern (``getAttackData()`` returns only
+        #: ``attack.bonus`` when set) and has no effect on damage, so it cannot
+        #: be used to suppress ``@mod``.
         self.flat = flat
         #: Formula fragments the caller must preserve (a second damage die).
         self.remainder = remainder
@@ -305,54 +306,81 @@ class ModifierExtraction(object):
                 and self.flat == other.flat and self.remainder == other.remainder)
 
 
+def appendsAbilityModifier(is_weapon=True, has_dice=True):
+    """Whether dnd5e will append ``@mod`` to this item's damage.
+
+    Read out of ``AttackActivityData#_processDamagePart`` (dnd5e 5.3.3):
+
+    * the block only runs for ``item.type === "weapon"``;
+    * within it, ``@mod`` is pushed only when the base part is **not
+      deterministic** — a flat ``"1"`` torch gets no modifier, a ``"1d8"``
+      sword does.
+
+    Anything else — spells, feats, flat damage — is emitted unchanged, because
+    nothing will be added to it.
+    """
+    return bool(is_weapon) and bool(has_dice)
+
+
 def extractAbilityModifier(bonus, ability_mods, ranged=False, symbolic=None,
-                           remainder=""):
+                           remainder="", is_weapon=True, has_dice=True):
     """Choose the activity's ability and the damage bonus that survives with it.
 
     ``bonus``        the flat bonus baked into the damage
     ``ability_mods`` ``{"str": 2, "dex": 1, ...}`` for the owning actor
     ``ranged``       picks the natural default when nothing else decides
     ``symbolic``     ability key when the formula said ``@abilities.X.mod``
-                     outright; that is already correct and only needs moving
+                     outright; that term is already the ability contribution
     ``remainder``    passed through untouched
+    ``is_weapon``    only weapons get an automatic ``@mod``
+    ``has_dice``     deterministic damage gets no ``@mod`` either
 
-    The invariant, in every branch: **printed total is unchanged.**
-    ``bonus == result.bonus + (0 if result.flat else ability_mods[result.ability])``
+    The invariant, in every branch: **the printed total is unchanged.** The
+    general rule is ``residual = printed - mod(ability)``, which holds for *any*
+    ability; matching the ability to the baked bonus is a refinement that drives
+    the residual to zero, which is what the SRD statblock looks like.
     """
     mods = {k: int(v or 0) for k, v in (ability_mods or {}).items()}
     natural = "dex" if ranged else "str"
     bonus = int(bonus or 0)
+    appends = appendsAbilityModifier(is_weapon, has_dice)
 
-    # 1. The formula named the ability itself (``@abilities.str.mod``). That term
-    #    is already the ability contribution, so only it moves into the activity —
-    #    any other flat addend on the formula must be LEFT ON THE DAMAGE.
-    #    Returning 0 here drops the "+1" from "1d8 + @abilities.str.mod + 1".
+    # 1. The formula named the ability itself (``@abilities.str.mod``).
     if symbolic:
         key = str(symbolic).lower()
         if key not in ABILITIES:
             raise ValueError("unknown ability %r" % (symbolic,))
-        return ModifierExtraction(key, bonus, False, remainder)
+        if appends:
+            # ``@mod`` will re-add the named modifier, so only the symbolic
+            # token is removed. Any other flat addend stays on the damage —
+            # dropping it is B001.
+            return ModifierExtraction(key, bonus, False, remainder)
+        # Nothing will be appended, so the named modifier has to be materialised
+        # into the damage or the printed total falls by its value.
+        return ModifierExtraction(key, bonus + mods.get(key, 0), False, remainder)
 
-    # 2. An ability whose modifier equals the baked bonus IS the ability the
-    #    Roll20 sheet used — the data reveals it. Ties resolve by ABILITIES
-    #    order so the output is deterministic.
+    # 2. No ``@mod`` is coming: spells, feats and flat damage are left alone.
+    #    Subtracting here would silently reduce the printed damage (B005).
+    if not appends:
+        return ModifierExtraction(natural, bonus, False, remainder)
+
+    # 3. An ability whose modifier equals the baked bonus IS the ability the
+    #    Roll20 sheet used — the data reveals it, and the residual falls to zero.
+    #    Ties resolve by ABILITIES order so the output is deterministic.
     if bonus:
         for key in ABILITIES:
             if key in mods and mods[key] == bonus:
                 return ModifierExtraction(key, 0, False, remainder)
 
-    # 3. No bonus at all: any zero-modifier ability keeps @mod harmless.
-    if bonus == 0:
-        for key in ABILITIES:
-            if mods.get(key) == 0:
-                return ModifierExtraction(key, 0, False, remainder)
-        # Every ability has a non-zero modifier, so @mod would change the total.
-        return ModifierExtraction(natural, 0, True, remainder)
+    # 4. An ability with a zero modifier keeps ``@mod`` harmless, so the bonus
+    #    can stay exactly as printed.
+    for key in ABILITIES:
+        if mods.get(key) == 0:
+            return ModifierExtraction(key, bonus, False, remainder)
 
-    # 4. The bonus matches no ability — a magic weapon, or a statblock quirk.
-    #    Subtracting anything here would change the printed damage, so keep the
-    #    bonus and suppress @mod instead.
-    return ModifierExtraction(natural, bonus, True, remainder)
+    # 5. Otherwise subtract the natural ability's modifier. This preserves the
+    #    total for any ability, at the cost of a visible residual.
+    return ModifierExtraction(natural, bonus - mods.get(natural, 0), False, remainder)
 
 
 # --- Activities (AD-3) -----------------------------------------------------

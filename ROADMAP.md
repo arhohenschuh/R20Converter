@@ -136,8 +136,9 @@ damage loss above went unnoticed.
 |---|---|---|---|
 | **B001** | R1 | `extractAbilityModifier()` dropped the flat addend on a symbolic formula. `"1d8 + @abilities.str.mod + 1"` returned `bonus=0`, so the printed total fell by 1 — a violation of the one invariant this port exists to protect. | **F001** |
 | **B002** | R1 | `attackActivity()` rejected only `ability="none"`. `"STR"`, `"strength"`, `"banana"` passed through and produced an activity dnd5e validates away just as silently. | **F002** |
-| **B003** | R1 (found, not yet fixed) | `Items.createItemInventory()` routes `inventory_type == "consumable"` to `createItemWeapon()`. Pre-existing; scheduled for R3. | — |
-| **B004** | R1 (found, not yet fixed) | `actors.py` reads the legacy `["system"]["weaponType"]` from compendium items at lines 1799, 2034, 2134. Breaks against a 5.x compendium. Scheduled for R3. | — |
+| **B003** | R1 (open) | `Items.createItemInventory()` routes `inventory_type == "consumable"` to `createItemWeapon()`. Pre-existing; scheduled for R3. | — |
+| **B004** | R1 (open) | `actors.py` reads the legacy `["system"]["weaponType"]` from compendium items at lines 1799, 2034, 2134. Breaks against a 5.x compendium. Scheduled for R3. | — |
+| **B005** | R1 | `attack.flat` does not suppress `@mod` in damage — it only makes the *attack roll* a flat bonus. The extractor used it to "preserve" an unmatched bonus, which instead inflated damage by the ability modifier. | **F005** |
 
 ### B001 in detail
 
@@ -151,12 +152,51 @@ That discards the flat bonus whenever the formula named an ability, so the
 invariant check ratified the broken implementation. The test was tautological in
 exactly the case it most needed to be independent.
 
+### B005 in detail
+
+`ModifierExtraction.flat` was designed to mean "do not add `@mod`". Reading
+dnd5e 5.3.3 rather than assuming shows it means no such thing:
+
+```js
+// attack-data.mjs:261 — getAttackData()
+if ( this.attack.flat ) return CONFIG.Dice.BasicRoll.constructParts({ toHit: this.attack.bonus }, rollData);
+```
+
+`attack.flat` replaces the whole **attack roll** with a flat bonus. Damage is
+governed separately, in `_processDamagePart`:
+
+```js
+// attack-data.mjs:387-392
+if ( this.item.type === "weapon" ) {
+  const isDeterministic = new Roll(roll.parts[0]).isDeterministic;
+  const includeMod = ... && !isDeterministic && ...;
+  if ( includeMod && !roll.parts.some(p => p.includes("@mod")) ) roll.parts.push("@mod");
+}
+```
+
+So `@mod` is appended when — and only when — the item is a **weapon** and its
+base damage part **rolls dice**. Setting `flat` would have left the bonus in the
+damage *and* still had `@mod` added on top: the exact double-count the port
+exists to prevent, inflating every unmatched-bonus weapon.
+
+Two corrections followed:
+
+- **The general rule is subtraction**, not suppression: `residual = printed −
+  mod(ability)` preserves the total for *any* ability. Matching the ability to
+  the baked bonus is a refinement that drives the residual to zero, which is what
+  an SRD statblock looks like — not a precondition for correctness.
+- **Spells, feats and flat damage must be left alone.** Nothing appends `@mod`
+  to them, so subtracting anything reduces the printed damage.
+  `appendsAbilityModifier(is_weapon, has_dice)` now encodes the system's actual
+  rule, and the invariant is asserted in both directions.
+
 ## Fixes
 
 | ID | Closes | Change |
 |---|---|---|
 | **F001** | B001 | Symbolic branch preserves the flat addend and lower-cases the ability key (`ABILITY_MOD_RE` matches case-insensitively). Invariant test corrected to `bonus + mods[symbolic]`. Fixtures INV-16 / INV-17 added, plus a non-vacuity assertion requiring a symbolic-*and*-flat row. |
 | **F002** | B002 | `attackActivity()` and `extractAbilityModifier()` validate the ability against `ABILITIES`. Empty stays legal — it means "no modifier", unlike `"none"`. |
+| **F005** | B005 | `appendsAbilityModifier(is_weapon, has_dice)` encodes dnd5e's real rule. The extractor subtracts instead of going flat, and leaves spell / feat / flat damage untouched. `ModifierExtraction.flat` is now always `False` and documented as an attack-roll concern. New invariant test asserts the total in the no-auto-modifier direction too. |
 
 ## Per-step cycle
 

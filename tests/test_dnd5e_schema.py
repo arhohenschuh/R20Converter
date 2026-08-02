@@ -219,78 +219,130 @@ class TestParseDamageFormula(object):
 
 
 class TestModifierExtractionInvariant(object):
-    """INV-01..12 — the single most important property in this port.
+    """INV-01..17 — the single most important property in this port.
 
-    dnd5e always appends ``@mod`` to weapon damage, resolved from the activity's
+    dnd5e appends ``@mod`` to weapon damage, resolved from the activity's
     ability. Roll20 bakes that modifier into the damage. The extraction must
     leave the *printed total* unchanged:
 
-        bonus == result.bonus + (0 if result.flat else mods[result.ability])
+        printed == result.bonus + (mod applied by dnd5e)
+
+    where dnd5e applies a modifier only for a **weapon** whose base damage is
+    **not deterministic** — see ``appendsAbilityModifier``.
     """
 
-    # id, baked bonus, ability mods, ranged, symbolic, expected ability, expected bonus, expected flat
+    # id, baked bonus, ability mods, ranged, symbolic, expected ability, expected bonus
     FIXTURES = [
-        ("INV-01", 2, {"str": 2, "dex": 1}, False, None, "str", 0, False),
-        ("INV-02", 3, {"str": 3, "dex": 4}, False, None, "str", 0, False),
-        ("INV-03", 0, {"str": 3, "dex": 3}, False, "str", "str", 0, False),
-        ("INV-06", 5, {"str": 3, "dex": 2}, False, None, "str", 5, True),
-        ("INV-07", -1, {"str": -1, "dex": 2}, False, None, "str", 0, False),
-        ("INV-08", 0, {"str": 0, "dex": 2}, False, None, "str", 0, False),
-        ("INV-09", 2, {"str": 2, "dex": 2}, False, None, "str", 0, False),
-        ("INV-12", 0, {"str": 3, "dex": 2}, True, "dex", "dex", 0, False),
-        ("INV-13", 4, {"str": 4, "dex": 1}, True, None, "str", 0, False),
-        ("INV-14", 3, {"str": 1, "dex": 3}, True, None, "dex", 0, False),
-        ("INV-15", 0, {"str": 3, "dex": 2, "con": 4}, False, None, "str", 0, True),
+        ("INV-01", 2, {"str": 2, "dex": 1}, False, None, "str", 0),
+        ("INV-02", 3, {"str": 3, "dex": 4}, False, None, "str", 0),
+        ("INV-03", 0, {"str": 3, "dex": 3}, False, "str", "str", 0),
+        # B005: no ability matches +5. Subtracting the natural ability's
+        # modifier still preserves the total; "flat" cannot suppress @mod.
+        ("INV-06", 5, {"str": 3, "dex": 2}, False, None, "str", 2),
+        ("INV-07", -1, {"str": -1, "dex": 2}, False, None, "str", 0),
+        ("INV-08", 0, {"str": 0, "dex": 2}, False, None, "str", 0),
+        ("INV-09", 2, {"str": 2, "dex": 2}, False, None, "str", 0),
+        ("INV-12", 0, {"str": 3, "dex": 2}, True, "dex", "dex", 0),
+        ("INV-13", 4, {"str": 4, "dex": 1}, True, None, "str", 0),
+        ("INV-14", 3, {"str": 1, "dex": 3}, True, None, "dex", 0),
+        ("INV-15", 0, {"str": 3, "dex": 2, "con": 4}, False, None, "str", -3),
         # B001: a symbolic modifier alongside a flat addend — "1d8 +
         # @abilities.str.mod + 1". The symbolic term moves into the activity;
         # the "+1" must stay on the damage or the printed total drops by 1.
-        ("INV-16", 1, {"str": 3}, False, "str", "str", 1, False),
-        ("INV-17", 2, {"str": 4, "dex": 1}, True, "dex", "dex", 2, False),
+        ("INV-16", 1, {"str": 3}, False, "str", "str", 1),
+        ("INV-17", 2, {"str": 4, "dex": 1}, True, "dex", "dex", 2),
+        ("INV-18", 7, {"str": 2, "dex": 1}, False, None, "str", 5),
     ]
 
     @pytest.mark.parametrize(
-        "case_id,bonus,mods,ranged,symbolic,want_ability,want_bonus,want_flat", FIXTURES)
+        "case_id,bonus,mods,ranged,symbolic,want_ability,want_bonus", FIXTURES)
     def testExtraction(self, case_id, bonus, mods, ranged, symbolic,
-                       want_ability, want_bonus, want_flat):
+                       want_ability, want_bonus):
         result = dnd5e.extractAbilityModifier(bonus, mods, ranged=ranged, symbolic=symbolic)
         assert result.ability == want_ability, case_id
         assert result.bonus == want_bonus, case_id
-        assert result.flat == want_flat, case_id
 
     @pytest.mark.parametrize(
-        "case_id,bonus,mods,ranged,symbolic,want_ability,want_bonus,want_flat", FIXTURES)
+        "case_id,bonus,mods,ranged,symbolic,want_ability,want_bonus", FIXTURES)
     def testPrintedTotalIsPreserved(self, case_id, bonus, mods, ranged, symbolic,
-                                    want_ability, want_bonus, want_flat):
+                                    want_ability, want_bonus):
         """The invariant itself, asserted independently of the expected values.
 
-        The printed total before extraction is the flat bonus plus, when the
-        formula named an ability outright, that ability's modifier. B001 hid
-        here: this used to read ``expected = bonus if not symbolic else
+        B001 hid here: this used to read ``expected = bonus if not symbolic else
         mods[symbolic]``, which discards the flat bonus in the symbolic case and
         so ratified an implementation that dropped it.
         """
         result = dnd5e.extractAbilityModifier(bonus, mods, ranged=ranged, symbolic=symbolic)
-        applied = 0 if result.flat else mods.get(result.ability, 0)
-        expected = bonus + (mods.get(symbolic, 0) if symbolic else 0)
-        assert result.bonus + applied == expected, (
+        # A weapon with dice damage always gets @mod from the chosen ability.
+        applied = mods.get(result.ability, 0)
+        printed = bonus + (mods.get(symbolic, 0) if symbolic else 0)
+        assert result.bonus + applied == printed, (
             "%s: printed total changed — %s + %s != %s"
-            % (case_id, result.bonus, applied, expected))
+            % (case_id, result.bonus, applied, printed))
+
+    @pytest.mark.parametrize(
+        "case_id,bonus,mods,ranged,symbolic,want_ability,want_bonus", FIXTURES)
+    def testPrintedTotalIsPreservedWithoutAutoModifier(
+            self, case_id, bonus, mods, ranged, symbolic, want_ability, want_bonus):
+        """B005: spells, feats and flat damage receive no ``@mod`` at all.
+
+        Nothing is appended, so nothing may be subtracted — the damage must come
+        out exactly as printed.
+        """
+        for kwargs in ({"is_weapon": False}, {"has_dice": False}):
+            result = dnd5e.extractAbilityModifier(
+                bonus, mods, ranged=ranged, symbolic=symbolic, **kwargs)
+            printed = bonus + (mods.get(symbolic, 0) if symbolic else 0)
+            assert result.bonus == printed, (
+                "%s %s: damage changed — %s != %s"
+                % (case_id, kwargs, result.bonus, printed))
 
     def testFixtureTableIsNonVacuous(self):
         # A table-driven test that silently runs zero rows is worse than no test.
         assert len(self.FIXTURES) >= 10
         # Every branch of the extractor must be exercised.
         assert any(f[4] for f in self.FIXTURES), "no symbolic case"
-        assert any(f[7] for f in self.FIXTURES), "no flat (unmatched bonus) case"
         assert any(f[1] < 0 for f in self.FIXTURES), "no negative modifier case"
         assert any(f[4] and f[1] for f in self.FIXTURES), "no symbolic-plus-flat case (B001)"
+        assert any(f[6] not in (0,) for f in self.FIXTURES), "no residual-bonus case (B005)"
+
+    def testUnmatchedBonusSubtractsRatherThanGoingFlat(self):
+        """B005 regression.
+
+        ``attack.flat`` makes the *attack roll* a flat bonus; it has no effect on
+        damage, so it cannot be used to suppress ``@mod``. The residual must
+        absorb the difference instead.
+        """
+        result = dnd5e.extractAbilityModifier(5, {"str": 3, "dex": 2})
+        assert result.flat is False
+        assert result.bonus == 2
+        assert result.bonus + 3 == 5
+
+    def testFlatDamageIsLeftAlone(self):
+        """A torch deals a flat 1 — deterministic, so dnd5e appends no @mod."""
+        result = dnd5e.extractAbilityModifier(1, {"str": 3}, has_dice=False)
+        assert result.bonus == 1
+
+    def testSpellDamageIsLeftAlone(self):
+        # The @mod block in _processDamagePart only runs for item.type "weapon".
+        result = dnd5e.extractAbilityModifier(3, {"str": 3}, is_weapon=False)
+        assert result.bonus == 3
+
+    def testSymbolicOnANonWeaponMaterialisesTheModifier(self):
+        # Nothing will append @mod, so the named modifier must be written out.
+        result = dnd5e.extractAbilityModifier(0, {"str": 3}, symbolic="str", is_weapon=False)
+        assert result.bonus == 3
+
+    def testAppendsAbilityModifierMatchesTheSystem(self):
+        assert dnd5e.appendsAbilityModifier(is_weapon=True, has_dice=True) is True
+        assert dnd5e.appendsAbilityModifier(is_weapon=True, has_dice=False) is False
+        assert dnd5e.appendsAbilityModifier(is_weapon=False, has_dice=True) is False
 
     def testSymbolicKeepsFlatAddend(self):
         """B001 regression — "1d8 + @abilities.str.mod + 1"."""
         result = dnd5e.extractAbilityModifier(1, {"str": 3}, symbolic="str")
         assert result.ability == "str"
         assert result.bonus == 1, "the +1 was dropped; printed total fell by 1"
-        assert result.flat is False
 
     def testSymbolicIsCaseInsensitive(self):
         # ABILITY_MOD_RE matches case-insensitively, so "STR" reaches us.
@@ -307,7 +359,7 @@ class TestModifierExtractionInvariant(object):
     def testNoAbilitiesAtAllDoesNotCrash(self):
         result = dnd5e.extractAbilityModifier(2, {}, ranged=True)
         assert result.ability == "dex"
-        assert result.bonus + (0 if result.flat else 0) == 2
+        assert result.bonus == 2
 
 
 class TestActivities(object):
