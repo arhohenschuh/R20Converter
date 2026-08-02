@@ -418,7 +418,8 @@ class TestActivities(object):
         activity = dnd5e.saveActivity("abc123", "dex", dc=15)
         assert activity["type"] == "save"
         assert activity["save"]["ability"] == ["dex"]
-        assert activity["save"]["dc"]["value"] == 15
+        assert activity["save"]["dc"]["formula"] == "15"
+        assert "value" not in activity["save"]["dc"]
 
     def testDamageActivityShape(self):
         activity = dnd5e.damageActivity("abc123", [dnd5e.damageData(2, 6, types=["fire"])])

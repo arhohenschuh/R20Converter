@@ -208,6 +208,22 @@ class Entity(object):
         self._id = self.normalizeID(self._original_id)
         self.entity = {"_id": self._id}
 
+    def documentStats(self):
+        """The ``_stats`` block every document should carry (ADR-008).
+
+        R20Converter emitted none at all, which leaves ``_stats.systemVersion``
+        unset. dnd5e reads that field to decide whether a document needs
+        migrating, so an absent value invites a migration over documents that
+        are already current — and that migration is what empties
+        ``system.damage.base``.
+        """
+        import dnd5e
+        import foundry
+        converter = getattr(self, "_converter", None)
+        version = getattr(converter, "game_system_version", None) \
+            or foundry.DEFAULT_SYSTEM_VERSION
+        return dnd5e.stats(foundry.DOCUMENT_SCHEMA_CORE_VERSION, version)
+
     def logInfo(self, msg):
         self._database.logInfo(msg)
     def logWarning(self, msg):

@@ -39,8 +39,8 @@ converted 760 MB modules:
 | Step | Version | Title | Output changes? | Status |
 |---|---|---|:--:|---|
 | **R1** | 0.15.0 | Foundation — `src/dnd5e.py`, shape builders, tests | No | **Done** |
-| **R2** | 0.16.0 | The Switch — atomic dnd5e 5.x emission | Yes, breaking | Next |
-| **R3** | 0.17.0 | Cleanup — routing bug, compendium reads, origin docs | Yes | Planned |
+| **R2** | 0.16.0 | The Switch — atomic dnd5e 5.x emission | Yes, breaking | **Done** |
+| **R3** | 0.17.0 | Cleanup — origin documents, actor fields, remaining `_stats` | Yes | Next |
 | **R4** | 1.0.0 | Acceptance — real exports through a real Foundry | No | Planned |
 
 ---
@@ -69,7 +69,7 @@ ADR-008 written.
 
 ---
 
-### R2 · 0.16.0 — The Switch (next)
+### R2 · 0.16.0 — The Switch ✅
 
 **One atomic change.** Sliced any finer, the converter would emit documents that
 are neither old enough for dnd5e's migrator nor complete enough for 5.x — strictly
@@ -99,16 +99,43 @@ in the same commit as the data.
 **Gate:** no legacy field emitted anywhere · every rollable document has an
 activity · printed damage totals unchanged across the invariant table.
 
+**Outcome — measured, not asserted.** A real 65 MB Roll20 export
+(*TotYP — The Sunless Citadel*) was converted and the emitted NeDB files read
+back. Unit tests cannot see what the emitter actually wrote across a whole
+campaign; this can.
+
+| Measure | Before R2 | After R2 |
+|---|--:|--:|
+| Legacy fields in emitted items | 16 kinds | **0** |
+| Items carrying `_stats.systemVersion` | 0 / 357 | **357 / 357** |
+| Actors carrying `_stats.systemVersion` | 0 / 30 | **30 / 30** |
+| Rollable items with an activity | 0 / 290 | **190 / 290** |
+| Activated items with no activity | 140 | **0** |
+| Weapons with dice in `damage.base` | 0 / 96 | **96 / 96** |
+| Activity `_id` ≠ its map key | — | **0** |
+
+The 100 items still without an activity all have `activation.type == ""` — they
+are passive traits (*Keen Smell*, *Pack Tactics*, *Sunlight Sensitivity*), which
+dnd5e also leaves activity-less. The check is not "everything has an activity"
+but "nothing **activated** lacks one".
+
+The first pass through that export is what found **B006–B010**: the unit suite
+was 307-green while the converter was still emitting `system.scaling`,
+`system.components`, `system.preparation`, `system.consume`, a flat `target`, a
+legacy `uses` and `activation.cost` on every item. Those tests passed because
+none of them looked at that half of the schema.
+
 ---
 
 ### R3 · 0.17.0 — Cleanup
 
-- **B003** — `Items.createItemInventory()` routes `inventory_type == "consumable"`
-  to `createItemWeapon()`
-- **B004** — `actors.py` reads `compendium_item.entity["system"]["weaponType"]`
-  (lines 1799, 2034, 2134); breaks against a 5.x compendium
 - Validate class / subclass / species / background documents (ADR-006, ADR-007)
   against dnd5e 5.3.3 — claiming 5.3.3 means their migrations are skipped too
+- Actor-level fields: `abilities.*` still carries the derived `mod` / `save` /
+  `min` keys 5.x computes for itself
+- Scene, journal and table `_stats`
+
+*(B003 and B004 were scheduled here but landed in R2 — see F003 / F004.)*
 
 ---
 
@@ -136,9 +163,22 @@ damage loss above went unnoticed.
 |---|---|---|---|
 | **B001** | R1 | `extractAbilityModifier()` dropped the flat addend on a symbolic formula. `"1d8 + @abilities.str.mod + 1"` returned `bonus=0`, so the printed total fell by 1 — a violation of the one invariant this port exists to protect. | **F001** |
 | **B002** | R1 | `attackActivity()` rejected only `ability="none"`. `"STR"`, `"strength"`, `"banana"` passed through and produced an activity dnd5e validates away just as silently. | **F002** |
-| **B003** | R1 (open) | `Items.createItemInventory()` routes `inventory_type == "consumable"` to `createItemWeapon()`. Pre-existing; scheduled for R3. | — |
-| **B004** | R1 (open) | `actors.py` reads the legacy `["system"]["weaponType"]` from compendium items at lines 1799, 2034, 2134. Breaks against a 5.x compendium. Scheduled for R3. | — |
+| **B003** | R1 → R2 | `Items.createItemInventory()` routes `inventory_type == "consumable"` to `createItemWeapon()`, producing an item whose declared type and system shape disagree. | **F003** |
+| **B004** | R1 → R2 | `actors.py` reads the legacy `["system"]["weaponType"]` from compendium items at lines 1799, 2034, 2134. Breaks against a 5.x compendium. | **F004** |
 | **B005** | R1 | `attack.flat` does not suppress `@mod` in damage — it only makes the *attack roll* a flat bonus. The extractor used it to "preserve" an unmatched bonus, which instead inflated damage by the ability modifier. | **F005** |
+| **B006** | R2 | Spells emitted `system.scaling`, `system.components`, `system.preparation` and `system.consume`. None exists in 5.3.3 `SpellData`. Foundry drops unknown keys silently, so every spell lost its components, its prepared state and all upcast scaling — with no error anywhere. | **F006** |
+| **B007** | R2 | An item with an activation but nothing rollable got **no activity**, so it had no button on the sheet at all. dnd5e's own migration gives these a `utility` activity (`ActivitiesTemplate.#createInitialActivity`). Measured: 26 spells and 114 features. | **F007** |
+| **B008** | R2 | `Item.createItemFromHandout()` builds its entity dict by hand and never called `documentStats()`, so 10 handout-derived items shipped with no `_stats` — exactly the documents dnd5e would then migrate. | **F008** |
+| **B009** | R2 | The whole shared activated-effect template was still 1.5.6-shaped on **every** item type: `activation.cost` (5.x reads `value`), `range.long`, the flat `target`, and `uses {value, max, per}` (5.x stores `spent` and a `recovery` array). Also `ItemActivation.NONE`/`SPECIAL` and `ItemRange.NONE` are not valid 5.x enum values and reset their field on load. | **F009** |
+| **B010** | R2 | `_buildActivities()` built the heal activity as `healActivity(activity_id)` — without its healing formula. Every healing spell healed nothing. *Cure Wounds* shipped with `healing: {}`. | **F010** |
+| **B011** | R2 | The unit suite was 307-green across all of B006–B010. The tests asserted the shapes the emitter produced for weapons and never looked at the activated-effect or spell half of the schema, so a whole family of legacy output was invisible to them. | **F011** |
+| **B012** | R2 | `ACTIVATION_TYPES` was read off a truncated grep of `config.mjs` and lost `crew` and `special`. A "special" activation therefore became blank. Measuring with a tool that silently truncates is the same class of error as not measuring. | **F012** |
+| **B013** | R2 | `activation` / `range` / `duration` / `target` were emitted at the document root for **every** item type. Only `SpellData` declares them; `WeaponData`, `FeatData`, `EquipmentData` and `ConsumableData` do not, so Foundry dropped them and each activity kept its defaults — every reaction became an action, every ranged attack read "self", every target vanished. | **F013** |
+| **B014** | R2 | `WeaponData` declares its own `range {value, long, reach, units}` with *numeric* fields rather than reusing the shared `RangeField`. Weapons got the shared shape, which loses `reach` and `long` and puts a formula string into a `NumberField`. | **F014** |
+| **B015** | R2 | Cantrip save damage was written as `onSave: "half"`. dnd5e sets `"none"` in `SaveActivityData#_preCreate` — but only when the key is absent, and the converter always writes one. | **F015** |
+| **B016** | R2 | `createItemFromCompendium()` replaces the whole entity with the compendium copy *after* the constructor stamped `_stats`, so those items carried whatever version their pack was built with — and would be migrated. | **F016** |
+| **B017** | R2 | `ItemFeatRecharge.getDict()` returned a complete `uses` block that overwrote the one from `ItemActivation`, so a feature with both a charge count and a recharge ("2/day, Recharge 5-6") lost the charge count. | **F017** |
+| **B018** | R2 | Save activities emitted `save.dc.value` and `damage.critical`. Neither is in the 5.3.3 `SaveActivityData` schema; both are dropped on load, leaving the stored document non-native. | **F018** |
 
 ### B001 in detail
 
@@ -197,6 +237,22 @@ Two corrections followed:
 | **F001** | B001 | Symbolic branch preserves the flat addend and lower-cases the ability key (`ABILITY_MOD_RE` matches case-insensitively). Invariant test corrected to `bonus + mods[symbolic]`. Fixtures INV-16 / INV-17 added, plus a non-vacuity assertion requiring a symbolic-*and*-flat row. |
 | **F002** | B002 | `attackActivity()` and `extractAbilityModifier()` validate the ability against `ABILITIES`. Empty stays legal — it means "no modifier", unlike `"none"`. |
 | **F005** | B005 | `appendsAbilityModifier(is_weapon, has_dice)` encodes dnd5e's real rule. The extractor subtracts instead of going flat, and leaves spell / feat / flat damage untouched. `ModifierExtraction.flat` is now always `False` and documented as an attack-roll concern. New invariant test asserts the total in the no-auto-modifier direction too. |
+| **F003** | B003 | `createItemInventory()` routes consumables to `createItemConsumable()`. The `specific` argument is only forwarded when it really is an `ItemConsumable`, so a mis-typed caller cannot splice weapon keys into a consumable. |
+| **F004** | B004 | `_compendiumWeaponType()` reads `system.type.value` first and falls back to `system.weaponType`, so the converter works against a 1.x **or** a 5.x SRD compendium. |
+| **F006** | B006 | `ItemSpellComponents.getDict()` emits the 5.x `properties` set; `ItemSpellPreparation.getDict()` emits `method` + numeric `prepared` via `dnd5e.spellPreparation()`; `ItemSpellScaling.getDict()` and `ItemConsume.getDict()` return `{}` and the scaling object is passed to `_buildActivities()` instead, where `dnd5e.damageScaling()` reproduces `BaseActivityData.transformDamagePartData` — including the rule that a scaling die matching the damage die becomes a die *count* rather than a formula. |
+| **F007** | B007 | `_utilityOnly()` emits a `utility` activity whenever an item has a real `activation.type` and nothing rollable. `createStandardData()` now builds activities when there is an activation even with no attack. Passive traits, which have no activation, still correctly get nothing. |
+| **F008** | B008 | `createItemFromHandout()` calls `documentStats()` and also emits the `effects` array it was missing. |
+| **F009** | B009 | `dnd5e.activationData` / `rangeData` / `durationData` / `targetData` / `usesData` / `usesFromLegacy` / `recovery` build the 5.3.3 shapes, read from `module/data/shared/*-field.mjs`. Every enum is validated against a whitelist (`ACTIVATION_TYPES`, `RANGE_UNITS`, `DURATION_UNITS`, `AREA_TARGET_TYPES`, `INDIVIDUAL_TARGET_TYPES`, `RECOVERY_PERIODS`) — an unrecognised value resolves to the sane default rather than silently resetting the field on load. `ItemFeatRecharge` now emits a `uses.recovery` rule, since `system.recharge` no longer exists. |
+| **F010** | B010 | The heal activity is built from the first damage part, re-typed as `healing`. |
+| **F011** | B011 | `tests/test_dnd5e_template.py` — 122 tests covering the activated-effect template, the spell fields, damage scaling, utility and heal activities, each asserting **absence** of the legacy key as well as presence of the replacement. Plus `verify.py`, which reads the emitted NeDB files of a real converted campaign; that is what found the family in the first place, and R4 makes it a gate. |
+| **F012** | B012 | `crew` and `special` restored. The test that exercises the whitelist now lists the sixteen values literally, copied from `config.mjs`, instead of iterating `ACTIVATION_TYPES` — which could only ever agree with itself. |
+| **F013** | B013 | `dnd5e.ROOT_ACTIVATED_TYPES` names the one item type that keeps the block at the root. `createStandardData()` emits it there for spells and only `uses` elsewhere; `_applyMetadata()` copies activation, range, duration and target onto every activity, with `override` set for the types that have no root copy to inherit from. This mirrors `BaseActivityData.createInitialActivity`, which does the same during migration. |
+| **F014** | B014 | `dnd5e.weaponRange()` builds the weapon-specific numeric shape; `createItemWeapon()` uses it and the shared range is no longer written for weapons. |
+| **F015** | B015 | `_buildActivities()` takes the spell level and passes `on_save="none"` for a level-0 spell. |
+| **F016** | B016 | `createItemFromCompendium()` restamps `_stats` after the copy. |
+| **F017** | B017 | `_mergeRecharge()` appends the recharge rule to the existing `recovery` list and keeps the charge maximum, replacing the block only when there is nothing to preserve. |
+| **F018** | B018 | `saveActivity()` emits `save.dc = {calculation, formula}` and `damage = {onSave, parts}`. The two tests that asserted `dc.value` were themselves ratifying the defect and now assert its absence. |
+
 
 ## Per-step cycle
 

@@ -54,6 +54,70 @@ Fixed during 0.15.0 (see `ROADMAP.md`):
 - **B002/F002** — `attackActivity()` rejected only `ability="none"`, so `"STR"`
   and other invalid keys still produced activities dnd5e validates away.
 
+#### 0.16.0 — the switch
+
+Every dnd5e item shape moves to 5.x **at once**. Sliced any finer the converter
+would emit documents neither old enough for dnd5e's migrator nor complete enough
+for 5.x: removing `damage.parts` before `activities` exist leaves damage with
+nowhere rollable to live. Version stamps move in the same commit as the data,
+because claiming 1.5.6 while emitting 5.x invites a migration over documents with
+nothing left to convert, and claiming 5.3.3 while emitting legacy fields strands
+them.
+
+- `system.type = {value, baseItem}` replaces `weaponType` / `armorType` /
+  `consumableType` / `toolType` and the sibling `baseItem`.
+- `system.damage.base` / `.versatile` as `DamageData`; `damage.parts` deleted.
+- `properties` as an array; the boolean map deleted.
+- `system.activities` on every rollable item, so no document depends on the
+  migration that never builds them.
+- The whole shared activated-effect template: `activation.cost` → `activation.value`,
+  the flat `target` → `{template, affects}`, `uses {value, max, per}` →
+  `{spent, max, recovery[]}`, `range.long` dropped. Every enum is validated against
+  a whitelist read from `config.mjs` — an unrecognised value resolves to the sane
+  default instead of silently resetting the field on load.
+- Spells: `components` → the shared `properties` set, `preparation` →
+  `method` + numeric `prepared`, `scaling` → per-damage-part activity scaling,
+  `consume` removed. None of those four keys exists in 5.3.3 `SpellData`.
+- **`activation` / `range` / `duration` / `target` are written onto the activity**
+  for weapons, features, equipment and consumables. Only `SpellData` declares them
+  at the document root; on every other type Foundry drops them and the activity
+  keeps its defaults, so a reaction became an action and a 120 ft attack read
+  "self". Weapons additionally get their own numeric `range` with `reach`/`long`.
+- `_stats` on every item and actor, including handout- and compendium-derived ones.
+- Version stamps: `SYSTEM_VERSION`, `dnd5e.systemMigrationVersion`,
+  `_stats.systemVersion` and the manifest's `relationships.systems` all read 5.3.3,
+  with a `minimum` of 5.0.0.
+- Suite: 249 → 429.
+
+Verified by converting a real 65 MB Roll20 export and reading back the emitted
+NeDB files — 357 items, 30 actors: **0 legacy fields**, `_stats.systemVersion`
+on 357/357 items and 30/30 actors, **0** activated items without an activity
+(was 140), 96/96 weapons with dice in `damage.base`, 0 activity id/key mismatches.
+
+Fixed during 0.16.0 (see `ROADMAP.md`):
+- **B003/F003** — consumables were routed to `createItemWeapon()`.
+- **B004/F004** — `actors.py` read the legacy `weaponType` from compendium items.
+- **B006/F006** — spells emitted four fields absent from 5.3.3 `SpellData`, so every
+  spell silently lost its components, prepared state and upcast scaling.
+- **B007/F007** — an item with an activation but nothing rollable got no activity,
+  and therefore no button on the sheet: 26 spells and 114 features.
+- **B008/F008** — handout-derived items shipped with no `_stats`.
+- **B009/F009** — the activated-effect template was 1.5.6-shaped on every item type.
+- **B010/F010** — the heal activity was built without its healing formula, so every
+  healing spell healed nothing.
+- **B011/F011** — the unit suite was 307-green across all of the above, because it
+  only ever asserted the half of the schema the emitter already handled.
+- **B012/F012** — `special` and `crew` were dropped from the activation whitelist.
+- **B013/F013** — activity metadata (above).
+- **B014/F014** — weapons got the shared range shape, losing `reach` and `long` and
+  putting a formula string into a `NumberField`.
+- **B015/F015** — cantrip save damage was written as `half` on a success; dnd5e sets
+  `none`, but only when the key is absent, and the converter always writes one.
+- **B016/F016** — compendium-derived items kept their pack's `_stats`.
+- **B017/F017** — a recharge overwrote the charge count instead of merging with it.
+- **B018/F018** — save activities emitted `save.dc.value` and `damage.critical`,
+  neither of which is in the 5.3.3 schema.
+
 ### Foundry v13 (ADR-002, ADR-003)
 - Emit `world.json` and `module.json` in the Foundry v13 manifest schema: `id`
   instead of `name`, the now-required `type`, a `compatibility` object instead of

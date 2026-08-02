@@ -10,7 +10,13 @@ the core version it claimed to be written by), while ``module.json``
 independently claimed a minimum core of 0.7.5. Collecting them here means the
 next Foundry generation bump is one reviewable edit rather than an archaeology
 exercise.
+
+The dnd5e *system* schema has the same treatment in ``dnd5e.py`` (ADR-008); the
+system version constants below are re-exported from there so the two cannot
+drift apart.
 """
+
+import dnd5e
 
 # --- Target platform -------------------------------------------------------
 
@@ -55,9 +61,19 @@ DEFAULT_GAME_SYSTEM = "dnd5e"
 #: The dnd5e system version whose data schema R20Converter writes. Used as the
 #: fallback ``systemVersion`` when the system is not installed locally and its
 #: real version cannot be read from its ``system.json``, and as the recorded
-#: ``dnd5e.systemMigrationVersion`` so the system runs its own migrations from
-#: the right starting point.
-DEFAULT_SYSTEM_VERSION = "1.5.6"
+#: ``dnd5e.systemMigrationVersion`` so the system does not migrate documents that
+#: are already current.
+#:
+#: This must stay in step with ``dnd5e.SYSTEM_VERSION`` and with the documents we
+#: actually emit (ADR-008). Claiming an older version runs a migration against
+#: documents that have no legacy fields left to convert, which silently empties
+#: ``system.damage.base``; claiming a newer one strands any legacy field that was
+#: not ported. Both directions corrupt.
+DEFAULT_SYSTEM_VERSION = dnd5e.SYSTEM_VERSION
+
+#: Oldest dnd5e release that understands the schema we emit. Activities landed in
+#: dnd5e 4.0, and the shapes here are the 5.x generation.
+MINIMUM_SYSTEM_VERSION = dnd5e.MINIMUM_SYSTEM_VERSION
 
 
 def compatibility(minimum=MINIMUM_CORE_VERSION, verified=VERIFIED_CORE_VERSION):
@@ -77,8 +93,18 @@ def systemRelationship(system_id, system_version=None):
     """Build the ``relationships.systems`` entry for the game system.
 
     Replaces the v9 top-level ``dependencies`` array, removed in v13.
+
+    For dnd5e a ``minimum`` is declared as well as a ``verified``: the documents
+    we emit use the 5.x schema and are unreadable by older releases (ADR-008), so
+    installing against one should fail loudly rather than produce a world full of
+    items the system cannot parse.
     """
     relationship = {"id": system_id, "type": "system"}
+    compatibility = {}
+    if system_id == DEFAULT_GAME_SYSTEM:
+        compatibility["minimum"] = MINIMUM_SYSTEM_VERSION
     if system_version:
-        relationship["compatibility"] = {"verified": system_version}
+        compatibility["verified"] = system_version
+    if compatibility:
+        relationship["compatibility"] = compatibility
     return relationship

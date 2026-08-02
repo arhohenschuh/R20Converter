@@ -9,6 +9,7 @@ Every constant here was read out of the dnd5e 5.3.3 source rather than inferred:
 for ``DamageData``, ``module/documents/activity/attack.mjs`` for activity shape.
 """
 
+import copy
 import hashlib
 import re
 
@@ -405,6 +406,63 @@ def activityId(seed):
     return "".join(_ID_ALPHABET[b % len(_ID_ALPHABET)] for b in digest[:16])
 
 
+def weaponRange(value=None, long=None, reach=None, units=""):
+    """Build ``system.range`` **for a weapon**.
+
+    ``WeaponData`` declares its own range — ``{value, long, reach, units}`` with
+    *numeric* fields — rather than reusing the shared ``RangeField``. Sending the
+    shared shape here loses ``long`` and ``reach`` and puts a formula string into
+    a ``NumberField``.
+    """
+    def number(raw):
+        try:
+            parsed = int(raw)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed > 0 else None
+
+    return {
+        "value": number(value),
+        "long": number(long),
+        "reach": number(reach),
+        "units": units if units in ("ft", "mi", "m", "km") else "ft",
+    }
+
+
+def applyActivityMetadata(activity, activation=None, range_=None, duration=None,
+                          target=None, uses=None, on_item=False):
+    """Copy the activated-effect block onto an activity.
+
+    Only ``SpellData`` keeps ``activation`` / ``range`` / ``duration`` / ``target``
+    on the document root. For every other item type those keys are not in the
+    schema and Foundry drops them, leaving the activity on its defaults — a
+    reaction becomes an action, a 120 ft attack shows "self", the target
+    disappears. dnd5e's own migration avoids this by copying the values onto the
+    activity (``BaseActivityData.createInitialActivity``); we do the same.
+
+    ``on_item`` says the item root already carries these values, in which case
+    ``override`` stays ``False`` and the activity inherits them.
+    """
+    override = not on_item
+    if activation is not None:
+        activity["activation"] = dict(activation)
+        activity["activation"]["override"] = override
+    if range_ is not None:
+        activity["range"] = dict(range_)
+        activity["range"]["override"] = override
+    if duration is not None:
+        activity["duration"] = dict(duration)
+        activity["duration"].setdefault("concentration", False)
+        activity["duration"]["override"] = override
+    if target is not None:
+        activity["target"] = copy.deepcopy(target)
+        activity["target"]["override"] = override
+        activity["target"]["prompt"] = True
+    if uses is not None and not on_item:
+        activity["uses"] = copy.deepcopy(uses)
+    return activity
+
+
 def _activityBase(activity_id, activity_type, name="", sort=0):
     return {
         "_id": activity_id,
@@ -459,14 +517,22 @@ def attackActivity(activity_id, ability, ranged=False, classification="weapon",
 
 def saveActivity(activity_id, ability, dc=None, dc_calculation="", damage_parts=None,
                  on_save="half", name="", sort=0):
-    """Build a ``save`` activity (spells, breath weapons, traps)."""
+    """Build a ``save`` activity (spells, breath weapons, traps).
+
+    ``save.dc`` is ``{calculation, formula}`` in 5.3.3 — there is no ``value``,
+    and ``damage`` on a save activity has no ``critical``. Both are dropped on
+    load, so emitting them just makes the stored document non-native.
+
+    ``on_save`` must be ``"none"`` for a cantrip: dnd5e sets that itself in
+    ``SaveActivityData#_preCreate``, but only when the key is absent, and we
+    always write one.
+    """
     activity = _activityBase(activity_id, ACTIVITY_SAVE, name, sort)
     activity["save"] = {
         "ability": [ability] if ability else [],
-        "dc": {"calculation": dc_calculation, "formula": "" if dc is None else str(dc), "value": dc},
+        "dc": {"calculation": dc_calculation, "formula": "" if dc is None else str(dc)},
     }
     activity["damage"] = {
-        "critical": {"bonus": ""},
         "onSave": on_save,
         "parts": list(damage_parts or []),
     }
@@ -493,6 +559,28 @@ def utilityActivity(activity_id, name="", sort=0):
 
 
 # --- Document metadata (AD-5) ----------------------------------------------
+
+def damageScaling(mode="", formula="", denomination=None):
+    """Translate a v1.5.6 ``system.scaling`` into a damage part's ``scaling``.
+
+    Mirrors ``BaseActivityData.transformDamagePartData`` in 5.3.3: any mode other
+    than ``none`` becomes ``whole``, and when the scaling die matches the damage
+    die — or the spell is a cantrip — the increment is expressed as a *number* of
+    extra dice rather than a formula.
+
+    Returns ``(scaling_mode, scaling_number, scaling_formula)``.
+    """
+    if not mode or mode == "none":
+        return "", 1, ""
+    scaling_formula = formula or ""
+    scaling_number = 1
+    match = re.match(r"^\s*(\d+)d(\d+)\s*$", scaling_formula, re.IGNORECASE)
+    if (match and denomination is not None
+            and int(match.group(2)) == denomination) or mode == "cantrip":
+        scaling_number = int(match.group(1)) if match else 1
+        scaling_formula = ""
+    return "whole", scaling_number, scaling_formula
+
 
 def stats(core_version, system_version=SYSTEM_VERSION):
     """Build the ``_stats`` block carried by every document.
@@ -536,3 +624,269 @@ def properties(flags):
     else:
         selected = list(flags or [])
     return [k for k in WEAPON_PROPERTIES if k in selected]
+
+
+# ---------------------------------------------------------------------------
+# The activated-effect template
+#
+# dnd5e 4.0 rebuilt the fields every activatable item shares. The shapes below
+# are read from ``module/data/shared/*-field.mjs`` in 5.3.3. Getting these wrong
+# is quiet rather than loud: Foundry's DataModel drops keys it does not know and
+# substitutes initial values for keys it does, so a legacy block does not raise —
+# it just leaves the item with no range, no target and no uses.
+# ---------------------------------------------------------------------------
+
+#: ``TargetField#template.type`` — an area of effect. Anything here is a
+#: template; everything else is an individual target. From
+#: ``CONFIG.DND5E.areaTargetTypes``.
+AREA_TARGET_TYPES = (
+    "circle", "cone", "cube", "cylinder", "line", "radius", "sphere",
+    "square", "wall",
+)
+
+#: ``TargetField#affects.type``. From ``CONFIG.DND5E.individualTargetTypes``.
+INDIVIDUAL_TARGET_TYPES = (
+    "self", "ally", "enemy", "creature", "object", "space",
+    "creatureOrObject", "any", "willing",
+)
+
+#: ``UsesField#recovery[].period``.
+RECOVERY_PERIODS = ("lr", "sr", "day", "dawn", "dusk", "charges", "recharge")
+
+#: ``system.activation.type``. From ``CONFIG.DND5E.activityActivationTypes``.
+#: v1.5.6 also emitted ``none``, which does not exist in 5.x.
+ACTIVATION_TYPES = (
+    "action", "bonus", "reaction", "minute", "hour", "day", "longRest",
+    "shortRest", "encounter", "turnStart", "turnEnd", "legendary", "mythic",
+    "lair", "crew", "special",
+)
+
+#: Item types that keep ``activation`` / ``range`` / ``duration`` / ``target`` on
+#: the document root. Only ``SpellData`` declares them; ``WeaponData``,
+#: ``FeatData``, ``EquipmentData`` and ``ConsumableData`` do not, so for those
+#: the values belong on the **activity** or they are dropped on load. The shared
+#: ``ActivitiesTemplate`` contributes only ``activities`` and ``uses``.
+ROOT_ACTIVATED_TYPES = ("spell",)
+
+
+#: ``system.range.units`` — ``CONFIG.DND5E.movementUnits`` plus
+#: ``CONFIG.DND5E.rangeTypes``. v1.5.6's ``none`` is not among them.
+RANGE_UNITS = ("self", "touch", "spec", "any", "ft", "mi", "m", "km")
+
+#: ``system.duration.units`` — ``CONFIG.DND5E.timeUnits`` plus the permanent and
+#: special periods.
+DURATION_UNITS = (
+    "turn", "round", "second", "minute", "hour", "day", "week", "month",
+    "year", "disp", "dstr", "perm", "inst", "spec",
+)
+
+#: ``system.method`` on a spell. From ``CONFIG.DND5E.spellcasting``. The legacy
+#: ``preparation.mode`` values ``prepared`` and ``always`` both collapse onto
+#: ``spell``; the distinction moved to the numeric ``prepared`` field.
+SPELLCASTING_METHODS = ("atwill", "innate", "ritual", "pact", "spell")
+
+#: ``system.prepared`` on a spell. From ``CONFIG.DND5E.spellPreparationStates``.
+SPELL_UNPREPARED = 0
+SPELL_PREPARED = 1
+SPELL_ALWAYS_PREPARED = 2
+
+#: The five spell components, which 5.x folded into the shared ``properties``
+#: set alongside ``ritual`` and ``concentration``.
+SPELL_PROPERTIES = ("vocal", "somatic", "material", "concentration", "ritual")
+
+
+def _formula(value):
+    """Render a value for a ``FormulaField``, which stores strings.
+
+    ``None`` and ``0`` both mean "unset" in the Roll20 data we are handed, and
+    both must come out as ``""`` — a literal ``"0"`` range reads as a real range
+    of zero feet and hides the item from the sheet's range column.
+    """
+    if value is None or value == "":
+        return ""
+    if isinstance(value, bool):
+        return ""
+    return str(value)
+
+
+def activationData(activation_type="", value=None, condition=""):
+    """Build ``system.activation``.
+
+    v1.5.6 called the scalar ``cost``; 5.x calls it ``value``. The rename is not
+    cosmetic — ``cost`` is dropped on load, which silently turns "3 actions" into
+    "action". v1.5.6's ``none`` type does not exist in 5.x; it means "not
+    activated", which 5.x spells as the empty string. ``special`` *does* exist
+    and must be preserved.
+    """
+    if activation_type not in ACTIVATION_TYPES:
+        activation_type = ""
+    return {
+        "type": activation_type,
+        "value": value if isinstance(value, int) and value > 0 else None,
+        "condition": condition or "",
+    }
+
+
+def rangeData(value=None, units="", special=""):
+    """Build ``system.range``.
+
+    ``long`` is gone in 5.x. ``units`` is ``required, blank: false``, so an empty
+    or unrecognised string is invalid and falls back to the field initial — we
+    resolve it here rather than let that happen by accident.
+    """
+    if units not in RANGE_UNITS:
+        units = "self"
+    return {
+        "value": _formula(value) if units in ("ft", "mi", "m", "km") else "",
+        "units": units,
+        "special": special or "",
+    }
+
+
+def durationData(value=None, units="", special=""):
+    """Build ``system.duration``. ``units`` is ``blank: false``; the 5.x initial
+    is ``"inst"``, which is also the right reading of "no duration given"."""
+    if units not in DURATION_UNITS:
+        units = "inst"
+    scalar = units in ("turn", "round", "second", "minute", "hour", "day",
+                       "week", "month", "year")
+    return {
+        "value": _formula(value) if scalar else "",
+        "units": units,
+        "special": special or "",
+    }
+
+
+
+def targetData(target_type="", size=None, width=None, units="",
+               affects_count=None, affects_type="", special=""):
+    """Build ``system.target``.
+
+    v1.5.6 stored one flat ``{value, width, units, type}``. 5.x splits it in two:
+    an area ``template`` and an ``affects`` count of individuals. Which half a
+    legacy value belongs in is decided by the type, not by the caller.
+    """
+    target_type = target_type or ""
+    template = {
+        "count": "",
+        "contiguous": False,
+        "stationary": False,
+        "type": "",
+        "size": "",
+        "width": "",
+        "height": "",
+        "units": units or "ft",
+    }
+    affects = {
+        "count": "",
+        "type": "",
+        "choice": False,
+        "special": special or "",
+    }
+    if target_type in AREA_TARGET_TYPES:
+        template["type"] = target_type
+        template["size"] = _formula(size)
+        template["width"] = _formula(width)
+    elif target_type in INDIVIDUAL_TARGET_TYPES:
+        affects["type"] = target_type
+        affects["count"] = _formula(size)
+    elif target_type:
+        # An unrecognised type is not passed through: an invalid enum value
+        # fails validation for the whole document.
+        affects["special"] = special or target_type
+    return {"template": template, "affects": affects}
+
+
+def recovery(period="", formula=""):
+    """Build one entry of ``uses.recovery``."""
+    if period not in RECOVERY_PERIODS:
+        return None
+    entry = {
+        "period": period,
+        "type": "recoverAll",
+        "formula": "",
+    }
+    if period == "recharge":
+        # A recharge is "regain on a d6 roll of N or higher"; dnd5e stores N in
+        # `formula` and recovers everything when it succeeds.
+        entry["formula"] = _formula(formula)
+    elif formula:
+        entry["type"] = "formula"
+        entry["formula"] = _formula(formula)
+    return entry
+
+
+def usesData(spent=0, maximum=None, recoveries=None):
+    """Build ``system.uses``.
+
+    v1.5.6 stored *remaining* uses in ``value`` and the reset period in ``per``.
+    5.x stores *spent* uses and a list of recovery rules. Passing the old shape
+    through leaves every limited-use item at zero uses.
+    """
+    return {
+        "spent": spent if isinstance(spent, int) and spent > 0 else 0,
+        "max": _formula(maximum),
+        "recovery": [r for r in (recoveries or []) if r],
+    }
+
+
+def usesFromLegacy(value=0, maximum=0, per=""):
+    """Translate the v1.5.6 ``{value, max, per}`` triple into 5.x ``uses``.
+
+    ``value`` was uses *remaining*, so ``spent = max - value``.
+    """
+    try:
+        maximum_int = int(maximum)
+    except (TypeError, ValueError):
+        maximum_int = 0
+    try:
+        value_int = int(value)
+    except (TypeError, ValueError):
+        value_int = 0
+    spent = max(0, maximum_int - value_int) if maximum_int else 0
+    period = per if per in RECOVERY_PERIODS else ""
+    entry = recovery(period) if period else None
+    return usesData(spent, maximum_int or None, [entry] if entry else [])
+
+
+def spellProperties(vocal=False, somatic=False, material=False,
+                    concentration=False, ritual=False):
+    """Build a spell's ``system.properties`` set.
+
+    v1.5.6 kept these as a ``components`` object of booleans; 5.x folds them into
+    the same ``properties`` array every other item type uses.
+    """
+    flags = {
+        "vocal": vocal,
+        "somatic": somatic,
+        "material": material,
+        "concentration": concentration,
+        "ritual": ritual,
+    }
+    return [k for k in SPELL_PROPERTIES if flags[k]]
+
+
+def spellPreparation(mode="", prepared=False):
+    """Translate the v1.5.6 ``preparation`` object into 5.x ``method``/``prepared``.
+
+    Returns the two keys as a fragment so callers can splice it into ``system``.
+    """
+    mode = mode or ""
+    if mode in ("prepared", "always", ""):
+        method = "spell"
+    elif mode in SPELLCASTING_METHODS:
+        method = mode
+    else:
+        method = "spell"
+    if mode == "always":
+        state = SPELL_ALWAYS_PREPARED
+    elif prepared:
+        state = SPELL_PREPARED
+    else:
+        state = SPELL_UNPREPARED
+    # An innate or at-will spell is always castable; leaving it "unprepared"
+    # greys it out on the sheet.
+    if method in ("innate", "atwill", "pact") and state == SPELL_UNPREPARED:
+        state = SPELL_PREPARED
+    return {"method": method, "prepared": state}
+

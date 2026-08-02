@@ -74,8 +74,14 @@ class TestWorldManifest(object):
     def test_uses_relationships_not_dependencies(self, converter):
         manifest = World(converter).toDict()
         assert "dependencies" not in manifest
+        # The documents we emit use the dnd5e 5.x schema and are unreadable by
+        # older releases (ADR-008), so a minimum is declared as well as the
+        # verified version: installing against an older system should fail
+        # loudly rather than produce items the system cannot parse.
         assert manifest["relationships"]["systems"] == [
-            {"id": "dnd5e", "type": "system", "compatibility": {"verified": "2.4.1"}}
+            {"id": "dnd5e", "type": "system",
+             "compatibility": {"minimum": foundry.MINIMUM_SYSTEM_VERSION,
+                               "verified": "2.4.1"}}
         ]
 
     def test_title_falls_back_to_the_campaign_title(self, converter):

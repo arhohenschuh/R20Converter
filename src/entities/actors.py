@@ -11,6 +11,21 @@ DISPLAY_ATTRIBUTES = False
 release = "legacy"
 defaultLegacyEnabled = True
 
+
+def _compendiumWeaponType(compendium_item):
+    """Read a weapon's category from an SRD compendium entry.
+
+    dnd5e 5.x stores it as ``type.value``; 1.x/2.x stored it as ``weaponType``.
+    Both shapes are accepted so the converter works against either compendium.
+    """
+    system = compendium_item.entity.get("system", {})
+    item_type = system.get("type")
+    if isinstance(item_type, dict):
+        value = item_type.get("value")
+        if value:
+            return value
+    return system.get("weaponType", "")
+
 class Actors(DatabaseFile):
     def __init__(self, converter):
         DatabaseFile.__init__(self, converter, "actors.db")
@@ -551,7 +566,8 @@ class Actor(Entity):
                        "type": actor_type,
                        "prototypeToken": token,
                        "items": owned_items,
-                       "effects": []
+                       "effects": [],
+                       "_stats": self.documentStats()
                        }
 
     def getName(self):
@@ -697,6 +713,21 @@ class Actor(Entity):
                     attr = items[key]
                     self.logInfo("\t\t%s: %s%s" % (key, str(attr[0]), ("(" + str(attr[1]) + ")") if attr[1] != "" else ""))
         
+
+    def abilityMods(self):
+        """Map ``{"str": mod, ...}`` for this actor, used to un-bake damage bonuses.
+
+        Returns an empty dict before the abilities block has been built, which
+        makes the modifier extraction a no-op rather than a wrong guess.
+        """
+        abilities = getattr(self, "_actor_abilities", None)
+        if not abilities:
+            return {}
+        mods = {}
+        for key, values in abilities.items():
+            if isinstance(values, dict) and isinstance(values.get("mod"), int):
+                mods[key] = values["mod"]
+        return mods
 
     def calculateSaveBonus(self):
         if self.isNPC():
@@ -1686,6 +1717,7 @@ class Actor(Entity):
         name = name if name != "" else "<no name>"
         description = Entity.textToHtml(description)
         compendium_item = self.findCompendiumItem("Items", name)
+        kwargs.setdefault("ability_mods", self.abilityMods())
         item = self._converter.items.createItemInventory(None, name, description, inventory_type, attributes,
                                                         activity, attack, specific, **kwargs)
         # Prevent a weapon (torch, shovel) from being transformed into loot and losing its damage/attack properties
@@ -1796,7 +1828,7 @@ class Actor(Entity):
 
             compendium_item = self.findCompendiumItem("Items", name)
             if compendium_item is not None and compendium_item.entity["type"] == "weapon":
-                weapon.type = compendium_item.entity["system"]["weaponType"]
+                weapon.type = _compendiumWeaponType(compendium_item)
             elif "Improvised Weapon" in properties:
                 weapon.type = ItemWeapon.IMPROVISED
             elif item_type == "Ammunition":
@@ -1881,6 +1913,7 @@ class Actor(Entity):
         name = name if name != "" else "<no name>"
         description = self.textToHtml(description)
         compendium_item = self.findCompendiumItem("Class Features", name)
+        kwargs.setdefault("ability_mods", self.abilityMods())
         item = self._converter.items.createItemFeat(None, name, description, activation, attack, recharge, **kwargs)
         if compendium_item and compendium_item.entity["type"] != "loot":
             item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
@@ -2031,7 +2064,7 @@ class Actor(Entity):
                 is_feat = True
             elif compendium_item.entity["type"] == "weapon":
                 is_weapon = True
-                weapon_type = compendium_item.entity["system"]["weaponType"]
+                weapon_type = _compendiumWeaponType(compendium_item)
 
         if is_feat is False and (has_attack or is_weapon):
             attributes = ItemInventoryAttributes()
@@ -2131,7 +2164,7 @@ class Actor(Entity):
                 is_feat = True
             elif compendium_item.entity["type"] == "weapon":
                 is_weapon = True
-                weapon_type = compendium_item.entity["system"]["weaponType"]
+                weapon_type = _compendiumWeaponType(compendium_item)
 
         if is_feat is False and (has_attack or is_weapon):
             attributes = ItemInventoryAttributes()
@@ -2206,6 +2239,7 @@ class Actor(Entity):
         name = name if name != "" else "<no name>"
         description = self.textToHtml(description)
         compendium_item = self.findCompendiumItem("Spells", name)
+        kwargs.setdefault("ability_mods", self.abilityMods())
         item = self._converter.items.createItemSpell(None, name, description,  activation, attack,
                                                     level, school, components, preparation, scaling, **kwargs)
 
