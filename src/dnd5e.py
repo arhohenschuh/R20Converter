@@ -1,0 +1,510 @@
+"""dnd5e system schema constants and shape builders.
+
+Single source of truth for every dnd5e version number and data shape that
+R20Converter emits, mirroring the role ``foundry.py`` plays for the Foundry core
+schema (see ADR-002). See ADR-008 for why the dnd5e port exists at all.
+
+Every constant here was read out of the dnd5e 5.3.3 source rather than inferred:
+``module/config.mjs`` for the enumerations, ``module/data/shared/damage-field.mjs``
+for ``DamageData``, ``module/documents/activity/attack.mjs`` for activity shape.
+"""
+
+import hashlib
+import re
+
+
+# --- Target system ---------------------------------------------------------
+
+#: The dnd5e version whose data schema R20Converter writes.
+#:
+#: This is not decoration. It is written to ``dnd5e.systemMigrationVersion`` and
+#: to each document's ``_stats.systemVersion``, and dnd5e reads both to decide
+#: whether to migrate. Claiming an older version than we emit runs a migration
+#: against documents that have no legacy fields left to convert — which silently
+#: empties ``system.damage.base``. Claiming a newer one strands any legacy field
+#: we did not port. It must always tell the truth about our output.
+SYSTEM_VERSION = "5.3.3"
+
+#: Oldest dnd5e release that understands the schema we emit. Activities landed in
+#: dnd5e 4.0; 5.0.0 is the first release of the current generation.
+MINIMUM_SYSTEM_VERSION = "5.0.0"
+
+
+# --- Item type enumerations (config.mjs) -----------------------------------
+
+#: ``CONFIG.DND5E.weaponTypes`` — the values of ``system.type.value`` on a weapon.
+WEAPON_TYPES = ("simpleM", "simpleR", "martialM", "martialR", "natural", "improv", "siege")
+
+#: ``CONFIG.DND5E.armorTypes`` — ``system.type.value`` on equipment.
+ARMOR_TYPES = ("light", "medium", "heavy", "natural", "shield")
+
+#: ``CONFIG.DND5E.validProperties.weapon`` — the only keys allowed in the
+#: ``properties`` **array**. v1.5.6 emitted an object of booleans over a
+#: different, partly obsolete key set: ``fir`` and ``spc`` survive, but ``lgt``
+#: replaced nothing and ``lod``/``mgc``/``sil``/``ada`` are new.
+WEAPON_PROPERTIES = (
+    "ada", "amm", "fin", "fir", "foc", "hvy", "lgt", "lod",
+    "mgc", "rch", "rel", "ret", "sil", "spc", "thr", "two", "ver",
+)
+
+#: ``CONFIG.DND5E.weaponIds`` — legal ``system.type.baseItem`` values.
+WEAPON_BASE_ITEMS = (
+    "battleaxe", "blowgun", "club", "dagger", "dart", "flail", "glaive", "greataxe",
+    "greatclub", "greatsword", "halberd", "handaxe", "handcrossbow", "heavycrossbow",
+    "javelin", "lance", "lightcrossbow", "lighthammer", "longbow", "longsword", "mace",
+    "maul", "morningstar", "musket", "pike", "pistol", "quarterstaff", "rapier",
+    "scimitar", "shortsword", "sickle", "spear", "shortbow", "sling", "trident",
+    "warpick", "warhammer", "whip",
+)
+
+#: ``CONFIG.DND5E.armorIds``.
+ARMOR_BASE_ITEMS = (
+    "breastplate", "chainmail", "chainshirt", "halfplate", "hide", "leather", "padded",
+    "plate", "ringmail", "scalemail", "splint", "studded",
+)
+
+#: Ability keys, in the order used to break ties when several abilities share the
+#: modifier baked into a damage formula. Fixed so that output is reproducible:
+#: an arbitrary "first match wins" over a dict would vary with insertion order.
+ABILITIES = ("str", "dex", "con", "int", "wis", "cha")
+
+
+# --- baseItem resolution ---------------------------------------------------
+
+def normalizeItemName(name):
+    """Reduce an item name to a comparable key.
+
+    Roll20 names carry qualifiers a slug lookup must ignore: ``"Longsword
+    (Melee; Two-Handed)"``, ``"Shortsword +1"``, ``"Dagger, Silvered"``.
+    """
+    if not name:
+        return ""
+    name = str(name).lower()
+    name = re.sub(r"\([^)]*\)", " ", name)          # parenthetical qualifiers
+    name = re.sub(r"[+-]\s*\d+", " ", name)          # magic bonuses
+    name = re.sub(r"[^a-z0-9]+", "", name)           # punctuation and spacing
+    return name
+
+
+def _baseItemIndex(slugs):
+    return {slug: slug for slug in slugs}
+
+
+_WEAPON_INDEX = _baseItemIndex(WEAPON_BASE_ITEMS)
+_ARMOR_INDEX = _baseItemIndex(ARMOR_BASE_ITEMS)
+
+#: Names that do not normalise onto their slug. Deliberately short and explicit:
+#: guessing a baseItem is worse than leaving it empty, because a wrong slug makes
+#: dnd5e apply the wrong mastery, properties and proficiency.
+_WEAPON_ALIASES = {
+    "handcrossbow": "handcrossbow", "crossbowhand": "handcrossbow",
+    "lightcrossbow": "lightcrossbow", "crossbowlight": "lightcrossbow",
+    "heavycrossbow": "heavycrossbow", "crossbowheavy": "heavycrossbow",
+    "lighthammer": "lighthammer", "hammerlight": "lighthammer",
+    "warpick": "warpick", "warpickaxe": "warpick", "pickwar": "warpick",
+    "greatclub": "greatclub", "quarterstaff": "quarterstaff", "staff": "quarterstaff",
+    "shortbow": "shortbow", "bowshort": "shortbow",
+    "longbow": "longbow", "bowlong": "longbow",
+}
+
+_ARMOR_ALIASES = {
+    "chainmail": "chainmail", "chainshirt": "chainshirt", "halfplate": "halfplate",
+    "platearmor": "plate", "ringmail": "ringmail", "scalemail": "scalemail",
+    "studdedleather": "studded", "studdedleatherarmor": "studded",
+    "leatherarmor": "leather", "hidearmor": "hide", "paddedarmor": "padded",
+    "splintarmor": "splint", "breastplate": "breastplate",
+}
+
+
+def _candidateKeys(name):
+    """Normalised lookup keys to try, most specific first.
+
+    ``"Dagger, Silvered"`` needs the trailing qualifier dropped, but only as a
+    *fallback*: trying the whole name first means a genuine comma-containing
+    weapon name is never truncated into a wrong match.
+    """
+    if not name:
+        return []
+    keys = [normalizeItemName(name)]
+    head = str(name).split(",")[0]
+    head_key = normalizeItemName(head)
+    if head_key and head_key not in keys:
+        keys.append(head_key)
+    return [k for k in keys if k]
+
+
+def weaponBaseItem(name):
+    """Resolve an SRD weapon slug, or ``""`` when there is no confident match.
+
+    Empty is a legitimate answer — most converted content is bespoke monster
+    attacks (``Bite``, ``Tentacles``, ``Corrupting Touch``) with no SRD
+    equivalent, and dnd5e accepts an empty ``baseItem``.
+    """
+    for key in _candidateKeys(name):
+        match = _WEAPON_INDEX.get(key) or _WEAPON_ALIASES.get(key)
+        if match:
+            return match
+    return ""
+
+
+def armorBaseItem(name):
+    """Resolve an SRD armor slug, or ``""``."""
+    for key in _candidateKeys(name):
+        match = _ARMOR_INDEX.get(key) or _ARMOR_ALIASES.get(key)
+        if match:
+            return match
+    return ""
+
+
+# --- Damage ----------------------------------------------------------------
+
+#: Damage types dnd5e recognises. Roll20 data carries trailing whitespace
+#: (``"bludgeoning "``), non-types (``"spell"``, ``"none"``) and compound
+#: descriptions (``"bludgeoning or slashing"``); all are normalised or dropped
+#: rather than emitted, because an unrecognised type fails schema validation.
+DAMAGE_TYPES = (
+    "acid", "bludgeoning", "cold", "fire", "force", "lightning", "necrotic",
+    "piercing", "poison", "psychic", "radiant", "slashing", "thunder",
+)
+
+_DICE_RE = re.compile(r"(\d+)\s*d\s*(\d+)", re.IGNORECASE)
+_ADDEND_RE = re.compile(r"([+-])\s*(\d+)\b(?!\s*d\s*\d)", re.IGNORECASE)
+ABILITY_MOD_RE = re.compile(r"@abilities\.(str|dex|con|int|wis|cha)\.mod", re.IGNORECASE)
+
+
+def normalizeDamageType(damage_type):
+    """Map a Roll20 damage type onto a dnd5e one, or ``None``.
+
+    ``None`` means "emit no type" — which is valid — rather than emitting a
+    value the schema will reject.
+    """
+    if not damage_type:
+        return None
+    key = str(damage_type).strip().lower()
+    if key in DAMAGE_TYPES:
+        return key
+    # "bludgeoning or slashing" and friends: take the first recognised word so
+    # the damage is still typed, rather than dropping the type entirely.
+    for word in re.split(r"[^a-z]+", key):
+        if word in DAMAGE_TYPES:
+            return word
+    return None
+
+
+def damageData(number=None, denomination=None, bonus="", types=None,
+               custom_formula=None, scaling_mode="", scaling_number=1,
+               scaling_formula=""):
+    """Build a dnd5e ``DamageData`` object.
+
+    Replaces the v1.5.6 ``[[formula, type], ...]`` pair list. Shape read from
+    ``module/data/shared/damage-field.mjs``: ``types`` is a ``SetField``, so it
+    serialises as an array, and ``custom.enabled`` decides whether the dice
+    fields or the custom formula are used.
+    """
+    normalized = []
+    for damage_type in (types or []):
+        mapped = normalizeDamageType(damage_type)
+        if mapped and mapped not in normalized:
+            normalized.append(mapped)
+    return {
+        "number": number,
+        "denomination": denomination,
+        "bonus": "" if bonus in (None, 0, "0") else str(bonus),
+        "types": normalized,
+        "custom": {
+            "enabled": custom_formula is not None,
+            "formula": custom_formula or "",
+        },
+        "scaling": {
+            "mode": scaling_mode,
+            "number": scaling_number,
+            "formula": scaling_formula,
+        },
+    }
+
+
+def parseDamageFormula(formula):
+    """Split a Roll20 damage formula into dice, flat bonus and leftovers.
+
+    Returns ``(number, denomination, bonus, remainder)``. ``remainder`` holds
+    anything that is not the leading dice term or a plain integer addend — a
+    second damage die (``"1d6 + 3 + 1d8"``) or a symbolic modifier
+    (``"@abilities.str.mod"``) — so the caller can decide what to do with it
+    rather than losing it.
+
+    Degenerate formulas are real and must survive: nets roll ``1d0``, torches
+    deal a flat ``1``, and a Gas Spore's touch is ``1d1``.
+    """
+    text = str(formula or "").strip()
+    if not text:
+        return None, None, 0, ""
+
+    dice = _DICE_RE.search(text)
+    number = denomination = None
+    if dice:
+        number = int(dice.group(1))
+        denomination = int(dice.group(2))
+        rest = text[:dice.start()] + " " + text[dice.end():]
+    else:
+        rest = text
+
+    bonus = 0
+    def _takeAddend(match):
+        nonlocal bonus
+        bonus += (-1 if match.group(1) == "-" else 1) * int(match.group(2))
+        return " "
+    rest = _ADDEND_RE.sub(_takeAddend, rest)
+
+    # A leading bare integer ("1", "7") is a flat damage value, not an addend.
+    if number is None:
+        bare = re.fullmatch(r"\s*(\d+)\s*", rest)
+        if bare:
+            bonus += int(bare.group(1))
+            rest = ""
+
+    remainder = re.sub(r"^[\s+]+|[\s+]+$", "", re.sub(r"\s+", " ", rest)).strip("+ ")
+    return number, denomination, bonus, remainder
+
+
+# --- Ability modifier extraction (AD-4) ------------------------------------
+
+class ModifierExtraction(object):
+    """How a baked-in ability modifier should be split out of damage.
+
+    dnd5e always appends ``@mod`` to weapon damage, resolved from the activity's
+    ability. Roll20 bakes that modifier into the damage instead — ``"Bite
+    1d10+2"`` where the SRD writes ``"1d10"`` plus the modifier. Attaching a
+    default activity without compensating therefore rolls ``1d10+2+mod``.
+
+    The fix moves the modifier out of the damage and into the ability, leaving
+    the printed total unchanged while the attack roll gains the modifier it was
+    missing. See AD-4.
+    """
+
+    __slots__ = ("ability", "bonus", "flat", "remainder")
+
+    def __init__(self, ability, bonus, flat, remainder=""):
+        #: Ability key that drives both the attack roll and the damage ``@mod``.
+        self.ability = ability
+        #: Bonus left on the damage after the modifier was taken out.
+        self.bonus = bonus
+        #: ``True`` when ``@mod`` must NOT be added — used when no ability
+        #: modifier matches the baked bonus, so the printed total is preserved
+        #: by leaving the bonus alone rather than subtracting a wrong value.
+        self.flat = flat
+        #: Formula fragments the caller must preserve (a second damage die).
+        self.remainder = remainder
+
+    def __repr__(self):
+        return ("ModifierExtraction(ability=%r, bonus=%r, flat=%r, remainder=%r)"
+                % (self.ability, self.bonus, self.flat, self.remainder))
+
+    def __eq__(self, other):
+        return (isinstance(other, ModifierExtraction)
+                and self.ability == other.ability and self.bonus == other.bonus
+                and self.flat == other.flat and self.remainder == other.remainder)
+
+
+def extractAbilityModifier(bonus, ability_mods, ranged=False, symbolic=None,
+                           remainder=""):
+    """Choose the activity's ability and the damage bonus that survives with it.
+
+    ``bonus``        the flat bonus baked into the damage
+    ``ability_mods`` ``{"str": 2, "dex": 1, ...}`` for the owning actor
+    ``ranged``       picks the natural default when nothing else decides
+    ``symbolic``     ability key when the formula said ``@abilities.X.mod``
+                     outright; that is already correct and only needs moving
+    ``remainder``    passed through untouched
+
+    The invariant, in every branch: **printed total is unchanged.**
+    ``bonus == result.bonus + (0 if result.flat else ability_mods[result.ability])``
+    """
+    mods = {k: int(v or 0) for k, v in (ability_mods or {}).items()}
+    natural = "dex" if ranged else "str"
+    bonus = int(bonus or 0)
+
+    # 1. The formula named the ability itself (``@abilities.str.mod``). That term
+    #    is already the ability contribution, so only it moves into the activity —
+    #    any other flat addend on the formula must be LEFT ON THE DAMAGE.
+    #    Returning 0 here drops the "+1" from "1d8 + @abilities.str.mod + 1".
+    if symbolic:
+        key = str(symbolic).lower()
+        if key not in ABILITIES:
+            raise ValueError("unknown ability %r" % (symbolic,))
+        return ModifierExtraction(key, bonus, False, remainder)
+
+    # 2. An ability whose modifier equals the baked bonus IS the ability the
+    #    Roll20 sheet used — the data reveals it. Ties resolve by ABILITIES
+    #    order so the output is deterministic.
+    if bonus:
+        for key in ABILITIES:
+            if key in mods and mods[key] == bonus:
+                return ModifierExtraction(key, 0, False, remainder)
+
+    # 3. No bonus at all: any zero-modifier ability keeps @mod harmless.
+    if bonus == 0:
+        for key in ABILITIES:
+            if mods.get(key) == 0:
+                return ModifierExtraction(key, 0, False, remainder)
+        # Every ability has a non-zero modifier, so @mod would change the total.
+        return ModifierExtraction(natural, 0, True, remainder)
+
+    # 4. The bonus matches no ability — a magic weapon, or a statblock quirk.
+    #    Subtracting anything here would change the printed damage, so keep the
+    #    bonus and suppress @mod instead.
+    return ModifierExtraction(natural, bonus, True, remainder)
+
+
+# --- Activities (AD-3) -----------------------------------------------------
+
+ACTIVITY_ATTACK = "attack"
+ACTIVITY_DAMAGE = "damage"
+ACTIVITY_SAVE = "save"
+ACTIVITY_HEAL = "heal"
+ACTIVITY_UTILITY = "utility"
+
+_ID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+
+def activityId(seed):
+    """Derive a stable 16-character activity id.
+
+    Deterministic rather than random so that converting the same export twice
+    produces byte-identical output, which is what makes a diff between two
+    builds meaningful.
+    """
+    digest = hashlib.sha256(str(seed).encode("utf-8")).digest()
+    return "".join(_ID_ALPHABET[b % len(_ID_ALPHABET)] for b in digest[:16])
+
+
+def _activityBase(activity_id, activity_type, name="", sort=0):
+    return {
+        "_id": activity_id,
+        "type": activity_type,
+        "name": name,
+        "sort": sort,
+        "activation": {"type": "action", "override": False},
+        "consumption": {"scaling": {"allowed": False}, "spellSlot": True, "targets": []},
+        "duration": {"units": "inst", "concentration": False, "override": False},
+        "range": {"units": "self", "override": False},
+        "target": {
+            "template": {"contiguous": False, "stationary": False, "units": "ft"},
+            "affects": {"choice": False},
+            "override": False,
+            "prompt": True,
+        },
+        "uses": {"spent": 0, "recovery": []},
+    }
+
+
+def attackActivity(activity_id, ability, ranged=False, classification="weapon",
+                   bonus="", flat=False, critical_threshold=None, name="", sort=0):
+    """Build an ``attack`` activity.
+
+    ``attack.ability`` drives **both** the attack roll and the damage ``@mod``.
+
+    ``ability`` must be a real ability key. ``"none"`` reads back as ``null`` and
+    is documented as making ``@mod`` resolve to 0, but writing it fails schema
+    validation and the activity is then silently not created. Suppress the
+    modifier with ``flat=True`` instead.
+    """
+    if ability == "none":
+        raise ValueError(
+            'attack.ability="none" fails validation on write; pass flat=True instead')
+    if ability and ability not in ABILITIES:
+        # "STR", "banana" and friends validate no better than "none"; fail here
+        # rather than emitting an activity dnd5e will reject.
+        raise ValueError("unknown ability %r; expected one of %s" % (ability, ABILITIES))
+    activity = _activityBase(activity_id, ACTIVITY_ATTACK, name, sort)
+    activity["attack"] = {
+        "ability": ability or "",
+        "bonus": str(bonus or ""),
+        "critical": {"threshold": critical_threshold},
+        "flat": bool(flat),
+        "type": {"value": "ranged" if ranged else "melee", "classification": classification},
+    }
+    # includeBase keeps the item's own typed damage as the roll, so the damage
+    # lives in exactly one place instead of being duplicated into parts.
+    activity["damage"] = {"critical": {"bonus": ""}, "includeBase": True, "parts": []}
+    return activity
+
+
+def saveActivity(activity_id, ability, dc=None, dc_calculation="", damage_parts=None,
+                 on_save="half", name="", sort=0):
+    """Build a ``save`` activity (spells, breath weapons, traps)."""
+    activity = _activityBase(activity_id, ACTIVITY_SAVE, name, sort)
+    activity["save"] = {
+        "ability": [ability] if ability else [],
+        "dc": {"calculation": dc_calculation, "formula": "" if dc is None else str(dc), "value": dc},
+    }
+    activity["damage"] = {
+        "critical": {"bonus": ""},
+        "onSave": on_save,
+        "parts": list(damage_parts or []),
+    }
+    return activity
+
+
+def damageActivity(activity_id, damage_parts=None, name="", sort=0):
+    """Build a bare ``damage`` activity — damage with no attack or save."""
+    activity = _activityBase(activity_id, ACTIVITY_DAMAGE, name, sort)
+    activity["damage"] = {"critical": {"bonus": ""}, "parts": list(damage_parts or [])}
+    return activity
+
+
+def healActivity(activity_id, healing=None, name="", sort=0):
+    """Build a ``heal`` activity."""
+    activity = _activityBase(activity_id, ACTIVITY_HEAL, name, sort)
+    activity["healing"] = healing or damageData(types=["healing"])
+    return activity
+
+
+def utilityActivity(activity_id, name="", sort=0):
+    """Build a ``utility`` activity — an item that does something unrollable."""
+    return _activityBase(activity_id, ACTIVITY_UTILITY, name, sort)
+
+
+# --- Document metadata (AD-5) ----------------------------------------------
+
+def stats(core_version, system_version=SYSTEM_VERSION):
+    """Build the ``_stats`` block carried by every document.
+
+    dnd5e reads ``_stats.systemVersion`` to decide whether a document needs
+    migrating. R20Converter emitted no ``_stats`` at all, which leaves the field
+    unset and invites a migration over documents that are already current.
+    """
+    return {
+        "systemId": "dnd5e",
+        "systemVersion": system_version,
+        "coreVersion": core_version,
+        "createdTime": None,
+        "modifiedTime": None,
+        "lastModifiedBy": None,
+        "compendiumSource": None,
+        "duplicateSource": None,
+        "exportSource": None,
+    }
+
+
+def itemType(value, base_item=""):
+    """Build ``system.type``.
+
+    Replaces the separate ``weaponType`` / ``armorType`` / ``consumableType`` /
+    ``toolType`` fields and the sibling ``baseItem``, all of which dnd5e 5.x
+    folded into this one object.
+    """
+    return {"value": value or "", "baseItem": base_item or ""}
+
+
+def properties(flags):
+    """Convert a ``{key: bool}`` property map into the 5.x array.
+
+    v1.5.6 emitted every key with a boolean; 5.x expects only the keys that are
+    set. Unknown keys are dropped rather than passed through — an invalid
+    property fails validation for the whole item.
+    """
+    if isinstance(flags, dict):
+        selected = [k for k, v in flags.items() if v]
+    else:
+        selected = list(flags or [])
+    return [k for k in WEAPON_PROPERTIES if k in selected]

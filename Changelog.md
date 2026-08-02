@@ -5,6 +5,55 @@
 **Targeting Foundry VTT v13.** See `docs/adr/` for the decision records behind
 these changes.
 
+### dnd5e 5.x (ADR-008) — in progress
+
+The Foundry **core** schema port (ADR-002) is complete, but every item was still
+emitted in dnd5e ~1.5.6 shapes. Unlike Foundry's v9 migrations, dnd5e's migrations
+still exist — which is worse than their absence, because they run, report success,
+and corrupt:
+
+- The dnd5e migration **never gives weapons an attack**. dnd5e builds the default
+  attack in `WeaponData#_preCreate`, which fires on document *creation*; a
+  migration is an *update*. Measured across two converted modules: 479/479 and
+  742/742 spells migrated with working activities, **393/393 and 524/524 weapons
+  migrated with zero** — every weapon unrollable.
+- The migration can **silently destroy damage**. It consumes the legacy
+  `damage.parts` array and stamps `_stats.systemVersion`, but for a subset of
+  documents writes an empty `damage.base` back. A compatibility shim rebuilds the
+  base in memory, so the live document reads correctly while the stored one holds
+  nothing. Measured: 390 weapons with dice live, 293 stored.
+
+**0.15.0 — foundation (no output change yet).**
+- New `src/dnd5e.py`: the single source of truth for dnd5e version numbers and
+  data shapes, mirroring `foundry.py`. Constants read out of the dnd5e 5.3.3
+  source rather than inferred.
+- `DamageData` builder (`damage.base`/`versatile` objects), damage-formula parser
+  that survives the degenerate real-world cases (`1d0` nets, flat `1` torches,
+  `1d1`), and damage-type normalisation for the dirty values Roll20 emits
+  (`"bludgeoning "`, `"spell"`, `"bludgeoning or slashing"`).
+- Activity builders — attack, save, damage, heal, utility — with deterministic
+  16-character ids so repeat conversions are byte-identical.
+- Ability-modifier extraction. Roll20 bakes the modifier into the damage
+  (`"Bite 1d10+2"`) while dnd5e always appends `@mod`; the extractor moves it into
+  the activity's ability under the invariant that the **printed damage total is
+  unchanged**. Ties resolve in a fixed ability order; an unmatched bonus sets
+  `attack.flat` rather than subtracting a wrong value.
+- `attack.ability = "none"` now raises. It reads back as `null`, but writing it
+  fails validation and the activity is *silently* not created.
+- `baseItem` resolution from an explicit table (`"Longsword (Melee; Two-Handed)"`
+  → `longsword`), returning `""` rather than guessing.
+- `_stats` builder — the converter previously emitted none at all.
+- 112 new tests, including a damage-invariant table with a non-vacuity guard.
+  Suite: 137 → 249.
+
+Fixed during 0.15.0 (see `ROADMAP.md`):
+- **B001/F001** — `extractAbilityModifier()` dropped the flat addend on a symbolic
+  formula: `"1d8 + @abilities.str.mod + 1"` returned `bonus=0`, so the printed
+  total fell by 1. The invariant test had ratified it by discarding the same
+  bonus from its expected value.
+- **B002/F002** — `attackActivity()` rejected only `ability="none"`, so `"STR"`
+  and other invalid keys still produced activities dnd5e validates away.
+
 ### Foundry v13 (ADR-002, ADR-003)
 - Emit `world.json` and `module.json` in the Foundry v13 manifest schema: `id`
   instead of `name`, the now-required `type`, a `compatibility` object instead of

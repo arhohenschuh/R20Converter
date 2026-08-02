@@ -22,6 +22,7 @@ referencing the ADR number, so the "why" is discoverable from the code.
 | [ADR-005](ADR-005-table-result-schema.md) | Emit the Foundry v13 `TableResult` schema | Accepted |
 | [ADR-006](ADR-006-dnd5e-subclass-documents.md) | Emit dnd5e subclasses as documents, not a string field | Accepted |
 | [ADR-007](ADR-007-dnd5e-species-background-documents.md) | Emit dnd5e species and backgrounds as documents, not string fields | Accepted |
+| [ADR-008](ADR-008-emit-dnd5e-5x-natively.md) | Emit dnd5e 5.x documents natively (no migration) | Accepted |
 
 ## Numbering
 
