@@ -149,7 +149,8 @@ def _buildActivities(item_type, item_name, attack, ability_mods=None, ranged=Non
         has_dice = number is not None
         extraction = dnd5e.extractAbilityModifier(
             bonus, mods, ranged=ranged, symbolic=symbolic, remainder=remainder,
-            is_weapon=is_weapon and index == 0, has_dice=has_dice)
+            is_weapon=is_weapon and index == 0, has_dice=has_dice,
+            required=ability or None)
         if not ability and extraction.ability:
             ability = extraction.ability
 

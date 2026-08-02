@@ -41,7 +41,7 @@ converted 760 MB modules:
 | **R1** | 0.15.0 | Foundation — `src/dnd5e.py`, shape builders, tests | No | **Done** |
 | **R2** | 0.16.0 | The Switch — atomic dnd5e 5.x emission | Yes, breaking | **Done** |
 | **R3** | 0.17.0 | Cleanup — origin documents, actor fields, remaining `_stats` | Yes | **Done** |
-| **R4** | 1.0.0 | Acceptance — real exports through a real Foundry | No | Next |
+| **R4** | 1.0.0 | Acceptance — real exports through a real Foundry | No | **Done** |
 
 ---
 
@@ -152,21 +152,46 @@ suite that only tests the interesting path never looks at.
 
 ---
 
-### R4 · 1.0.0 — Acceptance
+### R4 · 1.0.0 — Acceptance ✅
 
 Unit tests are necessary but **not sufficient**: a test on a Python dict cannot
 detect that Foundry's storage layer dropped a field, which is exactly how the
-damage loss above went unnoticed.
+damage loss above went unnoticed. So R4 ran a real export through a real Foundry
+and measured the result three ways.
 
-- Convert real *Dragons of Icespire Peak* and *Out of the Abyss* exports
-- Import into a clean Foundry v13 + dnd5e 5.3.3 world
-- **Zero migrations triggered**, zero validation errors
-- Reload, then read the **persisted** documents — not the live accessors
-- Roll a representative PC weapon, NPC weapon, attack spell, save spell, healing
-  spell and consumable
-- **Non-vacuity guards:** actor / item / weapon counts > 0, and named sentinels
-  found after import — *Bite, Longsword, Fire Bolt, Net, Torch*. A suite that
-  scans zero documents and reports PASS is worse than no suite.
+**The oracle.** Roll20 leaves the stat block's own text in each item's
+description — *"Melee Weapon Attack +4 … Hit: 11 (2d8+2) piercing"*. That text
+was written by the module's author, not by the converter, so comparing against it
+cannot ratify a bug the way a test that recomputes the implementation's own logic
+can. `tools/verify_dnd5e.py` now parses it and asserts that the to-hit and damage
+dnd5e will actually roll equal the printed numbers.
+
+That check found four defects that a 455-green suite and a clean schema check had
+both passed: **B023**, **B024**, **B025** and **B026**. Every one of them produced
+a document that loaded without a single error and rolled the wrong number.
+
+**Results** — *TotYP: The Sunless Citadel*, 30 actors, 357 items:
+
+| Check | Result |
+|---|---|
+| dnd5e migration triggered | **none** — `systemMigrationVersion` still 5.3.3 |
+| documents rewritten by the migration | **0** (no `flags.dnd5e.persistSourceMigration`) |
+| legacy fields surviving the load | **0** |
+| weapons with dice in the **stored** `damage.base` | **96 / 96** |
+| weapons with an attack activity | **96 / 96** |
+| `_stats.systemVersion` intact after load | **387 / 387** |
+| dice rolls evaluated in the live game | **62**, all finite |
+| printed to-hit and damage vs. what dnd5e rolls | **61 checks, 0 wrong** |
+| save spells with a DC · healing spells that heal | 12 · 2 |
+| sentinels found | Bite, Shortsword, Dagger, Club, Shortbow |
+
+The 96/96 stored-damage line is the one that matters most: it is the direct
+negative control for M09, where a compat shim made the *live* document read
+correctly while the *stored* one held nothing.
+
+**Gate:** suite green · `tools/verify_dnd5e.py` PASS on emitted output ·
+`tools/verify_persisted.mjs` PASS on the LevelDB Foundry wrote back · live rolls
+match the printed stat blocks.
 
 ---
 
@@ -196,6 +221,10 @@ damage loss above went unnoticed.
 | **B020** | R3 | Actor `abilities.<key>.save` was a **number** where 5.x declares a `RollConfigField` object, and `mod` / `min` were emitted despite being derived. Seven places in `actors.py` read those derived values back out of the emitted document. | **F020** |
 | **B021** | R3 | `system.source` was a bare string. 5.x uses a `SourceField` object, so the string is dropped and every item and NPC the converter has ever produced loses its attribution. | **F021** |
 | **B022** | R3 | Actor `skills.<key>.bonuses.check` / `.passive` were numbers where 5.x declares `FormulaField`s, and the block was missing `roll`. `mod` was emitted despite being derived. | **F022** |
+| **B023** | R4 | Not every Roll20 sheet carries `<ability>_mod`; the Sunless Citadel export has full ability *scores* and none at all. Defaulting the modifier to 0 left the emitted document correct — dnd5e derives `mod` from the score — while every *internal* decision that depends on the modifier went wrong. A Bugbear with STR 15 and a printed +4 failed the `mod + prof == tohit` match, so the converter recorded "STR, +4 bonus" and dnd5e rolled **+8**; and the +2 baked into `2d8+2` was never recognised as the ability modifier, so dnd5e appended it again as **2d8+4**. | **F023** |
+| **B024** | R4 | When no ability reproduced the printed to-hit, the fallback set `bonus = tohit − str_mod` and forgot that dnd5e also adds proficiency. Every such attack overshot by the proficiency bonus — a Goblin's printed +5 rolled +7. | **F024** |
+| **B025** | R4 | `actors.py` picks the attack ability by matching the printed to-hit, then `extractAbilityModifier()` independently picked a *different* ability to drive the damage residual to zero. The caller kept its own ability and the extractor's bonus, so the damage was wrong by the difference between the two modifiers: a Goblin's printed `1d6+2` became `1d6−1`. | **F025** |
+| **B026** | R4 | `getProficiencyBonus()` computed `int(ceil(cr + 7) / 4)` — the division sits *outside* the ceiling, which yields **+1** at CR 0. Every CR 0–4 creature has +2, and dnd5e clamps to it, so every to-hit derived for a CR 0 creature was off by one. | **F026** |
 
 ### B001 in detail
 
@@ -273,6 +302,10 @@ Two corrections followed:
 | **F020** | B020 | `createActorAbilities()` caches `mod` and the save bonus in `_ability_derived` and emits the 5.x shape. The seven readers now call `abilityDerived()`. |
 | **F021** | B021 | `dnd5e.sourceData()` builds the `SourceField` object; the Roll20 free-text maps onto `custom`, which is what dnd5e displays when `book` is unset. |
 | **F022** | B022 | Skill bonuses are emitted as formula strings, `roll` is present, and the derived `mod` is gone. |
+| **F023** | B023 | `Actor.abilityModifier()` reads `<ability>_mod` with a sentinel default and falls back to `floor((score − 10) / 2)` when the sheet has none. Every internal modifier read — save bonuses, initiative, skills, the to-hit match and the damage extraction — goes through it. |
+| **F024** | B024 | The fallback subtracts the proficiency bonus the weapon is about to be marked with, so `mod + prof + bonus` reproduces the printed to-hit. |
+| **F025** | B025 | `extractAbilityModifier()` takes a `required` ability. When the caller has already committed to one, the residual is measured against *that* modifier and no other. Without a `required` the matching search still runs, so the SRD-shaped zero-residual case is unchanged. |
+| **F026** | B026 | `max(2, floor((cr − 1) / 4) + 2)`, verified against the Monster Manual's own table at all 34 challenge ratings — plus a non-vacuity assertion that the old formula would have failed that table. |
 
 
 ## Per-step cycle

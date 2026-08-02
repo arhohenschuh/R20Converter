@@ -324,7 +324,8 @@ def appendsAbilityModifier(is_weapon=True, has_dice=True):
 
 
 def extractAbilityModifier(bonus, ability_mods, ranged=False, symbolic=None,
-                           remainder="", is_weapon=True, has_dice=True):
+                           remainder="", is_weapon=True, has_dice=True,
+                           required=None):
     """Choose the activity's ability and the damage bonus that survives with it.
 
     ``bonus``        the flat bonus baked into the damage
@@ -335,6 +336,12 @@ def extractAbilityModifier(bonus, ability_mods, ranged=False, symbolic=None,
     ``remainder``    passed through untouched
     ``is_weapon``    only weapons get an automatic ``@mod``
     ``has_dice``     deterministic damage gets no ``@mod`` either
+    ``required``     the ability the caller has *already committed to*, because
+                     the attack roll was matched against it. The damage must then
+                     be reduced by that ability's modifier and no other — picking
+                     a different one here and letting the caller keep its own is
+                     how a Goblin ended up rolling ``1d6-1`` for a printed
+                     ``1d6+2`` (B025).
 
     The invariant, in every branch: **the printed total is unchanged.** The
     general rule is ``residual = printed - mod(ability)``, which holds for *any*
@@ -346,8 +353,17 @@ def extractAbilityModifier(bonus, ability_mods, ranged=False, symbolic=None,
     bonus = int(bonus or 0)
     appends = appendsAbilityModifier(is_weapon, has_dice)
 
+    # 0. The caller already picked the ability. Honour it: the only correct
+    #    residual is the one measured against that ability's modifier.
+    if required in ABILITIES and not symbolic:
+        if not appends:
+            return ModifierExtraction(required, bonus, False, remainder)
+        return ModifierExtraction(required, bonus - mods.get(required, 0),
+                                  False, remainder)
+
     # 1. The formula named the ability itself (``@abilities.str.mod``).
     if symbolic:
+
         key = str(symbolic).lower()
         if key not in ABILITIES:
             raise ValueError("unknown ability %r" % (symbolic,))

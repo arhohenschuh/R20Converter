@@ -648,8 +648,12 @@ class Actor(Entity):
 
     def getProficiencyBonus(self):
         if self.isNPC():
+            # Monster Manual: +2 for CR 0-4, then +1 every four CR. The old
+            # `int(ceil(cr + 7) / 4)` divided *outside* the ceiling, which gave
+            # +1 at CR 0 — dnd5e clamps to +2, so every to-hit the converter
+            # derived for a CR 0 creature was off by one (B026).
             cr = self.getChallengeRating()
-            return int(math.ceil(cr + 7) / 4)
+            return max(2, int(math.floor((cr - 1) / 4)) + 2)
         else:
             return self.getAttributeInt("pb", 2)
 
@@ -736,7 +740,7 @@ class Actor(Entity):
         bases = []
         for ability in ["strength", "dexterity", "constitution",
                         "intelligence", "wisdom", "charisma"]:
-            mod = self.getAttributeInt(ability + "_mod", 0)
+            mod = self.abilityModifier(ability)
             if self.isNPC():
                 save = self.getAttributeInt("npc_" + ability[0:3] + "_save", 0)
             else:
@@ -749,9 +753,29 @@ class Actor(Entity):
         #if min_base + pb == max_base and bases.count(min_base) == 4 and bases.count(max_base) == 2:
         #    return min_base
 
+    def abilityModifier(self, name):
+        """The modifier for an ability, falling back to the score when needed.
+
+        Roll20 sheets usually carry ``strength_mod`` and friends, but not always
+        — the Sunless Citadel export has full ability *scores* and no ``_mod``
+        attributes at all. Defaulting those to 0 is quietly catastrophic: the
+        emitted document is still right, because dnd5e derives ``mod`` from the
+        score itself, but every *internal* decision that depends on the modifier
+        goes wrong. A Bugbear with STR 15 and +4 to hit then fails the
+        ``mod + prof == tohit`` match, so the converter records "STR, +4 bonus"
+        and dnd5e rolls +8; and the +2 baked into ``2d8+2`` is never recognised
+        as the ability modifier, so dnd5e appends it again as ``2d8+4``.
+        """
+        mod = self.getAttributeInt(name.lower() + "_mod", -999)
+        if mod != -999:
+            return mod
+        score = self.getAttributeInt(name.lower(), 10)
+        # Floor division matches D&D's rounding for negative modifiers.
+        return (score - 10) // 2
+
     def createActorAbility(self, name):
         ability = self.getAttributeInt(name.lower(), 10)
-        mod = self.getAttributeInt(name.lower() + "_mod", 0)
+        mod = self.abilityModifier(name)
         proficiency_bonus = self.getProficiencyBonus()
         if self.isNPC():
             save = self.getAttributeInt("npc_" + name.lower()[0:3] + "_save", 0)
@@ -787,7 +811,7 @@ class Actor(Entity):
         for key, name in (("str", "Strength"), ("dex", "Dexterity"),
                           ("con", "Constitution"), ("int", "Intelligence"),
                           ("wis", "Wisdom"), ("cha", "Charisma")):
-            mod = self.getAttributeInt(name.lower() + "_mod", 0)
+            mod = self.abilityModifier(name)
             if self.isNPC():
                 save = self.getAttributeInt("npc_" + name.lower()[0:3] + "_save", 0)
             else:
@@ -873,7 +897,7 @@ class Actor(Entity):
         }
 
     def createAttributeInitiative(self):
-        mod = self.getAttributeInt("dexterity_mod", 0)
+        mod = self.abilityModifier("dexterity")
         init = self.getAttributeInt("initiative_bonus", 0)
         jack = self.getAttributeInt("jack_bonus", 0)
         bonus = init - mod - jack
@@ -1117,7 +1141,7 @@ class Actor(Entity):
         return details
 
     def createActorSkill(self, label, attribute_name, ability):
-        base_mod = self.getAttributeInt(ability + "_mod", 0)
+        base_mod = self.abilityModifier(ability)
         if self.isNPC():
             mod = self.getAttributeInt("npcd_" + attribute_name, -999)
             if mod == -999:
@@ -2055,10 +2079,15 @@ class Actor(Entity):
                         attack.ability = ItemAbility.fromString(ability)
                         break
                 else:
-                    # TODO: FVTT 0.4.3 so far will still force strength ability to get added
-                    # even if ability is set to EMPTY
+                    # No ability reproduces the printed to-hit, so the difference
+                    # is carried as an explicit bonus. dnd5e rolls
+                    # `d20 + mod + proficiency + bonus`, so the proficiency the
+                    # weapon is about to be marked with has to come out too —
+                    # leaving it in overshoots by the proficiency bonus, which is
+                    # how a Goblin with a printed +5 rolled +7 (B024).
                     attack.ability = ItemAbility.STRENGTH
-                    attack.bonus = tohit - self.abilityDerived("str", "mod")
+                    attack.bonus = tohit - self.abilityDerived("str", "mod") \
+                        - (proficiency_bonus if proficient else 0)
             else:
                 atktype = "None"
         

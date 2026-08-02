@@ -21,6 +21,7 @@ Exit status is non-zero when a check fails, so it can gate a release.
 import argparse
 import json
 import os
+import re
 import sys
 from collections import Counter
 
@@ -38,6 +39,100 @@ ROOT_ONLY_ON_SPELLS = ("activation", "target", "duration")
 ROLLABLE_TYPES = ("weapon", "spell", "feat", "consumable")
 
 EXPECTED_SYSTEM_VERSION = "5.3.3"
+
+# Roll20 leaves the stat block's own text in the item description. That text is
+# an *independent* oracle: it was written by the module author, not by the
+# converter, so comparing against it cannot ratify a bug the way a test that
+# recomputes the implementation's own logic can.
+#   "<em>Melee Weapon Attack </em>+4, Reach 5 ft. <em>Hit : </em>11 (2d8+2) piercing"
+PRINTED_TOHIT = re.compile(r"(?:Weapon|Spell) Attack\s*</em>\s*([+-]\s*\d+)", re.I)
+PRINTED_DAMAGE = re.compile(r"Hit\s*:?\s*</em>\s*\d+\s*\((\d+)d(\d+)\s*([+-]\s*\d+)?\)", re.I)
+
+
+def parseSigned(raw):
+    if not raw:
+        return 0
+    return int(raw.replace(" ", ""))
+
+
+def damageOracle(items, report):
+    """Compare each weapon against the to-hit and damage printed in its own text.
+
+    dnd5e appends the activity ability's modifier to a weapon's damage and to its
+    attack roll. So the converter must *remove* the modifier Roll20 baked into
+    the printed numbers — and remove it exactly once. Getting that wrong is
+    invisible in the stored document and only shows up as a wrong number at the
+    table.
+    """
+    checked = 0
+    wrong = []
+    for item, mods, prof in items:
+        if item.get("type") != "weapon":
+            continue
+        text = item.get("system", {}).get("description", {}).get("value", "") or ""
+        activities = item.get("system", {}).get("activities") or {}
+        activity = next(iter(activities.values()), None)
+        if not activity or activity.get("type") != "attack":
+            continue
+        ability = activity.get("attack", {}).get("ability") or ""
+        mod = mods.get(ability, 0)
+
+        hit = PRINTED_TOHIT.search(text)
+        if hit:
+            printed = parseSigned(hit.group(1))
+            bonus = activity["attack"].get("bonus") or "0"
+            try:
+                bonus = int(bonus)
+            except ValueError:
+                bonus = None
+            if bonus is not None:
+                # dnd5e rolls d20 + mod + proficiency + bonus.
+                rolled = mod + (prof if item["system"].get("proficient") else 0) + bonus
+                checked += 1
+                if rolled != printed:
+                    wrong.append("%s to-hit printed %+d, dnd5e rolls %+d"
+                                 % (item.get("name"), printed, rolled))
+
+        dmg = PRINTED_DAMAGE.search(text)
+        base = item["system"].get("damage", {}).get("base", {})
+        if dmg and base.get("denomination") and not base.get("custom", {}).get("enabled"):
+            printedBonus = parseSigned(dmg.group(3))
+            try:
+                storedBonus = int(base.get("bonus") or 0)
+            except ValueError:
+                storedBonus = None
+            if storedBonus is not None and int(dmg.group(1)) == base.get("number") \
+                    and int(dmg.group(2)) == base.get("denomination"):
+                checked += 1
+                # dnd5e appends @mod to a weapon's damage, so the stored bonus
+                # plus the ability modifier must reproduce the printed bonus.
+                if storedBonus + mod != printedBonus:
+                    wrong.append("%s damage printed %+d, dnd5e rolls %+d"
+                                 % (item.get("name"), printedBonus, storedBonus + mod))
+
+    if not checked:
+        report.check(False, "damage oracle ran", "no printed stat blocks found")
+        return
+    report.check(not wrong, "printed to-hit and damage match what dnd5e will roll",
+                 "%d checks, %d wrong" % (checked, len(wrong)))
+    for line in wrong[:10]:
+        report.note(line)
+
+
+def abilityMods(actor):
+    """Recompute each ability modifier from the stored score.
+
+    Read from the score rather than from any stored ``mod``, because 5.x does not
+    store one — and because a converter that got the modifier wrong would
+    otherwise be checked against its own mistake.
+    """
+    mods = {}
+    for key, values in (actor.get("system", {}).get("abilities") or {}).items():
+        score = values.get("value")
+        if isinstance(score, int):
+            mods[key] = (score - 10) // 2
+    return mods
+
 
 
 def loadDb(path):
@@ -61,6 +156,23 @@ def collect(root):
     for actor in actors:
         items.extend(actor.get("items", []))
     return actors, items
+
+
+def ownedItems(actors):
+    """Each owned item paired with its actor's ability modifiers and proficiency.
+
+    The damage oracle needs the actor, because dnd5e adds the *actor's* ability
+    modifier to the item's damage. A world item has no actor and is skipped.
+    """
+    rows = []
+    for actor in actors:
+        mods = abilityMods(actor)
+        prof = actor.get("system", {}).get("attributes", {}).get("prof")
+        if not isinstance(prof, int):
+            prof = 2
+        for item in actor.get("items", []):
+            rows.append((item, mods, prof))
+    return rows
 
 
 class Report(object):
@@ -150,6 +262,8 @@ def verify(root):
                   == {"value", "long", "reach", "units"}]
         report.check(len(shaped) == len(weapons), "weapons use the WeaponData range",
                      "%d/%d" % (len(shaped), len(weapons)))
+
+    damageOracle(ownedItems(actors), report)
 
     summary = {
         "actors": len(actors),

@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased
+## v1.0.0
 
-**Targeting Foundry VTT v13.** See `docs/adr/` for the decision records behind
-these changes.
+**Targeting Foundry VTT v13 and dnd5e 5.3.3.** Converted worlds and modules import
+with **zero migration** — verified by importing a real export into a real Foundry
+and reading the documents back out of storage. See `docs/adr/` for the decision
+records and `ROADMAP.md` for the bug/fix log.
 
 ### dnd5e 5.x (ADR-008) — in progress
 
@@ -140,6 +142,45 @@ that only exercises the interesting path never looked at them.
 
 Fixed during 0.17.0 (see `ROADMAP.md`): **B019/F019**, **B020/F020**,
 **B021/F021**, **B022/F022**. Suite: 429 → 455.
+
+#### 1.0.0 — acceptance
+
+A real export, converted, imported into Foundry v13 with dnd5e 5.3.3, and then
+measured three ways: on the emitted files, on the LevelDB Foundry wrote back, and
+by rolling the dice in the live game.
+
+**Zero migrations.** `dnd5e.systemMigrationVersion` never moves, and no document
+carries `flags.dnd5e.persistSourceMigration` — dnd5e's migration rewrote nothing,
+which is the whole point. 96/96 weapons keep their dice in the **stored**
+`damage.base` (the direct negative control for the shim that used to make the
+live document read correctly while the stored one held nothing), and 96/96 have
+the attack activity the migration never creates.
+
+**The printed stat block is now a test oracle.** Roll20 leaves the author's own
+text in each item's description — *"Melee Weapon Attack +4 … Hit: 11 (2d8+2)"*.
+`tools/verify_dnd5e.py` parses it and asserts that what dnd5e will roll equals
+what the module says. That comparison found four defects a 455-green suite and a
+clean schema check had both passed, every one of which produced a document that
+loaded without a single error and rolled the wrong number:
+
+- **B023/F023** — not every Roll20 sheet carries `<ability>_mod`. Defaulting it to
+  0 left the *document* right, because dnd5e derives the modifier from the score,
+  while every internal decision that depends on it went wrong. A Bugbear with STR
+  15 and a printed +4 rolled **+8**, and its printed `2d8+2` rolled **2d8+4**.
+- **B024/F024** — the to-hit fallback forgot that dnd5e adds proficiency too, so
+  a Goblin's printed +5 rolled +7.
+- **B025/F025** — the damage extractor picked its own ability while the caller
+  kept a different one, so a Goblin's printed `1d6+2` became `1d6−1`.
+- **B026/F026** — the proficiency formula divided outside its ceiling and returned
+  +1 at CR 0; every CR 0–4 creature has +2.
+
+**Measured, on *TotYP: The Sunless Citadel*** — 30 actors, 357 items: 0 legacy
+fields, `_stats.systemVersion` intact on 387/387 documents, 0 activated items
+without an activity, 62 dice rolls evaluated in the live game, and **61 to-hit and
+damage checks against the printed stat blocks with 0 wrong**.
+
+New: `tools/verify_dnd5e.py` (emitted output, with the oracle) and
+`tools/verify_persisted.mjs` (the LevelDB Foundry wrote back). Suite: 455 → 513.
 
 ### Foundry v13 (ADR-002, ADR-003)
 - Emit `world.json` and `module.json` in the Foundry v13 manifest schema: `id`
