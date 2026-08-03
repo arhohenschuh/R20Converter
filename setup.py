@@ -1,3 +1,4 @@
+import os
 import sys
 import cx_Freeze
 from cx_Freeze import setup, Executable
@@ -9,7 +10,10 @@ sys.path.append("src")
 buildOptions = {
     "build_exe": {
         "packages": [],
-        "includes": ["bottle_websocket", "numpy"],
+        # plyvel is a native extension writing LevelDB compendium packs
+        # (ADR-009). cx_Freeze does not detect it: `leveldb_pack` imports it
+        # inside a try/except so a source install can run without it.
+        "includes": ["bottle_websocket", "numpy", "plyvel"],
         "excludes": ["PySide2", "PyQt5", "matplotlib.tests", "numpy.random._examples"],
         "include_files": [
             ("Changelog.md", "Changelog.md"),
@@ -35,6 +39,25 @@ buildOptions = {
 # pin has no wheel there. Support both so the build works on either.
 GUI_BASE = "gui" if int(cx_Freeze.__version__.split(".")[0]) >= 8 else "Win32GUI"
 
+
+def _plyvelLibraries():
+    """The DLL directory the plyvel wheel ships beside its package.
+
+    ``plyvel-ci`` is repaired by delvewheel: ``_plyvel.pyd`` links against
+    mangled ``leveldb-*.dll`` / ``msvcp140-*.dll`` names that live in a sibling
+    ``plyvel_ci.libs`` directory, and its import hook looks for that directory
+    at ``../plyvel_ci.libs``. cx_Freeze copies the package but not the sibling,
+    so the extension builds fine and then fails to load (ADR-009).
+    """
+    try:
+        import plyvel
+    except Exception:
+        return None
+    package = os.path.dirname(os.path.abspath(plyvel.__file__))
+    libraries = os.path.join(os.path.dirname(package), "plyvel_ci.libs")
+    return libraries if os.path.isdir(libraries) else None
+
+
 base = None
 if sys.platform == "win32":
     base = GUI_BASE
@@ -42,6 +65,10 @@ if sys.platform == "win32":
     buildOptions["build_exe"]["includes"].append("tkinter")
     buildOptions["build_exe"]["excludes"].append("wx")
     buildOptions["build_exe"]["excludes"].append("numpy")
+    _libraries = _plyvelLibraries()
+    if _libraries:
+        buildOptions["build_exe"]["include_files"].append(
+            (_libraries, "lib/plyvel_ci.libs"))
 if sys.platform == "darwin":
     buildOptions["build_exe"]["includes"].append("wx")
     buildOptions["build_exe"]["excludes"].append("tkinter")

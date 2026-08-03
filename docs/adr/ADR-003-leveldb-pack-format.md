@@ -1,9 +1,19 @@
 # ADR-003: Keep writing NeDB files, defer LevelDB emission
 
-- **Status**: Accepted
+- **Status**: Superseded in part by ADR-009
 - **Date**: 2026-07-25
 - **Supersedes**: —
-- **Superseded by**: —
+- **Superseded by**: [ADR-009](ADR-009-leveldb-module-packs.md) for **module
+  compendium packs**. The decision still stands for **worlds**, which continue to
+  write NeDB.
+
+> **2026-08-03.** The deadline recorded at the bottom of this ADR came due.
+> Two of the three grounds for rejection below turned out to be false: a
+> prebuilt Windows wheel now exists (`plyvel_ci-1.5.1-cp38-cp38-win_amd64`), and
+> the key encoding is no longer undocumented — it was read directly out of a
+> published module running on Foundry 14.365. The route recorded here (shell out
+> to the Foundry CLI) was **not** taken, because it would add a Node.js runtime
+> dependency for users who run a bundled `.exe`. See ADR-009.
 
 ## Context
 

@@ -16,3 +16,13 @@ bottle-websocket==0.2.9
 requests==2.32.4
 Pillow==10.4.0
 matplotlib==3.7.5
+
+# LevelDB compendium packs for module exports (ADR-009). Optional at runtime:
+# src/leveldb_pack.py falls back to NeDB when it is missing, so a source install
+# that skips it still produces a working module. It is bundled into the frozen
+# build, so every .exe user gets LevelDB packs.
+#
+# plyvel-ci is the prebuilt-wheel distribution of plyvel; plain `plyvel` would
+# need the LevelDB C library and a compiler, which is what ADR-003 rejected.
+# Wheel used for the frozen build: plyvel_ci-1.5.1-cp38-cp38-win_amd64.whl
+plyvel-ci==1.5.1

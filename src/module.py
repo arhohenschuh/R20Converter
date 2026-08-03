@@ -56,10 +56,10 @@ class Module(object):
         """Build one v13 compendium pack definition (ADR-002).
 
         ``entity`` was renamed to ``type`` in v10 and removed in v13, and
-        ``path`` now names a LevelDB *directory* rather than a NeDB ``.db``
-        file, so the extension is stripped here. We still write the ``.db`` file
-        itself -- Foundry v13 migrates it into a directory of that name on first
-        launch (ADR-003).
+        ``path`` names a LevelDB *directory* rather than a NeDB ``.db`` file, so
+        the extension is stripped here. Since ADR-009 that directory is what we
+        actually write; without plyvel we fall back to the ``.db`` file and
+        Foundry converts it on import.
         """
         path = os.path.join("packs", os.path.splitext(filename)[0])
         return {"name": name,

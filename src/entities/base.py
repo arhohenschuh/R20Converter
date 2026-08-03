@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+import leveldb_pack
+
 # --- Asset download tuning -------------------------------------------------
 # A campaign can reference thousands of remote assets. Without a timeout a
 # single stalled connection hangs the whole conversion, and without retries a
@@ -62,7 +64,9 @@ class DatabaseFile(object):
         # If exporting to module, then init package/pack name from converter
         if package is None and self.getArgument("export_as_module", False):
             self._package = converter.name
-            self._pack_name = re.sub(".db", "", filename)
+            # Anchored: an unescaped ".db" is a regex matching any character,
+            # so "adb.db" collapsed to "".
+            self._pack_name = re.sub(r"\.db$", "", filename)
         self.entities = []
   
     def logInfo(self, msg):
@@ -156,7 +160,39 @@ class DatabaseFile(object):
             return "packs"
         else:
             return "data"
+
+    def _levelDBCollection(self):
+        """Collection to write as a LevelDB pack, or ``None`` for NeDB.
+
+        Worlds keep NeDB deliberately (ADR-009): Foundry's world migration is
+        automatic and measured lossless, so only module packs are worth the
+        native dependency.
+        """
+        if not self.getArgument("export_as_module", False):
+            return None
+        name = re.sub(r"\.db$", "", self._filename)
+        collection = leveldb_pack.collectionFor(name)
+        if collection is None:
+            return None
+        if not leveldb_pack.isAvailable():
+            self.logWarning(
+                "LevelDB support is unavailable (%s), writing '%s' as a NeDB "
+                "file. Foundry will convert it on import; install plyvel to "
+                "have the pack written directly."
+                % (leveldb_pack.IMPORT_ERROR, name))
+            return None
+        return collection
+
     def save(self, full_path=None):
+        collection = self._levelDBCollection()
+        if collection is not None:
+            if full_path is None:
+                full_path = os.path.join(self._path, self.getDirectoryName(),
+                                         re.sub(r"\.db$", "", self._filename))
+            leveldb_pack.writePack(full_path,
+                                   [entity.entity for entity in self.entities],
+                                   collection)
+            return self
         if full_path is None:
             full_path = os.path.join(self._path, self.getDirectoryName(), self._filename)
         with open(full_path, "w", encoding='utf-8') as f:
@@ -167,6 +203,17 @@ class DatabaseFile(object):
         if full_path is None:
             full_path = os.path.join(self._path, self.getDirectoryName(), self._filename)
         self.entities = []
+        if os.path.isdir(full_path):
+            # A LevelDB pack. Reading one is only supported where plyvel is
+            # present; without it this is B031's silent degradation, so say so.
+            name = os.path.basename(full_path.rstrip(os.path.sep))
+            collection = leveldb_pack.collectionFor(name)
+            if collection is None or not leveldb_pack.isAvailable():
+                raise IOError("'%s' is a LevelDB pack, which cannot be read here"
+                              % full_path)
+            for data in leveldb_pack.readPack(full_path, collection):
+                self.entities.append(Entity.createFromData(self, data))
+            return
         with open(full_path, "r", encoding='utf-8') as f:
             lines = f.readlines()
             for line in lines:

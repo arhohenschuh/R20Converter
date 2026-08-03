@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.2.0
+
+Module exports now write Foundry LevelDB compendium packs directly instead of
+NeDB files (ADR-009), removing the import-and-re-export round trip from the
+publishing pipeline.
+
+- `--export-as-module` writes `packs/<name>/` LevelDB directories. The encoding
+  was read out of a published module running on Foundry 14.365 rather than
+  guessed: primary documents keyed `!<collection>!<id>`, embedded documents
+  keyed `!<collection>.<embedded>!<parent>.<child>`, plain uncompressed JSON,
+  and the parent holding each embedded collection as an array of ids.
+- Worlds still write NeDB deliberately. Foundry's world migration is automatic
+  and was measured lossless, so it does not justify a native dependency.
+- `plyvel` is optional. It is bundled in the frozen build, so every `.exe` user
+  gets LevelDB packs; a source install without it falls back to NeDB and says
+  so rather than failing.
+- Rewriting a pack removes the previous one first. LevelDB merges by default,
+  so converting twice into the same directory would otherwise leave deleted
+  documents behind as orphans Foundry still shows.
+- Fixed a latent bug in the pack-name derivation: `re.sub(".db", "", name)`
+  used an unescaped dot, so a name like `adb.db` collapsed to the empty string.
+
 ## v1.1.0
 
 Closes every remaining finding of the 2026-08-03 audit — B029, B030, B036 and
