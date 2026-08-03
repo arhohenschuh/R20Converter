@@ -1,6 +1,6 @@
 # B029: Item `uses` are duplicated onto the activity and no `consumption.targets` is emitted
 
-- **Status**: Open
+- **Status**: Fixed in 1.1.0 (F029)
 - **Severity**: Major (limited-use features never consume a use)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/dnd5e.py:448-499` (`applyActivityMetadata`, `_activityBase`), `src/entities/items.py:351-361` (`createStandardData`)

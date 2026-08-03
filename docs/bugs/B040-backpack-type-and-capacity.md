@@ -1,6 +1,6 @@
 # B040: "backpack" item type triggers dnd5e's source migration; capacity uses the 1.5.6 shape
 
-- **Status**: Open
+- **Status**: Fixed in 1.1.0 (F040)
 - **Severity**: Minor (latent — `createItemBackpack` is currently unreachable from conversion)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/entities/items.py:292-293`, `531-539`, `1140-1168` (`ItemBackpack`)

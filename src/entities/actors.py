@@ -1026,9 +1026,12 @@ class Actor(Entity):
             ("movement", self.createAttributeMovement()),
             ("senses", self.createAttributeSenses()),
             ("spellcasting", self.getSpellcastingAbility()),
-            ("spelldc", self.getAttributeInt("npc_spelldc" if self.isNPC() else "spell_save_dc", 10)),
-            ("spellLevel", 0),
         ])
+        # `spelldc` is derived by `prepareSpellcastingAbility` and `spellLevel`
+        # does not exist at all; both were dropped on load. Only NPCs declare
+        # `attributes.spell`, and its `level` is what slot progression reads.
+        if self.isNPC():
+            attributes["spell"] = {"level": self.getNPCCasterLevel()}
         if not self.isNPC():
             attributes.update([
                     ("hd", self.createAttributeHitDice()),
@@ -1092,13 +1095,12 @@ class Actor(Entity):
         ])
         if self.isNPC():
             details.update([
-                    ("type", {"value": self.getNPCType()[1], "subtype": "", "swarm": "", "custom": ""}),
+                    ("type", dnd5e.creatureType(self.getNPCType()[1])),
                     ("environment", ""),
                     ("cr", self.getChallengeRating()),
                     ("xp", self.createAttributeNumber("Kill Experience", "npc_xp", 0)),
                     ("source", dnd5e.sourceData(
                         custom=self.getArgument("npc_source", "Roll 20"))),
-                    ("spellLevel", 0)
                     ])
         else:
             details.update([
@@ -1585,12 +1587,54 @@ class Actor(Entity):
                 ("cp", self.getAttributeInt("cp", 0))
             ])
 
+    def getNPCCasterLevel(self):
+        """Read the caster level out of the NPC's Spellcasting trait.
+
+        ``attributes.spell.level`` is what dnd5e derives NPC slot counts from,
+        and it is declared ``nullable: false, initial: 0`` — there is no "unset"
+        state to fall back from, so a missing level is a level of 0 and a level
+        of 0 is no slots at any level.
+        """
+        for trait in self.getRepeatingAttributes("npctrait").values():
+            if len(trait) == 0:
+                continue
+            desc = self.getAttribute("desc", "", from_dict=trait)[0]
+            text = self.getAttribute("description", "", from_dict=trait)[0] or desc
+            match = re.search(r"(\d+)(?:st|nd|rd|th)[- ]level spellcaster",
+                              str(text), re.IGNORECASE)
+            if match:
+                return int(match.group(1))
+        return 0
+
     def createActorSpells(self):
-        spells = OrderedDict([("spell0", {"value": 0, "max": 0})])
+        """Build ``system.spells``.
+
+        The 5.x creature schema declares ``{value, override}`` per level and
+        derives ``max``, so an emitted ``max`` is dropped on load.
+
+        NPCs get an explicit ``override`` because their slots are otherwise
+        derived from ``attributes.spell.level`` alone, which loses any spread
+        the statblock actually printed. Characters get none — their slots come
+        from class progression, which is emitted and authoritative.
+
+        ``lvl<n>_slots_expended`` holds the slots *remaining*, not the slots
+        spent: the sheet labels that field "SLOTS REMAINING" (the attribute
+        name is a Roll20 misnomer), so it maps straight onto ``value``.
+
+        ``spell0`` is not emitted — cantrips consume no slot and the level is
+        excluded from the schema's own ``_spellLevels``.
+        """
+        spells = OrderedDict()
+        npc = self.isNPC()
         for level in range(1, 10):
-            current = self.getAttribute("lvl%d_slots_expended" % level, 0)[0]
-            max = self.getAttribute("lvl%d_slots_total" % level, current)[0]
-            spells["spell%d" % level]  = {"value": current, "max": max, "override": None}
+            # Both are NumberFields; the sheet stores them as strings, and
+            # relying on Foundry to cast them is the habit ADR-008 exists to break.
+            remaining = self.getAttributeInt("lvl%d_slots_expended" % level, 0)
+            total = self.getAttributeInt("lvl%d_slots_total" % level, remaining)
+            spells["spell%d" % level] = {
+                "value": remaining,
+                "override": total if (npc and total) else None,
+            }
         spells["pact"] = {"value": 0, "override": None}
         return spells
 
@@ -2299,6 +2343,28 @@ class Actor(Entity):
         self.exportItem(item, "Spells")
         return owned_item
 
+    @staticmethod
+    def parseInnateUses(innate):
+        """Read the ``N/day`` annotation off an innate-cast spell.
+
+        Returns ``(count, period)``; ``(None, "")`` when the text carries no
+        count. The count needs ``\\d+``: under ``\\d`` an annotation of
+        "10/day" matched the leading ``1``, the period group then failed
+        against the ``0``, and the spell arrived with one use and no way to
+        recover it.
+        """
+        text = innate.lower()
+        match = re.search(r"(\d+)\s*/\s*(day|short|long)", text)
+        if match:
+            periods = {"day": ItemUses.PER_DAY,
+                       "short": ItemUses.PER_SHORT_REST,
+                       "long": ItemUses.PER_LONG_REST}
+            return int(match.group(1)), periods[match.group(2)]
+        match = re.search(r"(\d+)", text)
+        if match:
+            return int(match.group(1)), ""
+        return None, ""
+
     def addSpells(self, items):
         for level in range(10):
             spells = self.getRepeatingAttributes("spell-{}".format(level if level > 0 else "cantrip"))
@@ -2434,16 +2500,11 @@ class Actor(Entity):
                     preparation.prepared = True
                     if activation.condition == "":
                         activation.condition = innate
-                    match = re.search(r"(\d)(?:/(day|short|long))?", innate.lower())
-                    if match:
-                        activation.uses.uses = int(match.group(1))
-                        activation.uses.max = int(match.group(1))
-                        if match.group(2) == "day":
-                            activation.uses.per = ItemUses.PER_DAY
-                        elif match.group(2) == "short":
-                            activation.uses.per = ItemUses.PER_SHORT_REST
-                        elif match.group(2) == "long":
-                            activation.uses.per = ItemUses.PER_LONG_REST
+                    count, period = self.parseInnateUses(innate)
+                    if count is not None:
+                        activation.uses.uses = count
+                        activation.uses.max = count
+                        activation.uses.per = period
                     if "at will" in innate.lower():
                         preparation.mode = ItemSpellPreparation.ALWAYS_AVAILABLE
 

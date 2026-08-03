@@ -27,7 +27,15 @@ MINIMUM_CORE_VERSION = "13"
 #: Most recent Foundry build the output has been checked against. Used as
 #: ``compatibility.verified``. Foundry warns but does not block above this, so it
 #: is safe for this to lag slightly behind the newest release.
-VERIFIED_CORE_VERSION = "13"
+#:
+#: Set to 14 on the evidence of a document-level comparison against a
+#: hand-repaired *Lost Mine of Phandelver* module that runs on Foundry 14.365
+#: with dnd5e 5.3.3: across every actor matched by name the converter's output
+#: carried the same values, and the only differences were fields where the
+#: converter is now the more correct of the two (see B043). This is a
+#: compatibility claim, not a schema claim — ``DOCUMENT_SCHEMA_CORE_VERSION``
+#: below is what describes the shape we emit, and it stays at 13.
+VERIFIED_CORE_VERSION = "14"
 
 #: The core version whose *document schema* we emit, written to
 #: ``world.json``'s ``coreVersion``.

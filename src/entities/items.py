@@ -536,7 +536,10 @@ class Item(Entity):
         kwargs.update(attributes.getDict())
         kwargs.update(backpack.getDict())
         data = Item.createStandardData(description, source, None, None, **kwargs)
-        return Item(database, id, name, "backpack", None, data)
+        # dnd5e renamed backpack -> container in 3.0. Emitting the old type does
+        # not fail: `_initializeSource` rewrites it and sets
+        # `persistSourceMigration`, queueing the document for a rewrite.
+        return Item(database, id, name, "container", None, data)
 
     @staticmethod
     def createItemFeat(database, id, name, description, activation, attack, recharge, **kwargs):
@@ -1142,20 +1145,34 @@ class ItemBackpack:
         self.pp = pp
 
     def getDict(self):
-        return {
-            "capacity": {
-                "type": self.type,
-                "value": self.capacity,
-                "weightless": self.weightless
-            },
+        """Build ``ContainerData``.
+
+        5.x replaced the ``{type, value, weightless}`` capacity with separate
+        ``count`` / ``volume`` / ``weight`` fields and moved ``weightless`` into
+        ``properties``. The translation below is the one dnd5e's own
+        ``#migrateCapacity`` performs, done up front so no migration is queued.
+        """
+        capacity = {}
+        if self.capacity:
+            if self.type == self.WEIGHT:
+                capacity["weight"] = dnd5e.weightData(self.capacity)
+            elif self.type == self.ITEMS:
+                capacity["count"] = self.capacity
+        data = {
+            "capacity": capacity,
             "currency": {
                 "cp": self.cp,
                 "sp": self.sp,
                 "ep": self.ep,
                 "gp": self.gp,
                 "pp": self.pp
-            }
+            },
+            # ContainerData clamps quantity to exactly 1.
+            "quantity": 1,
         }
+        if self.weightless:
+            data["properties"] = ["weightlessContents"]
+        return data
 
 # Class specific item variables
 #: The primary ability each class uses, from the PHB multiclassing table. dnd5e

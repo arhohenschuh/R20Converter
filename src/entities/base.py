@@ -461,7 +461,9 @@ class Entity(object):
         val = val[1:]
         try:
             if len(val) < 6:
-                rgb = tuple(int(val[i:i+1], 16) * 16 for i in (0, 1, 2))
+                # CSS shorthand repeats each nibble: #abc is #aabbcc, so 0xa -> 0xaa.
+                # Indices 0-2 also drop the alpha nibble of the #rgba form.
+                rgb = tuple(int(val[i], 16) * 17 for i in (0, 1, 2))
             else:
                 rgb = tuple(int(val[i:i+2], 16) for i in (0, 2, 4))
             return "#%02x%02x%02x" % rgb

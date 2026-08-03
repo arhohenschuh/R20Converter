@@ -1,6 +1,6 @@
 # B042: 3-digit hex colors expand with ×16 instead of ×17
 
-- **Status**: Open
+- **Status**: Fixed in 1.1.0 (F042)
 - **Severity**: Minor (cosmetic: slightly-off colors on walls, drawings, lights, tints)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/entities/base.py:462-467` (`Entity.color`)

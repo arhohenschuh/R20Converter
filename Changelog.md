@@ -1,5 +1,90 @@
 # Changelog
 
+## v1.1.0
+
+Closes every remaining finding of the 2026-08-03 audit — B029, B030, B036 and
+B039–B042. A minor rather than a patch release because the emitted document
+shapes change: containers change item type, NPC casters gain slot overrides and
+a caster level, and activities gain consumption targets.
+
+With this release every bug in `docs/bugs/` is either fixed or explained. The
+two that are not fixed — B031 and B043 — are blocked on the same decision, and
+say so.
+
+### Data loss
+- Activating a limited-use item spends a use. The activity carries a
+  `consumption.targets` entry of type `itemUses`; it previously carried a copy
+  of the item's own `uses` pool and no target at all, so the sheet showed two
+  pools and using the item decremented neither.
+- NPC spellcasters arrive with the slots their statblock prints. `spells.spellN`
+  emits the declared `{value, override}` — `max` is derived and was dropped on
+  load — and the caster level is parsed from the Spellcasting trait into
+  `attributes.spell.level`, which is the only thing slot progression reads.
+- Innate spells keep multi-digit use counts. The count was read with `(\d)`, so
+  "10/day" became one use and, because the period group then failed against the
+  second digit, one use that never came back.
+
+### Schema conformance
+- Spell slot counts are emitted as numbers. Both fields are `NumberField`s and
+  the sheet stores them as strings; 167 of them were being handed to Foundry to
+  cast, in a converter whose whole premise is not leaning on that.
+- Containers emit `type: "container"` and the declared `capacity` shape.
+  `backpack` is not rejected — dnd5e rewrites it and sets
+  `persistSourceMigration`, queueing every container for a rewrite, which is the
+  outcome ADR-008's gate measures to be zero.
+- NPC creature types are split into `value` / `subtype` / `swarm`, with the head
+  word validated against `CONFIG.DND5E.creatureTypes` and anything unrecognised
+  routed to `custom`. "humanoid (goblinoid)" stored whole matched nothing that
+  looked it up, so a converted goblin was not a humanoid to a favored-enemy
+  check or a compendium filter.
+- `"charges"` is gone from the recovery-period whitelist. It is a *consumption*
+  type in 5.x, and `period` is unvalidated, so it would have been stored and
+  then ignored.
+
+### Cosmetic
+- Three-digit hex colours expand by nibble repetition (`#abc` ≡ `#aabbcc`)
+  rather than ×16, so `#fff` is white instead of `#f0f0f0`. The four-digit
+  `#rgba` form drops the alpha nibble instead of misreading it as blue.
+
+### Corrections
+- The B030 report claimed dnd5e falls back to `max(cr, 1)` when the caster level
+  is not numeric, and that emitting `0` defeated it. Reading the 5.3.3 schema
+  while fixing it showed `spell.level` is `nullable: false, initial: 0` — always
+  numeric, so no such fallback can fire. Had the suggested fix been applied as
+  written ("emit nothing and let the fallback work") the bug would have
+  survived. The report is corrected in place.
+- `system.identified` was carried as an unresolved candidate. It is declared in
+  `IdentifiableTemplate`; the converter was right and the candidate is closed.
+
+### Known limitations
+- **B043**: `compatibility.verified` is now `14`, matching the reference module
+  and backed by a document-level comparison against it — converting the *Lost
+  Mine of Phandelver* export and diffing against the hand-repaired
+  `lost-mine-of-phandelver-1.2.0` found no `system` key missing from the
+  converter's output, identical CR, HP, AC and size throughout, and the only
+  differences in the converter's favour: the repaired module still carries the
+  retired `spells.spellN.max` and the unsplit `"humanoid (goblinoid)"` type.
+  `coreVersion` deliberately stays at 13, because it is what makes Foundry run
+  the NeDB→LevelDB migration the output depends on. Writing LevelDB packs
+  directly — which would remove the import-and-migrate step entirely — is still
+  open and needs an ADR, being the same dependency question as B031.
+- **B031**: compendium enrichment is still unavailable on installs that ship
+  LevelDB packs. Reported clearly since 1.0.1, but not readable without the
+  dependency ADR-003 rejected — the same blocker as B043.
+
+### Tests
+- 47 new schema-conformance cases, 585 total. Every one was checked against a
+  reverted tree: 39 of the cases in `test_dnd5e_schema_diff.py` fail without the
+  fixes, so they detect the defects rather than describing the new code. The
+  full suite passed both before and after these seven fixes, which is exactly
+  why the check matters.
+- Verified end to end on two real campaigns rather than only in unit tests:
+  *Waterdeep Dragon Heist* (210 actors, 1,752 items — 209 creature types parsed,
+  42 NPC caster levels recovered, 164 slot overrides, all 55 limited-use items
+  carrying a consumption target, no retired field anywhere) and *Lost Mine of
+  Phandelver*, compared against the hand-repaired module built from the same
+  export.
+
 ## v1.0.2
 
 Closes the last two findings of the same class as 1.0.1's, both on the actor

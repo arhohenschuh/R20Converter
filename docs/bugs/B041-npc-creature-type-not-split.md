@@ -1,6 +1,6 @@
 # B041: NPC creature type stores "humanoid (goblinoid)" whole instead of value + subtype
 
-- **Status**: Open
+- **Status**: Fixed in 1.1.0 (F041)
 - **Severity**: Minor (cosmetic/filtering; no validation failure)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/entities/actors.py:626-636` (`getNPCType`), `1121` (`createActorDetails`)

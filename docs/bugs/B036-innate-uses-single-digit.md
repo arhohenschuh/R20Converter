@@ -1,6 +1,6 @@
 # B036: Innate-spell uses regex matches a single digit — "10/day" becomes 1 use
 
-- **Status**: Open
+- **Status**: Fixed in 1.1.0 (F036)
 - **Severity**: Minor
 - **Found**: 2026-08-03 audit
 - **Component**: `src/entities/actors.py:2442` (`addSpells`)

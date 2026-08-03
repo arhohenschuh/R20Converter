@@ -13,9 +13,11 @@ is mechanical rather than a reviewer noticing.
 import pytest
 
 import dnd5e
+from entities.base import Entity
 from entities.actors import Actor
-from entities.items import (Item, ItemEquipment, ItemInventoryAttributes,
-                            ItemObject, ItemWeapon)
+from entities.items import (Item, ItemActivation, ItemBackpack, ItemEquipment,
+                            ItemInventoryAttributes, ItemObject, ItemUses,
+                            ItemWeapon)
 
 from conftest import FakeDatabase
 
@@ -33,8 +35,14 @@ RETIRED_ITEM_FIELDS = {
     "speed", "stealth", "hp", "consume", "save", "subclass", "saves", "skills",
 }
 
-#: ``NPCData``/``CharacterData`` declare no synthetic bar attributes.
-RETIRED_ACTOR_ATTRIBUTES = {"bar1", "bar2"}
+#: ``NPCData``/``CharacterData`` declare no synthetic bar attributes. Neither
+#: declares ``spelldc`` (derived by ``prepareSpellcastingAbility``) nor
+#: ``spellLevel`` (the NPC caster level lives at ``attributes.spell.level``).
+RETIRED_ACTOR_ATTRIBUTES = {"bar1", "bar2", "spelldc", "spellLevel"}
+
+#: ``module/data/actor/templates/creature.mjs`` spells MappingField. ``max`` is
+#: derived from progression, so an emitted one is dropped.
+SPELL_SLOT_FIELDS = {"value", "override"}
 
 
 def physicalItems(database):
@@ -257,3 +265,274 @@ class TestActorToolShape(object):
     def test_traits_no_longer_carry_toolprof(self):
         actor = ShapedActor(tools={"t1": {"toolname": "Thieves' Tools"}})
         assert "toolProf" not in actor.createActorTraits()
+
+
+class SlotActor(Actor):
+    """An actor driven by canned slot attributes and NPC traits."""
+
+    def __init__(self, npc=True, attributes=None, traits=None):
+        self._shaped = False
+        self._npc = npc
+        self._attributes = attributes or {}
+        self._traits = traits or {}
+        self.warnings = []
+
+    def isNPC(self):
+        return self._npc
+
+    def logWarning(self, msg):
+        self.warnings.append(msg)
+
+    def getRepeatingAttributes(self, name):
+        return self._traits if name == "npctrait" else {}
+
+    def getAttribute(self, name, default=None, from_dict=None):
+        source = from_dict if from_dict is not None else self._attributes
+        return (source.get(name, default), None, None)
+
+
+def _slots(**levels):
+    # The sheet stores these as strings; both fields are NumberFields.
+    attributes = {}
+    for key, (total, remaining) in levels.items():
+        level = int(key[-1])
+        attributes["lvl%d_slots_total" % level] = str(total)
+        attributes["lvl%d_slots_expended" % level] = str(remaining)
+    return attributes
+
+
+class TestSpellSlotShape(object):
+    """B030: every leveled NPC caster arrived with no slots at all."""
+
+    def test_entry_declares_only_schema_fields(self):
+        spells = SlotActor(attributes=_slots(l3=(4, 2))).createActorSpells()
+        assert set(spells["spell3"]) == SPELL_SLOT_FIELDS
+
+    def test_no_level_emits_a_derived_max(self):
+        # `max` is computed from progression; an emitted one is dropped, which
+        # is why the sheet showed zero slots however many the statblock printed.
+        spells = SlotActor(attributes=_slots(l1=(4, 4))).createActorSpells()
+        assert all("max" not in entry for entry in spells.values())
+
+    def test_cantrip_level_is_not_a_slot_level(self):
+        # CreatureTemplate._spellLevels filters "0" out.
+        assert "spell0" not in SlotActor().createActorSpells()
+
+    def test_npc_slots_are_pinned_with_an_override(self):
+        spells = SlotActor(attributes=_slots(l3=(4, 2))).createActorSpells()
+        assert spells["spell3"]["override"] == 4
+        assert spells["spell3"]["value"] == 2
+
+    def test_slots_are_numbers_not_sheet_strings(self):
+        # Both are NumberFields. Foundry would cast "4", but leaning on that is
+        # the habit ADR-008 exists to break -- and it hides real junk values.
+        spells = SlotActor(attributes=_slots(l3=(4, 2))).createActorSpells()
+        assert isinstance(spells["spell3"]["value"], int)
+        assert isinstance(spells["spell3"]["override"], int)
+
+    def test_unparseable_slot_count_becomes_zero_not_a_string(self):
+        actor = SlotActor(attributes={"lvl1_slots_total": "", "lvl1_slots_expended": ""})
+        entry = actor.createActorSpells()["spell1"]
+        assert entry["value"] == 0
+        assert entry["override"] is None
+
+    def test_empty_level_keeps_progression_in_charge(self):
+        spells = SlotActor(attributes=_slots(l3=(4, 2))).createActorSpells()
+        assert spells["spell9"]["override"] is None
+
+    def test_character_slots_come_from_class_progression(self):
+        # A PC's classes are emitted and authoritative; pinning an override
+        # would freeze the slots against level-ups.
+        spells = SlotActor(npc=False, attributes=_slots(l3=(4, 2))).createActorSpells()
+        assert spells["spell3"]["override"] is None
+        assert spells["spell3"]["value"] == 2
+
+
+class TestNPCCasterLevel(object):
+    """B030: `attributes.spell.level` is what NPC slot progression reads."""
+
+    def _actor(self, description):
+        return SlotActor(traits={"t1": {"name": "Spellcasting",
+                                        "description": description}})
+
+    def test_level_is_read_from_the_spellcasting_trait(self):
+        actor = self._actor("The archmage is an 18th-level spellcaster.")
+        assert actor.getNPCCasterLevel() == 18
+
+    @pytest.mark.parametrize("text,expected", [
+        ("is a 1st-level spellcaster", 1),
+        ("is a 2nd-level spellcaster", 2),
+        ("is a 3rd-level spellcaster", 3),
+        ("is a 9th level spellcaster", 9),
+    ])
+    def test_every_ordinal_form_parses(self, text, expected):
+        assert self._actor(text).getNPCCasterLevel() == expected
+
+    def test_a_non_caster_reports_zero(self):
+        assert self._actor("Keen Smell. Advantage on Perception.").getNPCCasterLevel() == 0
+
+
+class TestInnateUses(object):
+    """B036: `(\\d)` captured one digit, so "10/day" became 1 use, no recovery."""
+
+    @pytest.mark.parametrize("text,count,period", [
+        ("3/day each", 3, ItemUses.PER_DAY),
+        ("10/day", 10, ItemUses.PER_DAY),
+        ("12/day each", 12, ItemUses.PER_DAY),
+        ("1/short rest", 1, ItemUses.PER_SHORT_REST),
+        ("2/long rest", 2, ItemUses.PER_LONG_REST),
+    ])
+    def test_count_and_period_survive(self, text, count, period):
+        assert Actor.parseInnateUses(text) == (count, period)
+
+    def test_two_digit_count_keeps_its_period(self):
+        # The regression: the period group failed against the second digit, so
+        # the use never came back on a rest.
+        assert Actor.parseInnateUses("10/day")[1] == ItemUses.PER_DAY
+
+    def test_at_will_has_no_count(self):
+        assert Actor.parseInnateUses("at will") == (None, "")
+
+
+class TestRecoveryPeriods(object):
+    """B039: "charges" is a consumption type in 5.x, not a recovery period."""
+
+    def test_charges_is_not_a_recovery_period(self):
+        assert "charges" not in dnd5e.RECOVERY_PERIODS
+
+    def test_every_period_is_a_configured_key(self):
+        # CONFIG.DND5E.limitedUsePeriods plus the special `recharge`.
+        assert set(dnd5e.RECOVERY_PERIODS) <= {
+            "lr", "sr", "day", "dawn", "dusk", "initiative", "turnStart",
+            "turnEnd", "turn", "recharge"}
+
+    def test_legacy_charges_yields_no_recovery_rule(self):
+        uses = dnd5e.usesFromLegacy(2, 3, ItemUses.PER_CHARGES)
+        assert uses["recovery"] == []
+
+    def test_recovery_rejects_an_unconfigured_period(self):
+        assert dnd5e.recovery("charges") is None
+
+
+class TestCreatureType(object):
+    """B041: the whole phrase was stored where a config key was expected."""
+
+    def test_parenthetical_becomes_the_subtype(self):
+        assert dnd5e.creatureType("humanoid (goblinoid)") == {
+            "value": "humanoid", "subtype": "goblinoid", "swarm": "", "custom": ""}
+
+    def test_plain_type_needs_no_splitting(self):
+        assert dnd5e.creatureType("dragon")["value"] == "dragon"
+
+    def test_value_is_always_a_configured_key(self):
+        for text in ["Humanoid (Any Race)", "beast", "swarm of Tiny beasts"]:
+            value = dnd5e.creatureType(text)["value"]
+            assert value in dnd5e.CREATURE_TYPES, "%r -> %r" % (text, value)
+
+    def test_swarm_records_the_size_key(self):
+        parsed = dnd5e.creatureType("swarm of Tiny beasts")
+        assert parsed["swarm"] == "tiny"
+        assert parsed["value"] == "beast"
+
+    def test_unknown_type_goes_to_custom_not_value(self):
+        parsed = dnd5e.creatureType("myconid")
+        assert parsed["value"] == ""
+        assert parsed["custom"] == "myconid"
+
+    def test_field_always_has_the_four_declared_keys(self):
+        assert set(dnd5e.creatureType("")) == {"value", "subtype", "swarm", "custom"}
+
+
+class TestContainerShape(object):
+    """B040: `backpack` triggers a source migration; capacity was 1.5.6-shaped."""
+
+    def _container(self, tmp_path, backpack):
+        return Item.createItemBackpack(
+            FakeDatabase(str(tmp_path)), None, "Bag of Holding", "",
+            ItemInventoryAttributes(weight=15, price=4000), backpack)
+
+    def test_type_is_container_not_backpack(self, tmp_path):
+        # Item5e._initializeSource rewrites `backpack` and sets
+        # persistSourceMigration, queueing the document for a rewrite.
+        item = self._container(tmp_path, ItemBackpack())
+        assert item.entity["type"] == "container"
+
+    def test_weight_capacity_uses_the_declared_shape(self, tmp_path):
+        capacity = self._container(
+            tmp_path, ItemBackpack(ItemBackpack.WEIGHT, 500)).entity["system"]["capacity"]
+        assert capacity["weight"] == dnd5e.weightData(500)
+
+    def test_item_capacity_becomes_a_count(self, tmp_path):
+        capacity = self._container(
+            tmp_path, ItemBackpack(ItemBackpack.ITEMS, 12)).entity["system"]["capacity"]
+        assert capacity["count"] == 12
+
+    def test_legacy_capacity_keys_are_gone(self, tmp_path):
+        capacity = self._container(
+            tmp_path, ItemBackpack(ItemBackpack.WEIGHT, 500)).entity["system"]["capacity"]
+        assert not (set(capacity) & {"type", "value", "weightless"})
+
+    def test_weightless_becomes_a_property(self, tmp_path):
+        system = self._container(
+            tmp_path, ItemBackpack(ItemBackpack.WEIGHT, 500, weightless=True)).entity["system"]
+        assert "weightlessContents" in system["properties"]
+
+    def test_quantity_is_clamped_to_one(self, tmp_path):
+        # ContainerData declares quantity {min: 1, max: 1}.
+        system = self._container(tmp_path, ItemBackpack()).entity["system"]
+        assert system["quantity"] == 1
+
+
+class TestLimitedUseConsumption(object):
+    """B029: activating a limited-use item never spent a use."""
+
+    def _feat(self, tmp_path, uses=None):
+        activation = ItemActivation(ItemActivation.ACTION, 1, uses=uses)
+        return Item.createItemFeat(
+            FakeDatabase(str(tmp_path)), None, "Breath Weapon", "",
+            activation, None, None, ability_mods={"str": 3})
+
+    def _activity(self, item):
+        return next(iter(item.entity["system"]["activities"].values()))
+
+    def test_activity_consumes_the_items_uses(self, tmp_path):
+        activity = self._activity(self._feat(tmp_path, ItemUses(2, 2, "day")))
+        targets = activity["consumption"]["targets"]
+        assert len(targets) == 1
+        assert targets[0]["type"] == dnd5e.CONSUMPTION_ITEM_USES
+
+    def test_consumption_target_declares_only_schema_fields(self, tmp_path):
+        activity = self._activity(self._feat(tmp_path, ItemUses(2, 2, "day")))
+        target = activity["consumption"]["targets"][0]
+        assert set(target) == {"type", "target", "value", "scaling"}
+        assert target["value"] == "1"
+
+    def test_the_uses_pool_is_not_duplicated_onto_the_activity(self, tmp_path):
+        # ActivitiesTemplate puts the pool on the item root; a copy here is a
+        # second pool the sheet renders next to the real one.
+        item = self._feat(tmp_path, ItemUses(2, 2, "day"))
+        assert item.entity["system"]["uses"]["max"] == "2"
+        assert "max" not in self._activity(item)["uses"]
+
+    def test_an_unlimited_item_consumes_nothing(self, tmp_path):
+        activity = self._activity(self._feat(tmp_path))
+        assert activity["consumption"]["targets"] == []
+
+
+class TestShortHexColour(object):
+    """B042: CSS shorthand repeats the nibble; x16 darkens every short colour."""
+
+    @pytest.mark.parametrize("short,expanded", [
+        ("#fff", "#ffffff"),
+        ("#000", "#000000"),
+        ("#abc", "#aabbcc"),
+        ("#f00", "#ff0000"),
+    ])
+    def test_shorthand_expands_by_repetition(self, short, expanded):
+        assert Entity.color(short) == expanded
+
+    def test_alpha_nibble_is_ignored_not_misread(self):
+        assert Entity.color("#abcd") == "#aabbcc"
+
+    def test_long_form_is_unchanged(self):
+        assert Entity.color("#1a2b3c") == "#1a2b3c"

@@ -61,7 +61,9 @@ class TestWorldManifest(object):
 
     def test_uses_the_compatibility_object(self, converter):
         manifest = World(converter).toDict()
-        assert manifest["compatibility"] == {"minimum": "13", "verified": "13"}
+        # The values are pinned in TestCompatibility; this asserts the manifest
+        # goes through the shared builder rather than carrying its own literals.
+        assert manifest["compatibility"] == foundry.compatibility()
         assert "minimumCoreVersion" not in manifest
         assert "compatibleCoreVersion" not in manifest
 
@@ -116,7 +118,7 @@ class TestModuleManifest(object):
 
     def test_uses_the_compatibility_object(self, converter):
         manifest = Module(converter).toDict()
-        assert manifest["compatibility"] == {"minimum": "13", "verified": "13"}
+        assert manifest["compatibility"] == foundry.compatibility()
         assert "minimumCoreVersion" not in manifest
         assert "compatibleCoreVersion" not in manifest
 
@@ -172,7 +174,7 @@ class TestModuleManifest(object):
 
 class TestFoundryConstants(object):
     def test_compatibility_defaults_to_the_target_generation(self):
-        assert foundry.compatibility() == {"minimum": "13", "verified": "13"}
+        assert foundry.compatibility() == {"minimum": "13", "verified": "14"}
 
     def test_compatibility_omits_maximum(self):
         # A maximum would block installation on untested future generations.

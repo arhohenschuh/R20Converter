@@ -1,6 +1,6 @@
 # B039: `RECOVERY_PERIODS` whitelists "charges", which is not a 5.x recovery period
 
-- **Status**: Open
+- **Status**: Fixed in 1.1.0 (F039)
 - **Severity**: Minor (latent — nothing currently passes `per="charges"`)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/dnd5e.py:688`, `src/entities/items.py:805` (`ItemUses.PER_CHARGES`)

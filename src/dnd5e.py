@@ -445,6 +445,22 @@ def weaponRange(value=None, long=None, reach=None, units=""):
     }
 
 
+#: ``ConsumptionTargetData.type``. From ``CONFIG.DND5E.activityConsumptionTypes``.
+#: ``itemUses`` spends the pool on the parent item; ``activityUses`` spends the
+#: activity's own, which is not where we put it.
+CONSUMPTION_ITEM_USES = "itemUses"
+
+
+def consumptionTarget(target_type=CONSUMPTION_ITEM_USES, target="", value="1"):
+    """Build one entry of ``consumption.targets``."""
+    return {
+        "type": target_type,
+        "target": target,
+        "value": _formula(value) or "1",
+        "scaling": {"mode": "", "formula": ""},
+    }
+
+
 def applyActivityMetadata(activity, activation=None, range_=None, duration=None,
                           target=None, uses=None, on_item=False):
     """Copy the activated-effect block onto an activity.
@@ -458,6 +474,12 @@ def applyActivityMetadata(activity, activation=None, range_=None, duration=None,
 
     ``on_item`` says the item root already carries these values, in which case
     ``override`` stays ``False`` and the activity inherits them.
+
+    ``uses`` is never copied. ``ActivitiesTemplate`` puts the pool on the item
+    root for every activatable type, so a copy on the activity is a second,
+    independent pool that the sheet renders alongside the real one. What the
+    activity needs instead is a consumption target pointing at the item's pool —
+    without one, using a limited-use item never spends a use.
     """
     override = not on_item
     if activation is not None:
@@ -474,8 +496,9 @@ def applyActivityMetadata(activity, activation=None, range_=None, duration=None,
         activity["target"] = copy.deepcopy(target)
         activity["target"]["override"] = override
         activity["target"]["prompt"] = True
-    if uses is not None and not on_item:
-        activity["uses"] = copy.deepcopy(uses)
+    if uses and uses.get("max"):
+        consumption = activity.setdefault("consumption", {})
+        consumption["targets"] = [consumptionTarget(CONSUMPTION_ITEM_USES)]
     return activity
 
 
@@ -752,8 +775,15 @@ INDIVIDUAL_TARGET_TYPES = (
     "creatureOrObject", "any", "willing",
 )
 
-#: ``UsesField#recovery[].period``.
-RECOVERY_PERIODS = ("lr", "sr", "day", "dawn", "dusk", "charges", "recharge")
+#: ``uses.recovery[].period``. From ``CONFIG.DND5E.limitedUsePeriods`` plus the
+#: special ``recharge`` handled in ``UsesField.prepareData``. v1.5.6's
+#: ``charges`` is **not** among them — in 5.x that is a *consumption* type, not a
+#: recovery period, and ``period`` is an unvalidated ``StringField``, so an
+#: invalid value is stored and then silently ignored.
+RECOVERY_PERIODS = (
+    "lr", "sr", "day", "dawn", "dusk", "initiative", "turnStart", "turnEnd",
+    "turn", "recharge",
+)
 
 #: ``system.activation.type``. From ``CONFIG.DND5E.activityActivationTypes``.
 #: v1.5.6 also emitted ``none``, which does not exist in 5.x.
@@ -795,6 +825,60 @@ SPELL_ALWAYS_PREPARED = 2
 #: The five spell components, which 5.x folded into the shared ``properties``
 #: set alongside ``ritual`` and ``concentration``.
 SPELL_PROPERTIES = ("vocal", "somatic", "material", "concentration", "ritual")
+
+#: ``details.type.value`` on an NPC. From ``CONFIG.DND5E.creatureTypes``.
+#: ``CreatureTypeField.value`` is a blank-allowed ``StringField`` with no
+#: choices, so an unrecognised value is stored rather than rejected — and then
+#: matches nothing when a consumer looks it up.
+CREATURE_TYPES = (
+    "aberration", "beast", "celestial", "construct", "dragon", "elemental",
+    "fey", "fiend", "giant", "humanoid", "monstrosity", "ooze", "plant",
+    "undead",
+)
+
+#: ``details.type.swarm`` holds a size key, not a size word.
+_SWARM_SIZES = {
+    "tiny": "tiny", "small": "sm", "medium": "med", "large": "lg",
+    "huge": "huge", "gargantuan": "grg",
+}
+
+
+def creatureType(text):
+    """Split a Roll20 NPC type line into ``details.type``.
+
+    Roll20 stores the whole phrase — "humanoid (goblinoid)", "swarm of Tiny
+    beasts". Writing that into ``value`` keeps it visible on the sheet but makes
+    it useless to everything that resolves it against
+    ``CONFIG.DND5E.creatureTypes``, so a converted goblin is not a humanoid for
+    the purposes of a favored-enemy check or a compendium filter.
+
+    An unrecognised head word goes to ``custom``, which is what dnd5e's own
+    type selector does with one.
+    """
+    result = {"value": "", "subtype": "", "swarm": "", "custom": ""}
+    text = (text or "").strip()
+    if not text:
+        return result
+
+    match = re.match(r"swarms?\s+of\s+(\w+)\s+(.+)$", text, re.IGNORECASE)
+    if match:
+        result["swarm"] = _SWARM_SIZES.get(match.group(1).lower(), "")
+        text = match.group(2).strip()
+
+    match = re.match(r"([^(]*)\(([^)]*)\)", text)
+    if match:
+        result["subtype"] = match.group(2).strip()
+        text = match.group(1).strip()
+
+    head = text.lower().strip(" ,.")
+    # "swarm of Tiny beasts" leaves a plural head word behind.
+    if head.endswith("s") and head[:-1] in CREATURE_TYPES:
+        head = head[:-1]
+    if head in CREATURE_TYPES:
+        result["value"] = head
+    elif head:
+        result["custom"] = text.strip(" ,.")
+    return result
 
 
 def _formula(value):
