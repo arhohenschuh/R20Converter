@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.2.2
+
+Two follow-ups to 1.2.1, both found by running the new detection against real
+installations rather than fixtures.
+
+- A relative `dataPath` is resolved against the `Config` directory holding it.
+  A portable install writes `".."`, meaning the folder its config sits in;
+  resolving that against the working directory rejected an install that was
+  perfectly good.
+- `Config/options.json` now takes precedence over the directory itself looking
+  like a data path. An install can hold a stale `Data` tree while its config
+  redirects elsewhere, and Foundry follows the config — so checking the
+  directory first meant detection stopped at the wrong install.
+
 ## v1.2.1
 
 Foundry data directory detection no longer takes a path on trust.

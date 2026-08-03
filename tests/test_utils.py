@@ -86,6 +86,15 @@ class TestResolveFVTTDataPath(object):
         data = makeDataPath(tmp_path)
         assert utils.resolveFVTTDataPath(data) == data
 
+    def test_options_json_wins_over_a_local_data_tree(self, tmp_path):
+        # An install can hold its own Data tree while its config redirects
+        # elsewhere. Foundry follows the config, so we must too.
+        install = tmp_path / "install"
+        makeDataPath(install)
+        elsewhere = makeDataPath(tmp_path / "elsewhere")
+        makeInstall(install, elsewhere)
+        assert utils.resolveFVTTDataPath(str(install)) == elsewhere
+
     def test_an_installation_directory_resolves_through_its_options(self, tmp_path):
         # What a portable install looks like: config beside the app, data on
         # another drive entirely.
@@ -95,6 +104,17 @@ class TestResolveFVTTDataPath(object):
 
     def test_an_unrelated_directory_resolves_to_nothing(self, tmp_path):
         assert utils.resolveFVTTDataPath(str(tmp_path)) is None
+
+    def test_a_relative_data_path_resolves_against_the_config_directory(self, tmp_path):
+        # A portable install writes dataPath ".." meaning the folder its Config
+        # sits in. Resolving that against the working directory rejects an
+        # install that is perfectly good.
+        install = tmp_path / "FoundryVTT-Portable"
+        makeDataPath(install)
+        config = install / "Config"
+        config.mkdir()
+        (config / "options.json").write_text(json.dumps({"dataPath": ".."}))
+        assert utils.resolveFVTTDataPath(str(install)) == str(install)
 
     def test_no_path_resolves_to_nothing(self):
         assert utils.resolveFVTTDataPath(None) is None

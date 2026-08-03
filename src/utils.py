@@ -4,12 +4,22 @@ import json
 
 
 def _optionsDataPath(path):
-    """``dataPath`` from a Foundry install's ``Config/options.json``."""
+    """``dataPath`` from a Foundry install's ``Config/options.json``.
+
+    A relative value is resolved against the ``Config`` directory holding it: a
+    portable install writes ``".."``, meaning the folder the config sits in.
+    Resolving it against the working directory instead would reject an install
+    that is perfectly good.
+    """
+    config = os.path.join(path, "Config")
     try:
-        with open(os.path.join(path, "Config", "options.json"), "r", encoding='utf-8') as f:
-            return json.load(f).get("dataPath") or None
+        with open(os.path.join(config, "options.json"), "r", encoding='utf-8') as f:
+            configured = json.load(f).get("dataPath") or None
     except Exception:
         return None
+    if configured and not os.path.isabs(configured):
+        configured = os.path.normpath(os.path.join(config, configured))
+    return configured
 
 
 def isFVTTDataPath(path):
@@ -28,15 +38,19 @@ def resolveFVTTDataPath(path):
     holding ``Config/options.json``. A portable install keeps its config beside
     the application and its data somewhere else entirely, and the installation
     folder is the path a user actually knows.
+
+    ``options.json`` wins over the directory looking like a data path, because
+    that is the order Foundry itself uses: an install can hold a stale ``Data``
+    tree while its config redirects elsewhere.
     """
     if not path:
         return None
     path = os.path.expanduser(path)
-    if isFVTTDataPath(path):
-        return path
     configured = _optionsDataPath(path)
     if configured and isFVTTDataPath(configured):
         return configured
+    if isFVTTDataPath(path):
+        return path
     return None
 
 
