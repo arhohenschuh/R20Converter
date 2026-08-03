@@ -1,5 +1,50 @@
 # Changelog
 
+## v1.0.1
+
+Fixes from the 2026-08-03 output audit (B027–B035, documented in `docs/bugs/`).
+Every finding was verified against the dnd5e 5.3.3 source. The 513-test suite was
+green throughout, because it asserted the shapes the emitter produced rather than
+the ones dnd5e declares — the gap the new schema-conformance tests close.
+
+### Crash
+- `createItemClass` no longer raises `KeyError: 'saves'` when a class matches a
+  compendium entry. F019 removed those keys from the class item but not the
+  statements that deleted them.
+
+### Data loss
+- Physical items emit `weight` and `price` as the `{value, units}` and
+  `{value, denomination}` objects the schema declares. A bare number does not
+  fail loudly — Foundry resets the field — so every converted item had been
+  arriving with no weight and no price.
+- `attunement` is emitted as a string rather than the 1.5.6 numeric enum.
+- Token bars point at `attributes.hp` instead of `attributes.bar1`, which no
+  actor schema declares. Unlinked tokens — most converted NPCs — had been
+  rendering an empty HP bar and losing their per-token HP overrides.
+- Armour emits a dex cap of `null` for light, 2 for medium and 0 for heavy. Every
+  armour had been emitting 0, a real cap of +0, so no converted armour granted a
+  dex bonus to AC.
+- Weapons no longer carry an `armor.value` of 10 and an `hp` block, and equipment
+  no longer carries the retired `speed` and `stealth` fields; stealth
+  disadvantage is emitted as a property.
+- Character XP survives the `"3400/6500"` sheet format; the parsed value had been
+  overwritten with 0 unconditionally.
+- Spells with a zero high-level bonus no longer gain `" + 0"` upcast scaling from
+  a comparison that should have been an assignment.
+
+### Diagnostics
+- Compendium pack loading detects the LevelDB directories systems have shipped
+  since Foundry v11 and reports that one cause, naming what is lost, instead of
+  five unhelpful per-file errors. Reading those packs still is not supported —
+  ADR-003's reasons for refusing a native LevelDB dependency are unchanged — so
+  compendium enrichment remains unavailable on current installs, but visibly so.
+
+### Tests
+- `tests/test_dnd5e_schema_diff.py` asserts emitted `system` dicts against key
+  sets read from the dnd5e 5.3.3 templates, including the absence of retired
+  fields. This is the mechanical form of the check that B028/B032/B033 each
+  needed a reviewer to notice.
+
 ## v1.0.0
 
 **Targeting Foundry VTT v13 and dnd5e 5.3.3.** Converted worlds and modules import

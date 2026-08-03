@@ -1,6 +1,6 @@
 # B034: `createDetailXP` zeroes slash-format XP and shadows the `max` builtin
 
-- **Status**: Open
+- **Status**: Fixed in 1.0.1 (F034)
 - **Severity**: Minor (XP lost for "X/Y"-format sheets; pct silently never computed)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/entities/actors.py:1076-1110`

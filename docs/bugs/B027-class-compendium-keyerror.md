@@ -1,6 +1,6 @@
 # B027: `createItemClass` crashes with KeyError when a class matches a compendium entry
 
-- **Status**: Open
+- **Status**: Fixed in 1.0.1 (F027)
 - **Severity**: Critical (crash)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/entities/actors.py:2515-2517`

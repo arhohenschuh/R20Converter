@@ -272,6 +272,7 @@ class Token(Entity):
         return (dradius, lradius)
 
     def getDict(self):
+        has_bar1 = self.bar1_max != 0 or self.bar1_val != 0
         # Roll20 light/sight angles are going downward, FVTT's are going upward... do some magic
         if self.sight_angle != 0 or self.light_angle != 0:
             rotation = (self.rotation + 180) % 360
@@ -351,23 +352,22 @@ class Token(Entity):
                 "actorLink": False,
                 "disposition": -1,
                 "displayBars": self.display_bars,
-                "bar1": {"attribute": "attributes.bar1" if self.bar1_max != 0 or self.bar1_val != 0 else None},
-                "bar2": {"attribute": "attributes.bar2" if self.bar2_max != 0 or self.bar2_val != 0 else None},
+                # No 5.x actor schema declares `attributes.bar1/bar2`, so a bar
+                # pointing there renders empty. Roll20 tokens carry HP in the
+                # first bar, which is the one path that does exist (B032).
+                "bar1": {"attribute": "attributes.hp" if has_bar1 else None},
+                "bar2": {"attribute": None},
                 # v11 replaced the loose `actorData` override object with a
                 # `delta` ActorDelta document (ADR-002).
                 "delta": {
                     "system": {
                         "attributes": {
-                            "bar1": {
+                            "hp": {
                                 "value": self.bar1_val,
                                 "max": self.bar1_max
-                                 },
-                            "bar2": {
-                                "value": self.bar2_val,
-                                "max": self.bar2_max
                                 }
                             }
-                        }
+                        } if has_bar1 else {}
                     }
                 }
 
@@ -1027,13 +1027,6 @@ class Actor(Entity):
             ("spellcasting", self.getSpellcastingAbility()),
             ("spelldc", self.getAttributeInt("npc_spelldc" if self.isNPC() else "spell_save_dc", 10)),
             ("spellLevel", 0),
-            # Add our own bar data
-            ("bar1", {"value": self.token.bar1_val,
-                      "min": 0,
-                      "max": self.token.bar1_max}),
-            ("bar2", {"value": self.token.bar2_val,
-                      "min": 0,
-                      "max": self.token.bar2_max}),
         ])
         if not self.isNPC():
             attributes.update([
@@ -1074,39 +1067,19 @@ class Actor(Entity):
         }
 
     def createDetailXP(self):
-        max_per_level = [0, 300, 900, 2700,
-                         6500, 14000, 23000,
-                         34000, 48000, 64000,
-                         85000, 100000, 120000,
-                         140000, 165000, 195000,
-                         225000, 265000, 305000, 355000]
-        (current, max, _) = self.getAttribute("experience", 0)
+        (current, _unused, _) = self.getAttribute("experience", 0)
         try:
             current = int(current)
         except ValueError:
-            if "/" in current:
-                try:
-                    current = int(current.split("/")[0].replace(",", "").replace(".", ""))
-                except:
-                    current = 0
-            current = 0
-        level = self.getAttributeInt("level", 1)
-        try:
-            max = max_per_level[level]
-            prev = max_per_level[level - 1]
-        except:
-            max = 0
-            prev = 0
-        try:
-            percent = max(0, min(100, 100 * (current - prev) / (max - prev)))
-        except:
-            percent = 0
-
+            # Sheets store "3400/6500" or "3,400"; the parsed value used to be
+            # overwritten with 0 on the next line regardless (B034).
+            try:
+                current = int(str(current).split("/")[0].replace(",", "").replace(".", ""))
+            except ValueError:
+                current = 0
+        # 5.x derives min/max/pct, so value is the only field worth emitting.
         return {
-            "min": 0,
-            "value": current,
-            "max": max,
-            "pct": percent
+            "value": current
         }
 
     def createActorDetails(self):
@@ -2474,7 +2447,7 @@ class Actor(Entity):
                     hldie = ""
                     hldice = ""
                 if hlbonus == "0":
-                    hlbonus == ""
+                    hlbonus = ""
                 if hldie != "" or hldice != "" or hlbonus != "":
                     scaling.formula = hldie + hldice + ((" + " + hlbonus) if hlbonus != "" else "")
                     scaling.mode = ItemSpellScaling.LEVEL if level > 0 else ItemSpellScaling.CANTRIP
@@ -2512,9 +2485,9 @@ class Actor(Entity):
         compendium_item = self.findCompendiumItem("Classes", name)
         item = self._converter.items.createItemClass(None, name, name, level, **kwargs)
         if compendium_item and compendium_item.entity["type"] != "loot":
-            del item.entity["system"]["saves"]
-            del item.entity["system"]["skills"]
-            del item.entity["system"]["spellcasting"]
+            # `saves` and `skills` left ItemClass with F019; only spellcasting
+            # is still ours to drop in favour of the compendium's (B027).
+            item.entity["system"].pop("spellcasting", None)
             item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
             item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename

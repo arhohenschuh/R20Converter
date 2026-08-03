@@ -660,6 +660,74 @@ def properties(flags):
     return [k for k in WEAPON_PROPERTIES if k in selected]
 
 
+#: ``PhysicalItemTemplate`` weight units, ``module/data/item/templates/physical-item.mjs``.
+DEFAULT_WEIGHT_UNITS = "lb"
+
+#: ``PhysicalItemTemplate`` price denomination.
+DEFAULT_PRICE_DENOMINATION = "gp"
+
+#: ``EquippableItemTemplate.attunement``. A StringField in 5.x, not the 1.5.6 enum.
+ATTUNEMENT_NONE = ""
+ATTUNEMENT_REQUIRED = "required"
+ATTUNEMENT_OPTIONAL = "optional"
+
+#: 1.5.6 wrote 0/1/2 for not-required / required / attuned.
+_LEGACY_ATTUNEMENT = {
+    0: ATTUNEMENT_NONE,
+    1: ATTUNEMENT_REQUIRED,
+    2: ATTUNEMENT_REQUIRED,
+}
+
+#: ``EquipmentData`` stealth disadvantage moved into the properties set.
+STEALTH_DISADVANTAGE = "stealthDisadvantage"
+
+#: Dex cap by armour category. ``None`` means uncapped; 0 is a real cap of +0,
+#: which is why the two cannot be conflated (B033).
+ARMOR_DEX_LIMIT = {
+    "light": None,
+    "medium": 2,
+    "heavy": 0,
+}
+
+
+def weightData(value=0, units=DEFAULT_WEIGHT_UNITS):
+    """Build ``system.weight``. A bare number fails validation and is reset."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        value = 0
+    if value == int(value):
+        value = int(value)
+    return {"value": value, "units": units}
+
+
+def priceData(value=0, denomination=DEFAULT_PRICE_DENOMINATION):
+    """Build ``system.price``."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        value = 0
+    if value == int(value):
+        value = int(value)
+    return {"value": value, "denomination": denomination}
+
+
+def attunement(value):
+    """Map a 1.5.6 numeric attunement onto the 5.x string field."""
+    if isinstance(value, str):
+        return value if value in (ATTUNEMENT_NONE, ATTUNEMENT_REQUIRED,
+                                  ATTUNEMENT_OPTIONAL) else ATTUNEMENT_NONE
+    return _LEGACY_ATTUNEMENT.get(value, ATTUNEMENT_NONE)
+
+
+def armorDexLimit(armor_type):
+    """Dex cap for an armour category, ``None`` when uncapped.
+
+    Emitting 0 for everything caps every converted armour at +0 dex.
+    """
+    return ARMOR_DEX_LIMIT.get((armor_type or "").lower(), None)
+
+
 # ---------------------------------------------------------------------------
 # The activated-effect template
 #

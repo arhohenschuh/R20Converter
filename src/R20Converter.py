@@ -91,11 +91,39 @@ class R20Converter(object):
         except:
             pass
 
+    def warnIfLevelDBPacks(self, packs_dir):
+        """Report the one cause behind a run of pack-load failures (B031).
+
+        Systems have shipped LevelDB pack *directories* since Foundry v11. This
+        converter reads the older newline-delimited JSON, so every pack fails
+        with an unhelpful per-file error unless the real reason is named.
+        """
+        try:
+            entries = os.listdir(packs_dir)
+        except OSError:
+            return False
+        leveldb = [e for e in entries
+                   if os.path.isdir(os.path.join(packs_dir, e))
+                   and os.path.exists(os.path.join(packs_dir, e, "CURRENT"))]
+        if not leveldb:
+            return False
+        self.logWarning(
+            "Warning: '%s' contains LevelDB pack directories (%s), which this version cannot read.\n"
+            "Compendium enrichment is disabled for this conversion: items, spells and class features\n"
+            "will not be matched against the game system's content, so they keep the Roll20 icons and\n"
+            "descriptions and compendium links in journals are left as Roll20 URLs.\n"
+            "The conversion itself is unaffected."
+            % (packs_dir, ", ".join(sorted(leveldb)[:5])))
+        return True
+
     def loadDnD5ePacks(self):
         self.packs = {}
+        packs_dir = os.path.join(self.fvtt_path, "Data", "systems", "dnd5e", "packs")
+        if self.warnIfLevelDBPacks(packs_dir):
+            return
         for file in ["items", "spells", "classfeatures", "classes", "monsters"]:
             db  = DatabaseFile(self, "%s.db" % file, "dnd5e", file)
-            path = os.path.join(self.fvtt_path, "Data", "systems", "dnd5e", "packs", "%s.db" % file)
+            path = os.path.join(packs_dir, "%s.db" % file)
             try:
                 db.load(path)
                 self.packs[file] = db
@@ -105,6 +133,9 @@ class R20Converter(object):
     def loadSystemPacks(self):
         self.packs = {}
         self.logInfo("Loading System Compendium Packs...")
+        packs_dir = os.path.join(self.fvtt_path, "Data", "systems", self.game_system, "packs")
+        if self.warnIfLevelDBPacks(packs_dir):
+            return
         for pack in self.system_manifest.get('packs', []):
             db  = DatabaseFile(self, "%s.db" % pack['name'], self.game_system, pack['name'])
             path = os.path.join(self.fvtt_path, "Data", "systems", self.game_system, pack['path'])

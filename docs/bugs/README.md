@@ -2,16 +2,20 @@
 
 Findings from the 2026-08-03 dnd5e-output and codebase audit, numbered
 continuing the **B0xx** sequence from `ROADMAP.md` (B001–B026, all fixed).
-These are **open** — documented, not fixed. Each file records the defect, the
-evidence in the dnd5e 5.3.3 source (read from the actual system source, per the
-ADR-008 discipline), the user-visible impact, and a suggested fix.
+Each file records the defect, the evidence in the dnd5e 5.3.3 source (read from
+the actual system source, per the ADR-008 discipline), the user-visible impact,
+and a suggested fix.
+
+**B027–B035 were fixed in 1.0.1** (F027–F035 in `ROADMAP.md`); B031 only
+partially — see its entry. **B036–B042 remain open.**
 
 Reference material used: dnd5e 5.3.3 source (`module/config.mjs`,
 `module/data/**`), a live dnd5e 5.x install (LevelDB packs), and two published
 converted modules (*Lost Mine of Phandelver*, *Out of the Abyss*) for
-structural comparison. The unit suite is 513-green throughout — every finding
-below sits in territory the suite does not assert, which is the B011 lesson
-repeating.
+structural comparison. The unit suite was 513-green throughout the audit —
+every finding sat in territory the suite did not assert, which is the B011
+lesson repeating. `tests/test_dnd5e_schema_diff.py` now closes that gap
+mechanically for the physical-item class of defect.
 
 ## Index
 
@@ -36,13 +40,20 @@ repeating.
 
 ## Cross-cutting observations
 
-- **B027 × B031**: the crash is unreachable until pack loading works again.
-  Whoever fixes B031 must fix B027 in the same change or every SRD-classed PC
-  conversion will crash.
+- **B027 × B031**: the crash was unreachable until pack loading worked again.
+  Both were addressed in the same change for that reason — F031 alone would have
+  turned a silent degradation into a crash for every SRD-classed PC.
 - **B028/B033/B037/B038** are all the B009 pattern — a template block that was
-  ported for the item types the tests looked at and missed elsewhere. A
-  schema-diff test that walks *every* emitted `system` dict against the 5.3.3
-  `defineSchema` key set (the `test_dnd5e_template.py` approach, generalised)
-  would catch the whole class.
-- **Numbering**: next free ID is **B043**; fixes should take F0xx numbers and
+  ported for the item types the tests looked at and missed elsewhere.
+  `tests/test_dnd5e_schema_diff.py` now walks emitted `system` dicts against the
+  5.3.3 key sets and asserts retired fields are absent; B037 and B038 are still
+  open, and extending that file is how they should be closed.
+- **Numbering**: next free ID is **B043**; fixes take F0xx numbers.
+
+## Candidates not yet filed
+
+- `system.identified` is emitted on every physical item but does not appear in
+  `PhysicalItemTemplate` or `EquippableItemTemplate`. Not filed as a bug because
+  it was not traced to a declaring template either way; worth confirming before
+  it is either removed or added to the schema-diff allow-list.
   move the entry into the `ROADMAP.md` table as B001–B026 did.

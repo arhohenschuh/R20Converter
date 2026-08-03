@@ -1,6 +1,6 @@
 # B032: Unlinked token bars point at `attributes.bar1`/`bar2`, which the dnd5e schema drops
 
-- **Status**: Open
+- **Status**: Fixed in 1.0.1 (F032)
 - **Severity**: Major (unlinked token bars — the common NPC HP case — render empty)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/entities/actors.py:354-372` (`Token.getDict`), `1031-1036` (`createActorAttributes`), `src/entities/scenes.py:303-318`

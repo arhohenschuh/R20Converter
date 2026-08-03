@@ -1,6 +1,6 @@
 # B033: Equipment/weapon items carry legacy or wrong 5.x fields (armor.dex=0, `stealth`, `speed`, weapon `armor.value=10`)
 
-- **Status**: Open
+- **Status**: Fixed in 1.0.1 (F033)
 - **Severity**: Major (armor dex cap wrong) / Minor (the rest is dropped junk)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/entities/items.py:684-699` (`ItemObject`), `1087-1120` (`ItemEquipment`), `src/entities/actors.py:1845-1870` (`addInventoryItem`)

@@ -680,23 +680,13 @@ class ItemConsume:
     def getDict(self):
         """5.x has no ``system.consume``; consumption moved into the activity."""
         return {}
-# Unused
 class ItemObject:
     def __init__(self):
         pass
 
     def getDict(self):
-        return {
-            "armor": {
-                "value": 10
-            },
-            "hp": {
-                "value": 0,
-                "max": 0,
-                "dt": None,
-                "conditions": ""
-            }
-        }
+        """5.x has no weapon ``hp``, and ``armor.value`` is the item's own AC."""
+        return {}
 
 class ItemAttack:
     EMPTY = ""
@@ -957,9 +947,9 @@ class ItemInventoryAttributes:
         return {
             "rarity": self.rarity,
             "quantity": self.quantity,
-            "weight": self.weight,
-            "price": self.price,
-            "attunement": self.attunement,
+            "weight": dnd5e.weightData(self.weight),
+            "price": dnd5e.priceData(self.price),
+            "attunement": dnd5e.attunement(self.attunement),
             "equipped": self.equipped,
             "identified": self.identified
         }
@@ -1094,7 +1084,7 @@ class ItemEquipment:
     SHIELD = "shield"
     TRINKET = "trinket"
 
-    def __init__(self, _type=CLOTHING, dexterity=0, ac=10, strength=0, stealth=False, proficient=True):
+    def __init__(self, _type=CLOTHING, dexterity=None, ac=10, strength=0, stealth=False, proficient=True):
         self.type = _type
         self.dexterity = dexterity
         self.ac = ac
@@ -1103,19 +1093,19 @@ class ItemEquipment:
         self.proficient = proficient
 
     def getDict(self):
+        # `dex` is nullable: None is uncapped, 0 is a real cap of +0 (B033).
+        dexterity = self.dexterity
+        if dexterity is None:
+            dexterity = dnd5e.armorDexLimit(self.type)
         return {
             "armor": {
                 "value": self.ac,
-                "dex": self.dexterity,
+                "dex": dexterity,
                 "magicalBonus": None
             },
             "type": dnd5e.itemType(self.type, dnd5e.armorBaseItem(getattr(self, "name", ""))),
-            "speed": {
-                "value": None,
-                "conditions": ""
-            },
+            "properties": [dnd5e.STEALTH_DISADVANTAGE] if self.stealth else [],
             "strength": self.strength,
-            "stealth": self.stealth,
             "proficient": self.proficient
         }
         

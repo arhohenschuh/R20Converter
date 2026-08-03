@@ -1,6 +1,6 @@
 # B028: Physical items emit numeric `weight`, `price` and `attunement` — 5.x declares objects/strings
 
-- **Status**: Open
+- **Status**: Fixed in 1.0.1 (F028)
 - **Severity**: Major (silent data loss on every physical item)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/entities/items.py:956-965` (`ItemInventoryAttributes.getDict`)

@@ -1,6 +1,6 @@
 # B035: `hlbonus == ""` is a comparison, not an assignment — spurious spell scaling "+ 0"
 
-- **Status**: Open
+- **Status**: Fixed in 1.0.1 (F035)
 - **Severity**: Minor
 - **Found**: 2026-08-03 audit
 - **Component**: `src/entities/actors.py:2473-2480` (`addSpells`)

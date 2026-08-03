@@ -1,6 +1,6 @@
 # B031: Compendium pack loading reads NeDB `.db` files — modern dnd5e ships LevelDB directories
 
-- **Status**: Open
+- **Status**: Partially fixed in 1.0.1 (F031) — the failure is now reported with its real cause; reading LevelDB packs is still unsupported and needs an ADR, since ADR-003 rejected a native LevelDB dependency
 - **Severity**: Major (all compendium enrichment silently disabled on current installs)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/R20Converter.py:94-115` (`loadDnD5ePacks`, `loadSystemPacks`)
