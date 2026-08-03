@@ -283,6 +283,7 @@ class Scene(Entity):
                 # This is a token, not a tile
                 if char_id != "" or emits_light or shows_name or has_status_markers:
                     token = Token(Entity.normalizeID(char_id), "", graphic)
+                    token.force_vision = self.getArgument("enable_token_vision", False)
                     # Redo the dim/bright depending on the token size in this map
                     token.setupLighting(lradius, dradius, 
                                         page["scale_number"], page["scale_units"], orig_grid_size)
@@ -675,6 +676,10 @@ class Scene(Entity):
             tokenVision = page.get("showlighting", True) and page.get("lightenforcelos", False)
             fogExploration = not self.getArgument("disable_fog", False) and (self.getArgument("enable_fog", False) or page["adv_fow_enabled"])
             globalLight = page.get("lightglobalillum", False)
+        # A scene with tokenVision off ignores every token's sight setting, so
+        # the two have to be forced together to be worth forcing at all.
+        if self.getArgument("enable_token_vision", False):
+            tokenVision = True
         self.entity = {"_id": self._id,
                        "name": name or "Unnamed Scene",
                        "navName": name,

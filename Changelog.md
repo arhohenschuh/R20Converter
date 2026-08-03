@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.6.0
+
+`--enable-token-vision`, with a matching "Enable token vision" advanced setting,
+switches sight on for every token and enables token vision on every scene.
+
+Roll20 only records sight for a token whose lighting was configured, so most
+tokens convert with sight off. A vision module — vision-5e and friends — derives
+the range from the actor's own senses, but only for tokens whose sight is
+switched on, so without this the module has nothing to act on.
+
+The scene flag and the token flag are forced together on purpose: a scene with
+`tokenVision` off ignores every token's sight setting, so forcing one without
+the other achieves nothing. The converted sight *range* is left alone, which
+keeps a sensible fallback for anyone not running a vision module.
+
+Measured on *Wardens of the North*: 22 of 79 scenes and 127 of 1,978 placed
+tokens had vision before; all of them do with the option on.
+
 ## v1.5.1
 
 - An entry Roll20 left unnamed is converted as `Unnamed Weapon`, `Unnamed

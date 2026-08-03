@@ -182,6 +182,12 @@
               />
 
               <boolean-option
+                label="Enable token vision"
+                description="Switch sight on for every token and enable token vision on every scene. Roll20 only records sight for tokens whose lighting was configured; a vision module such as vision-5e derives the range from the actor's senses, but only for tokens whose sight is on."
+                v-model="form.enableTokenVision"
+              />
+
+              <boolean-option
                 label="Use a custom compendium"
                 description="Match content against an installed compendium module as well as the game system's own. Documents are classified by their own type, so the module's pack names do not matter."
                 v-model="form.useCustomCompendium"
@@ -310,6 +316,7 @@ export default {
         maximumWallAngle: 30,
         npcSource: "Roll 20",
         noCompendiumOverwrite: false,
+        enableTokenVision: false,
         useCustomCompendium: false,
         customCompendium: "",
         customCompendiumMode: "additive",
@@ -382,6 +389,7 @@ export default {
       maximumWallAngle: this.form.maximumWallAngle,
       npcSource: this.form.npcSource,
       noCompendiumOverwrite: this.form.noCompendiumOverwrite,
+      enableTokenVision: this.form.enableTokenVision,
       customCompendium: this.form.useCustomCompendium
         ? this.form.customCompendium.trim() || null
         : null,

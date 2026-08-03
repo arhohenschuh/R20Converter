@@ -75,6 +75,10 @@ class Token(Entity):
         self.emits_bright_light = 0
         self.emits_light = False
         self.has_vision = False
+        # Roll20 only records sight for tokens whose lighting was configured. A
+        # vision module (vision-5e and friends) derives range from the actor's
+        # senses instead, but only for tokens whose sight is switched on.
+        self.force_vision = False
         self.light_alpha = 1
         self.light_angle = 0
         self.sight_angle = 0
@@ -312,7 +316,7 @@ class Token(Entity):
                 # v10 replaced vision/dimSight/brightSight/sightAngle with a
                 # single `sight` object using one unified range.
                 "sight": {
-                    "enabled": self.has_vision,
+                    "enabled": self.has_vision or self.force_vision,
                     "range": roundTenthStep(max(self.dim_sight, self.bright_sight)),
                     "angle": self.sight_angle,
                     "visionMode": "basic",
@@ -410,6 +414,7 @@ class Actor(Entity):
                     self._avatar_filename = None
         default_token = character["defaulttoken"] if character["defaulttoken"] != "" else None
         self.token = Token(self._id, character["name"], default_token)
+        self.token.force_vision = self.getArgument("enable_token_vision", False)
         token_filename = ""
         randomImg = False
         if default_token and default_token.get("imgsrc", "") != "":

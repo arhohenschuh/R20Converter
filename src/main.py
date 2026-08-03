@@ -56,6 +56,11 @@ parser.add_argument("--restrict-movement", action="store_true", help="Force all 
 parser.add_argument("--force-hp-for-token-bar1", action="store_true", help="Forces the use of HP attribute for all tokens' first bar")
 parser.add_argument("--force-hp-for-token-bar2", action="store_true", help="Forces the use of HP attribute for all tokens' second bar")
 parser.add_argument("--add-walls-around-map", action="store_true", help="Add 4 walls to enclose the map and cut off view/movement to the side table")
+parser.add_argument("--enable-token-vision", action="store_true",
+                    help="Switch sight on for every token and enable token vision on every "
+                         "scene. Roll20 only records sight for tokens whose lighting was "
+                         "configured; a vision module such as vision-5e derives the range from "
+                         "the actor's senses, but only for tokens whose sight is on")
 # --enable-fog and --disable-fog are direct opposites; passing both used to be
 # accepted silently with undefined precedence. argparse now rejects the
 # combination for us.

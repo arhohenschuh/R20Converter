@@ -72,6 +72,7 @@ export default {
         maximum_wall_angle: opt.maximumWallAngle,
         npc_source: opt.npcSource,
         no_compendium_overwrite: opt.noCompendiumOverwrite,
+        enable_token_vision: opt.enableTokenVision,
         custom_compendium: opt.customCompendium || null,
         custom_compendium_mode: opt.customCompendiumMode,
         custom_compendium_precedence: opt.customCompendiumPrecedence,
