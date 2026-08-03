@@ -27,6 +27,15 @@
       />
 
       <b-form-group
+        label="D&amp;D 5e SRD edition"
+        label-align="right"
+        label-cols
+        description="Which SRD generation your content is matched against. Roll20 campaigns are 2014 content; the two generations share spell and item names but differ in text and mechanics, so 2024 will replace matched items with a different edition of the same name."
+      >
+        <b-form-select v-model="srdEdition" :options="srdEditions"></b-form-select>
+      </b-form-group>
+
+      <b-form-group
         :label="`${exportType} URL name :`"
         label-align="right"
         label-cols
@@ -88,7 +97,11 @@ export default {
       description: "",
       gmPassword: "",
       playerPassword: "",
-      gameSystemInput: "dnd5e"
+      gameSystemInput: "dnd5e",
+      srdEditions: [
+        { value: "2014", text: "2014 (matches Roll20 campaigns)" },
+        { value: "2024", text: "2024" }
+      ]
     };
   },
   methods: {
@@ -145,6 +158,14 @@ export default {
       },
       set(value) {
         this.$store.dispatch("setOption", { exportAsModule: value });
+      }
+    },
+    srdEdition: {
+      get() {
+        return this.$store.state.options.srdEdition || "2014";
+      },
+      set(value) {
+        this.$store.dispatch("setOption", { srdEdition: value });
       }
     },
     exportType() {

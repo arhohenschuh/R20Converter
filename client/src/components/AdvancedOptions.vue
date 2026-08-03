@@ -174,14 +174,7 @@
                 description="This option causes items with the same name from different actors to be exported under a single item. The first processed actor with the item of that name gets their item in the item entities (remember that a Dragon's Bite attack is not the same as a spider's Bite attack)."
                 v-model="form.noDuplicateActorItems"
               />
-              <b-form-group
-                label="D&D 5e SRD edition"
-                label-cols
-                label-align="right"
-                description="Which SRD generation converted content is matched against. A Roll20 campaign's sheets are 2014 content; the two generations share names but differ in text and mechanics, so 2024 will replace matched items with a different edition of the same name."
-              >
-                <b-form-select v-model="form.srdEdition" :options="srdEditions"></b-form-select>
-              </b-form-group>
+
               <boolean-option
                 label="Trust FVTT Compendiums more than Roll20 sheet data"
                 description="If enabled, items, feats and spells found in the Game System's Compendiums will not be overwritten with custom description/damage/etc.. from the Roll20 data."
@@ -274,7 +267,6 @@ export default {
         minimumWallLength: 0,
         maximumWallAngle: 30,
         npcSource: "Roll 20",
-        srdEdition: "2014",
         noCompendiumOverwrite: false,
         disableModuleJournal: false,
         disableModuleActors: false,
@@ -292,10 +284,6 @@ export default {
         { value: "", text: "Keep Roll20 settings" },
         { value: "enable", text: "Enable Fog of War" },
         { value: "disable", text: "Disable Fog of War" }
-      ],
-      srdEditions: [
-        { value: "2014", text: "2014 (matches Roll20 campaigns)" },
-        { value: "2024", text: "2024" }
       ],
       selectedFolderAsItems: "",
       folderItemsNameToAdd: ""
@@ -339,7 +327,6 @@ export default {
       minimumWallLength: this.form.minimumWallLength,
       maximumWallAngle: this.form.maximumWallAngle,
       npcSource: this.form.npcSource,
-      srdEdition: this.form.srdEdition,
       noCompendiumOverwrite: this.form.noCompendiumOverwrite,
       disableModuleJournal: this.form.disableModuleJournal,
       disableModuleActors: this.form.disableModuleActors,

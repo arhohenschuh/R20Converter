@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.4.1
+
+- The SRD edition selector moves from Advanced Settings to the main page,
+  directly under the World/Compendium toggle. It decides which content a
+  conversion is matched against, which is a headline choice rather than a
+  fine-tuning one, and Advanced Settings is collapsed by default so it was
+  easy to miss.
+- The store now carries `2014` as its default, so a conversion started without
+  ever opening the selector sends an explicit edition instead of `undefined`.
+  The converter also treats an unset value as the default rather than warning
+  about an unknown edition.
+- `docs/BUILD-windows-arm64.md` records what ships (x64 throughout), why the
+  x64 build is expected to run under Windows-on-ARM emulation, and the three
+  upstream blockers to a native ARM64 build — chiefly that Python 3.8 has no
+  Windows ARM64 distribution.
+
 ## v1.4.0
 
 An SRD edition switch, and a correctness fix in the pack reader 1.3.0 shipped.

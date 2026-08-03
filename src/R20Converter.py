@@ -160,7 +160,7 @@ class R20Converter(object):
         packs_dir = os.path.join(self.fvtt_path, "Data", "systems", "dnd5e", "packs")
         if self.warnIfLevelDBPacks(packs_dir):
             return
-        edition = self.getArgument("srd_edition", foundry.DEFAULT_SRD_EDITION)
+        edition = self.getArgument("srd_edition", None) or foundry.DEFAULT_SRD_EDITION
         mapping = foundry.DND5E_SRD_PACKS.get(edition)
         if mapping is None:
             self.logWarning("Warning: unknown SRD edition '%s', using %s."
