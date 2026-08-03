@@ -517,6 +517,7 @@ class Actor(Entity):
                 ("attributes", self.createActorAttributes()),
                 ("details", self.createActorDetails()),
                 ("skills", self.createActorSkills()),
+                ("tools", self.createActorTools() if not npc else OrderedDict()),
                 ("traits", self.createActorTraits()),
                 ("currency", self.createActorCurrency()),
                 ("spells", self.createActorSpells()),
@@ -1224,9 +1225,9 @@ class Actor(Entity):
                 else:
                     value = 0
 
-                bonus = (base_mod + prof * value) - mod
+                bonus = mod - (base_mod + prof * value)
 
-                passive = mod = self.getAttributeInt("passive", mod + 10, from_dict=skill)
+                passive = self.getAttributeInt("passive", mod + 10, from_dict=skill)
                 if name is not None:
                     key = name.lower()
                     if type(storage_name) == str:
@@ -1240,12 +1241,20 @@ class Actor(Entity):
                                 passive = int(match.group(1))
                         except:
                             pass
+                    if key not in skill_keys.values():
+                        # 5.x `skills` only accepts configured keys, so anything
+                        # else is deleted on load without a warning (B038).
+                        self.logWarning("Skill '%s' has no dnd5e key and was not converted for %s"
+                                        % (name, self.getName()))
+                        continue
                     skills.update([(key, {
                         "value": value,
                         "ability": ability.lower()[0:3],
-                        "bonus": bonus,
-                        "mod": mod,
-                        "passive": passive
+                        "bonuses": {
+                            "check": str(bonus) if bonus else "",
+                            "passive": str(passive - mod - 10) if (passive - mod - 10) else ""
+                        },
+                        "roll": {"min": None, "max": None, "mode": 0},
                     })])
         return skills
         
@@ -1522,10 +1531,24 @@ class Actor(Entity):
             for proficiency in prof_name.split(","):
                 self._addKnownToArray(known_profs, proficiency, proficiencies, None)
 
-        return {
-            "value": proficiencies,
-            "custom": ", ".join(custom)
-        }
+        return (proficiencies, custom)
+
+    def createActorTools(self):
+        """Build ``system.tools`` (B037).
+
+        dnd5e's ``#migrateToolData`` shim copies these same keys out of the
+        legacy ``traits.toolProf`` on load; emitting them here removes the
+        dependency on that shim, which is what ADR-008 exists to do.
+        """
+        (proficiencies, custom) = self.createTraitToolProficiencies()
+        for name in custom:
+            self.logWarning("Tool proficiency '%s' has no dnd5e key and was not converted for %s"
+                            % (name, self.getName()))
+        return OrderedDict((key, {
+            "value": 1,
+            "ability": "int",
+            "bonuses": {"check": ""},
+        }) for key in proficiencies)
 
     def createActorTraits(self):
         traits =  OrderedDict([
@@ -1540,7 +1563,6 @@ class Actor(Entity):
         if not self.isNPC():
             traits.update([
                     ("armorProf", self.createTraitArmorProficiencies()),
-                    ("toolProf", self.createTraitToolProficiencies()),
                     ("weaponProf", self.createTraitWeaponProficiencies())
                     ])
         return traits

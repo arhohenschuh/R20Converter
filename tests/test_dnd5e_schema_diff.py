@@ -13,6 +13,7 @@ is mechanical rather than a reviewer noticing.
 import pytest
 
 import dnd5e
+from entities.actors import Actor
 from entities.items import (Item, ItemEquipment, ItemInventoryAttributes,
                             ItemObject, ItemWeapon)
 
@@ -132,3 +133,127 @@ class TestArmorDexCap(object):
 
     def test_no_stealth_means_no_property(self):
         assert ItemEquipment(ItemEquipment.LIGHT_ARMOR).getDict()["properties"] == []
+
+
+#: ``module/data/actor/templates/creature.mjs`` skills MappingField(RollConfigField).
+SKILL_FIELDS = {"value", "ability", "bonuses", "roll"}
+
+#: Same file, tools MappingField(RollConfigField).
+TOOL_FIELDS = {"value", "ability", "bonuses"}
+
+#: Removed from the skill entry: mod and passive are derived, bonus is a formula.
+RETIRED_SKILL_FIELDS = {"mod", "passive", "bonus"}
+
+
+class ShapedActor(Actor):
+    """A Shaped-sheet actor driven by canned repeating attributes.
+
+    The Shaped branch is only reachable through ``_shaped``, which is why B038
+    survived F022 -- nothing exercised it.
+    """
+
+    def __init__(self, skills=None, tools=None, proficiencies=None):
+        self._shaped = True
+        self._skills = skills or {}
+        self._tools = tools or {}
+        self._proficiencies = proficiencies or ""
+        self._actor_abilities = {"dex": {}}
+        self.warnings = []
+
+    def getName(self):
+        return "Shaped Test Actor"
+
+    def logWarning(self, msg):
+        self.warnings.append(msg)
+
+    def isNPC(self):
+        return False
+
+    def getProficiencyBonus(self):
+        return 2
+
+    def abilityDerived(self, ability, key):
+        return 3
+
+    def getRepeatingAttributes(self, name):
+        if name == "skill":
+            return self._skills
+        if name == "tool":
+            return self._tools
+        return {}
+
+    def getAttribute(self, name, default=None, from_dict=None):
+        source = from_dict if from_dict is not None else {"proficiencies": self._proficiencies}
+        return (source.get(name, default), None, None)
+
+    def getAttributeInt(self, name, default=0, from_dict=None):
+        source = from_dict or {}
+        try:
+            return int(source.get(name, default))
+        except (TypeError, ValueError):
+            return default
+
+
+class TestShapedSkillShape(object):
+    """B038: the Shaped branch still emitted the shape F022 removed."""
+
+    def makeActor(self, **skill):
+        entry = {"storage_name": "stealth", "name": "Stealth", "ability": "dexterity",
+                 "ability_key": "dex", "total_with_sign": 7}
+        entry.update(skill)
+        return ShapedActor(skills={"s1": entry})
+
+    def test_entry_declares_only_schema_fields(self):
+        skill = self.makeActor().createActorSkills()["ste"]
+        assert set(skill) == SKILL_FIELDS
+
+    def test_retired_fields_are_gone(self):
+        skill = self.makeActor().createActorSkills()["ste"]
+        assert not (set(skill) & RETIRED_SKILL_FIELDS)
+
+    def test_bonuses_are_formula_strings(self):
+        bonuses = self.makeActor().createActorSkills()["ste"]["bonuses"]
+        assert set(bonuses) == {"check", "passive"}
+        assert all(isinstance(v, str) for v in bonuses.values())
+
+    def test_bonus_sign_matches_the_standard_branch(self):
+        # mod 9, ability mod 3, prof 2 -> expertise (value 2), residual +2.
+        # The Shaped branch computed this the other way round and produced -2.
+        skill = self.makeActor(total_with_sign=9).createActorSkills()["ste"]
+        assert not skill["bonuses"]["check"].startswith("-")
+
+    def test_unmapped_skill_is_reported_not_silently_emitted(self):
+        # 5.x `skills` only accepts configured keys, so an invented one is
+        # deleted on load without a warning.
+        actor = ShapedActor(skills={"s1": {"storage_name": "basketweaving",
+                                           "name": "Basketweaving",
+                                           "ability": "dexterity",
+                                           "ability_key": "dex",
+                                           "total_with_sign": 4}})
+        assert actor.createActorSkills().get("basketweaving") is None
+        assert any("Basketweaving" in w for w in actor.warnings)
+
+
+class TestActorToolShape(object):
+    """B037: 5.x reads system.tools; traits.toolProf survives only via a shim."""
+
+    def test_recognised_tool_becomes_a_tools_entry(self):
+        actor = ShapedActor(tools={"t1": {"toolname": "Thieves' Tools"}})
+        tools = actor.createActorTools()
+        assert set(tools) == {"thief"}
+        assert set(tools["thief"]) == TOOL_FIELDS
+
+    def test_entry_matches_what_the_dnd5e_shim_writes(self):
+        # #migrateToolData writes exactly {value: 1, ability: "int",
+        # bonuses: {check: ""}}; emitting it directly is what drops the shim.
+        entry = ShapedActor(tools={"t1": {"toolname": "Herbalism Kit"}}).createActorTools()["herb"]
+        assert entry == {"value": 1, "ability": "int", "bonuses": {"check": ""}}
+
+    def test_unrecognised_tool_is_reported(self):
+        actor = ShapedActor(tools={"t1": {"toolname": "Tinker's Whatsit"}})
+        assert actor.createActorTools() == {}
+        assert any("Tinker's Whatsit" in w for w in actor.warnings)
+
+    def test_traits_no_longer_carry_toolprof(self):
+        actor = ShapedActor(tools={"t1": {"toolname": "Thieves' Tools"}})
+        assert "toolProf" not in actor.createActorTraits()

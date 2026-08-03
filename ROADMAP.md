@@ -313,6 +313,8 @@ Two corrections followed:
 | **F033** | B033 | `dnd5e.armorDexLimit()` returns `None` for light armour, 2 for medium and 0 for heavy — `dex` is nullable, so `None` and `0` are different statements and emitting 0 everywhere capped every converted armour at +0. `stealth` becomes the `stealthDisadvantage` property, the `speed` block is dropped, and `ItemObject.getDict()` returns `{}` so weapons stop claiming AC 10 and an `hp` block. |
 | **F034** | B034 | `createDetailXP()` keeps the slash-format value it parses instead of overwriting it with 0 on the next line, no longer shadows the `max` builtin, and emits only `value` — 5.x derives `min`, `max` and `pct`. |
 | **F035** | B035 | `hlbonus = ""` — it was `==`, a no-op comparison, so a spell with `spellhlbonus = 0` got `" + 0"` scaling and a scaling mode it should not have. |
+| **F037** | B037 | `createActorTools()` emits `system.tools` directly, using the same keys and the same `{value: 1, ability: "int", bonuses: {check: ""}}` entry dnd5e's `#migrateToolData` shim writes at load time — replicating the migration at creation time rather than depending on it, per ADR-008. `traits.toolProf` is no longer emitted, and a tool name with no dnd5e key is logged instead of vanishing into a `custom` string the schema drops. |
+| **F038** | B038 | The Shaped skill branch routes through the 5.x shape F022 introduced (`bonuses.check`/`passive` formulas plus `roll`), the inverted bonus sign is corrected to match the standard branch, the chained `passive = mod = …` that overwrote the modifier is split, and a skill whose name has no dnd5e key is logged rather than written to a key `skills` deletes on load. |
 
 
 ## Per-step cycle

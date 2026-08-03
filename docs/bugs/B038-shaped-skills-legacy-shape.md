@@ -1,6 +1,6 @@
 # B038: Shaped-sheet custom skills still emit the pre-5.x shape, with two internal math bugs
 
-- **Status**: Open
+- **Status**: Fixed in 1.0.1 (F038)
 - **Severity**: Minor (Shaped sheet only; B022 fixed the standard branch, this branch was missed)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/entities/actors.py:1208-1276` (`createActorSkills`, `self._shaped` branch)
