@@ -7,13 +7,21 @@ from src.version import version
 sys.path.append("src")
 # Dependencies are automatically detected, but it might need
 # fine tuning.
+try:
+    import plyvel  # noqa: F401
+    _HAS_PLYVEL = True
+except ImportError:
+    _HAS_PLYVEL = False
+
 buildOptions = {
     "build_exe": {
         "packages": [],
         # plyvel is a native extension writing LevelDB compendium packs
         # (ADR-009). cx_Freeze does not detect it: `leveldb_pack` imports it
-        # inside a try/except so a source install can run without it.
-        "includes": ["bottle_websocket", "numpy", "plyvel"],
+        # inside a try/except so a source install can run without it. Only
+        # force-include it when it is actually installed (e.g. missing on
+        # win-arm64, which has no plyvel-ci wheel).
+        "includes": ["bottle_websocket", "numpy"] + (["plyvel"] if _HAS_PLYVEL else []),
         "excludes": ["PySide2", "PyQt5", "matplotlib.tests", "numpy.random._examples"],
         "include_files": [
             ("Changelog.md", "Changelog.md"),

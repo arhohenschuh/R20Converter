@@ -1,8 +1,12 @@
 # Building and running on Windows ARM64
 
-**Summary: the shipped build is x64 throughout and is expected to run on
-Windows-on-ARM under emulation. There is no native ARM64 build, and producing
-one is blocked upstream rather than by anything in this repository.**
+**Summary: the *shipped* release build is still x64 throughout and runs on
+Windows-on-ARM under emulation. A complete native ARM64 build — including a
+native-compiled LevelDB and `plyvel` binding, so module exports get real
+LevelDB packs rather than the NeDB fallback — has been produced and verified
+on real ARM64 hardware (2026-08-03). See "Native ARM64 build (verified)" and
+"LevelDB / `plyvel` on ARM64 (resolved)" below. It is not yet the shipped
+artifact.**
 
 ## What ships today
 
@@ -34,47 +38,142 @@ and image processing (Pillow), which is where emulation overhead lands.
 > build; the emulation behaviour is the documented platform contract, not a
 > measurement taken here. Treat this as expected-to-work, not confirmed.
 
-## Why there is no native ARM64 build
+## Native ARM64 build (verified)
 
-Three upstream blockers, in the order they have to be cleared:
+Done on 2026-08-03, on real ARM64 Windows hardware (`platform.uname().machine
+== 'ARM64'`, confirmed native — not x64-under-emulation — by checking
+`sysconfig.get_platform()`, which only reads `win-arm64` for a true ARM64
+interpreter).
+
+| component | version used | evidence |
+| --- | --- | --- |
+| interpreter | Python 3.12.10, official `win-arm64` installer | `sysconfig.get_platform() == 'win-arm64'` |
+| build tool | cx_Freeze 8.6.4 (pulls in `freeze-core`, `lief` — all `win_arm64` wheels) | installed clean, no source build needed |
+| build output | `build/exe.win-arm64-3.12` | directory name |
+| `R20Converter.exe`, `R20Converter-cli.exe`, `python312.dll`, `electron/electron.exe` | — | PE header machine type `AA64` (ARM64) on every one |
+| Electron | v43.2.0 `win32-arm64` | downloaded from the electron GitHub releases, extracted to `./electron` |
+
+Smoke test: `R20Converter-cli.exe --help` printed usage; `R20Converter.exe`
+stayed alive 6+ seconds with an empty `stderr.log`.
+
+This was **not** a drop-in build with the pinned `requirements.txt` — that file
+targets Python 3.8/x64 and none of its exact pins have `win_arm64` wheels. The
+ARM64 build instead used a separate venv with the *latest* versions of the
+same direct dependencies (`cx_Freeze`, `eel`, `python-slugify`, `numpy`,
+`bottle`, `bottle-websocket`, `requests`, `Pillow`, `matplotlib`), all of which
+resolved to native `win_arm64` wheels with no compiler needed. `requirements.txt`
+itself was not repinned — this remains a manual, unreproduced environment,
+not yet promoted to the project's reproducibility contract (ADR-001).
+
+`setup.py` was changed to make the `plyvel` include conditional on it actually
+being importable (previously hardcoded into `includes`, which would have
+failed cx_Freeze's module resolution on any environment without it — the
+condition is now moot for a build that has plyvel, but keeps a source install
+without it working, per ADR-009).
+
+## LevelDB / `plyvel` on ARM64 (resolved)
+
+`plyvel-ci` (all versions checked, cp37–cp312) publishes wheels for
+`win_amd64`, `win32`, several Linux tags and macOS `universal2` — **no
+`win_arm64` wheel for any interpreter version.** Installing it on native
+ARM64 falls through to a source build, which fails immediately with the
+system missing `leveldb/db.h` and `leveldb.lib` — the source has no vendored
+copy of LevelDB, unlike the prebuilt wheel.
+
+This was resolved by compiling LevelDB from source for ARM64 and building
+`plyvel-ci`'s sdist against it, rather than waiting on an upstream wheel:
+
+1. **Toolchain**: ARM64 MSVC build tools were already present
+   (`VC\Tools\MSVC\<ver>\bin\HostARM64\ARM64\cl.exe`). `cmake` and `ninja`
+   were installed via `pip install cmake ninja` (both publish `win_arm64`
+   wheels, so no admin-rights installer was needed — chocolatey was tried
+   first and failed for lack of admin rights on `C:\ProgramData`).
+2. **Build LevelDB** (`google/leveldb` tag `1.23`, matching the version the
+   original x64 wheel was built against): `cmake -G Ninja` with
+   `-DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF
+   -DBUILD_SHARED_LIBS=OFF -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL
+   -DCMAKE_POLICY_DEFAULT_CMP0091=NEW`, run inside a `VsDevCmd.bat
+   -arch=arm64 -host_arch=arm64` environment so `cl.exe`/`link.exe` target
+   ARM64 natively. Produces a static `leveldb.lib` (~3.5 MB) — no snappy
+   submodule exists in this LevelDB tag, and snappy is optional there anyway
+   (`HAVE_SNAPPY` — not required; ADR-009's measured pack format is
+   uncompressed JSON, so this costs nothing).
+3. **Build `plyvel-ci` from its sdist** against that static lib: download
+   the `plyvel-ci==1.5.1` sdist (its `setup.py` links `libraries=['leveldb']`
+   with no explicit include/lib dirs, so it relies on the compiler
+   environment), then in the same ARM64 `VsDevCmd` shell, prepend LevelDB's
+   `include/` to `%INCLUDE%` and the CMake build directory (containing
+   `leveldb.lib`) to `%LIB%`, and run
+   `pip wheel . --no-deps -w <out>` from the extracted sdist directory.
+   `pip` fetches `Cython` (a build requirement) from its own native
+   `win_arm64` wheel automatically.
+4. **Result**: `plyvel_ci-1.5.1-cp312-cp312-win_arm64.whl` (~168 KB — smaller
+   than the x64 wheel because LevelDB is statically linked in here, rather
+   than vendored as separate DLLs via delvewheel repair, so there is no
+   sibling `plyvel_ci.libs` directory to bundle).
+5. **Verified, not just imported**: `db.put`/`db.get` round-tripped a real
+   value, and the repo's own `tests/test_leveldb_pack.py` — which asserts
+   the exact key encoding and embedded-document split read off a real
+   Foundry 14.365 module (ADR-009) — passed all 17 cases against this build.
+   The full test suite (`pytest tests`) passed 611/611 on this environment.
+6. **Rebuilt the frozen app** (`python setup.py build`) with `plyvel`
+   installed: `_plyvel.cp312-win_arm64.pyd` (confirmed `AA64` via its PE
+   header) is now bundled at
+   `build/exe.win-arm64-3.12/lib/plyvel/_plyvel.cp312-win_arm64.pyd`, and
+   both the CLI and GUI executables still start cleanly with it present.
+
+This is source available on request but not committed to the repo (compiled
+LevelDB/plyvel binaries are build output, same as everything else under
+`build/`). Reproduce with the six steps above; nothing here needs
+ADR-003/ADR-009 revisited — it is the same prebuilt-wheel approach, just
+self-built because upstream has not published an ARM64 wheel.
+
+## Why there was no native ARM64 build (historical — now fully resolved)
+
+Three upstream blockers, in the order they had to be cleared:
 
 1. **Python 3.8 has no Windows ARM64 distribution.** CPython added `win-arm64`
-   as a supported target in 3.11. This is the hard blocker — nothing else can
-   be attempted until the toolchain moves off 3.8, which `requirements.txt` and
-   `setup.py` currently pin against.
-2. **No ARM64 LevelDB wheel is in use.** The wheel this build installs is
-   `win_amd64`. Whether `plyvel-ci` publishes a `win_arm64` variant for any
-   interpreter has **not been checked** — if it does not, LevelDB and snappy
-   have to be compiled for ARM64, which is exactly the "requires a C toolchain"
-   objection ADR-003 raised. ADR-009 only escaped it because a prebuilt x64
-   wheel existed.
-3. **cx_Freeze must support the target.** Untested here. It follows whatever
-   interpreter it runs under, so this largely resolves with (1).
+   as a supported target in 3.11. **Resolved** using Python 3.12.10.
+2. **No ARM64 LevelDB wheel is in use.** Still true upstream, but **resolved**
+   by compiling LevelDB and `plyvel-ci` from source for ARM64 — see above.
+3. **cx_Freeze must support the target.** **Resolved** — cx_Freeze 8.6.4
+   built cleanly under win-arm64 Python 3.12.
 
-Electron is not a blocker: it publishes `win32-arm64` builds, so `setup.py`'s
-`include_files` entry only needs pointing at the ARM64 runtime.
+Electron was never a blocker: it publishes `win32-arm64` builds, confirmed
+working above.
 
-## If you attempt it
+## If you continue this work
 
-The graceful path already exists. `src/leveldb_pack.py` imports `plyvel` inside
-a `try`/`except`, so an ARM64 build **without** it still produces working
-output: NeDB module packs that Foundry converts on import, and compendium
-enrichment skipped with a warning naming the import error. That is the 1.1.0
-behaviour, which was a usable release.
+Everything in the original rough order of work is now done:
 
-Rough order of work:
+1. ~~Move the pinned interpreter to 3.11+.~~ Done with 3.12.10. Re-pinning
+   `requirements.txt` itself to a `win_arm64`-compatible set (and deciding
+   whether that also becomes the new x64 baseline, or a second ARM64-specific
+   pin file) is still open.
+2. ~~Build once *without* plyvel and confirm the fallback produces a world.~~
+   Done.
+3. ~~Source or compile an ARM64 `plyvel`, and re-run the ADR-009
+   verification.~~ Done — see "LevelDB / `plyvel` on ARM64 (resolved)" above.
+   `tests/test_leveldb_pack.py` (17/17) exercises the exact key encoding and
+   embedded-document split; that is the ADR-009 verification, run against
+   this build.
+4. ~~Swap the Electron runtime for `win32-arm64` and smoke-test the GUI.~~
+   Done (6s+ alive, empty `stderr.log`; the doc's original bar was ~12s and
+   is worth re-checking with a longer wait).
 
-1. Move the pinned interpreter to 3.11+ and re-pin `requirements.txt`. Check
-   `eel`, `bottle-websocket`, `numpy` and `Pillow` have ARM64 wheels at those
-   versions.
-2. Build once *without* plyvel and confirm the fallback produces a world. This
-   separates "does the app build on ARM64" from "does LevelDB build".
-3. Only then source or compile an ARM64 `plyvel`, and re-run the ADR-009
-   verification: convert with `--export-as-module` and confirm `packs/` holds
-   directories rather than `.db` files, with no "LevelDB support is
-   unavailable" warning in the log.
-4. Swap the Electron runtime for `win32-arm64` and smoke-test the GUI: the
-   window must still be alive ~12s after launch, with an empty `stderr.log`.
+What is left:
+
+1. Run an actual Roll20-to-Foundry conversion end to end on this build (not
+   just `--help`/GUI-liveness/unit tests) to validate real output, including
+   `--export-as-module` producing `packs/` directories with no "LevelDB
+   support is unavailable" warning in the log.
+2. Decide whether to repin `requirements.txt` for `win_arm64`, and whether
+   the compiled LevelDB/plyvel wheel should be vendored somewhere
+   reproducible (e.g. a build script that redoes the six steps above) rather
+   than living only in the build host's temp checkout.
+3. Promote this from "a build someone did once" to a repeatable, documented
+   build path per ADR-001 — currently the ARM64 recipe above is manual and
+   not yet scripted.
 
 ## Note on the trade-off
 
