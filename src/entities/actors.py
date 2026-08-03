@@ -49,6 +49,11 @@ class Token(Entity):
     DISPLAY_HOVER = 30
     DISPLAY_OWNER = 40
     DISPLAY_ALWAYS = 50
+    # Foundry's CONST.TOKEN_DISPOSITIONS.
+    DISPOSITION_SECRET = -2
+    DISPOSITION_HOSTILE = -1
+    DISPOSITION_NEUTRAL = 0
+    DISPOSITION_FRIENDLY = 1
     def __init__(self, actor_id, name, token=None):
         self._token = token
         self.actor_id = actor_id
@@ -79,6 +84,9 @@ class Token(Entity):
         # vision module (vision-5e and friends) derives range from the actor's
         # senses instead, but only for tokens whose sight is switched on.
         self.force_vision = False
+        # Roll20 has no disposition concept, so it follows the actor type:
+        # dropping a player character onto a scene should not show up hostile.
+        self.disposition = self.DISPOSITION_HOSTILE
         self.light_alpha = 1
         self.light_angle = 0
         self.sight_angle = 0
@@ -354,7 +362,7 @@ class Token(Entity):
                 },
                 "actorId": self.actor_id,
                 "actorLink": False,
-                "disposition": -1,
+                "disposition": self.disposition,
                 "displayBars": self.display_bars,
                 # No 5.x actor schema declares `attributes.bar1/bar2`, so a bar
                 # pointing there renders empty. Roll20 tokens carry HP in the
@@ -415,6 +423,8 @@ class Actor(Entity):
         default_token = character["defaulttoken"] if character["defaulttoken"] != "" else None
         self.token = Token(self._id, character["name"], default_token)
         self.token.force_vision = self.getArgument("enable_token_vision", False)
+        self.token.disposition = (Token.DISPOSITION_HOSTILE if self.isNPC()
+                                  else Token.DISPOSITION_FRIENDLY)
         token_filename = ""
         randomImg = False
         if default_token and default_token.get("imgsrc", "") != "":

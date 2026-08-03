@@ -284,6 +284,11 @@ class Scene(Entity):
                 if char_id != "" or emits_light or shows_name or has_status_markers:
                     token = Token(Entity.normalizeID(char_id), "", graphic)
                     token.force_vision = self.getArgument("enable_token_vision", False)
+                    # Actors are converted before scenes, so the placed token can
+                    # follow its actor rather than defaulting everything hostile.
+                    actor = self._converter.actors.getById(token.actor_id)
+                    if actor is not None and actor.entity.get("type") == "character":
+                        token.disposition = Token.DISPOSITION_FRIENDLY
                     # Redo the dim/bright depending on the token size in this map
                     token.setupLighting(lradius, dradius, 
                                         page["scale_number"], page["scale_units"], orig_grid_size)

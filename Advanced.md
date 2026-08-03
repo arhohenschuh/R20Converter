@@ -68,7 +68,7 @@ usage: R20Converter.py [-h] [--json] [--export-as-module]
                        [--dedup-assets] [--assets-directory ASSETS_DIRECTORY]
                        destination-directory exported.zip
 
-R20Converter v1.6.0
+R20Converter v1.6.1
 
 positional arguments:
   destination-directory

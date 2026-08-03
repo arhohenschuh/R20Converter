@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.6.1
+
+Player characters convert with a friendly token disposition.
+
+`disposition` was hardcoded to `-1` (hostile) for every token, so dragging a PC
+onto a scene produced a red, hostile-looking token. Roll20 has no disposition
+concept, but it does distinguish a character sheet from an NPC sheet, so the
+token now follows the actor: characters are friendly, everything else stays
+hostile.
+
+Both sides are covered — the actor's prototype token, and tokens already placed
+on a scene, which look up the actor they represent. Placed tokens with no actor
+behind them (map decoration, markers) are left hostile, since nothing
+identifies them as anything else.
+
 ## v1.6.0
 
 `--enable-token-vision`, with a matching "Enable token vision" advanced setting,
