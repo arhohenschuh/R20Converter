@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.0.2
+
+Closes the last two findings of the same class as 1.0.1's, both on the actor
+side rather than the item side (B037, B038).
+
+- Tool proficiencies are emitted as the `system.tools` mapping dnd5e reads
+  rather than the legacy `traits.toolProf`, which only survived through a
+  migration shim. The entry is exactly what that shim writes, so the shape was
+  copied from dnd5e rather than guessed.
+- Shaped-sheet skills use the same 5.x shape as the standard sheet. They had
+  kept the pre-5.x form, so the sheet's flat bonus was dropped for every Shaped
+  actor — and the bonus was computed with the wrong sign.
+- Skills and tools whose names have no dnd5e key are reported instead of being
+  written to a key the schema deletes on load without a warning.
+- The schema-conformance tests now cover the actor side as well as items. The
+  actor cases drive the emitters through a Shaped-sheet stub rather than
+  asserting constants against themselves; reverting the fix fails nine of them.
+
 ## v1.0.1
 
 Fixes from the 2026-08-03 output audit (B027–B035, documented in `docs/bugs/`).
@@ -31,14 +49,6 @@ the ones dnd5e declares — the gap the new schema-conformance tests close.
   overwritten with 0 unconditionally.
 - Spells with a zero high-level bonus no longer gain `" + 0"` upcast scaling from
   a comparison that should have been an assignment.
-- Tool proficiencies are emitted as the `system.tools` mapping dnd5e reads
-  rather than the legacy `traits.toolProf`, which only survived through a
-  migration shim.
-- Shaped-sheet skills use the same 5.x shape as the standard sheet. They had
-  kept the pre-5.x form, so the sheet's flat bonus was dropped for every Shaped
-  actor — and the bonus was computed with the wrong sign.
-- Skills and tools whose names have no dnd5e key are reported instead of being
-  written to a key the schema deletes on load without a warning.
 
 ### Diagnostics
 - Compendium pack loading detects the LevelDB directories systems have shipped
@@ -49,11 +59,9 @@ the ones dnd5e declares — the gap the new schema-conformance tests close.
 
 ### Tests
 - `tests/test_dnd5e_schema_diff.py` asserts emitted `system` dicts against key
-  sets read from the dnd5e 5.3.3 templates, on both the item and actor sides,
-  including the absence of retired fields. This is the mechanical form of the
-  check that B028/B032/B033/B037/B038 each needed a reviewer to notice. The
-  actor cases drive the Shaped branch through a stub rather than asserting
-  constants against themselves — reverting the fix fails nine of them.
+  sets read from the dnd5e 5.3.3 templates, including the absence of retired
+  fields. This is the mechanical form of the check that B028/B032/B033 each
+  needed a reviewer to notice.
 
 ## v1.0.0
 

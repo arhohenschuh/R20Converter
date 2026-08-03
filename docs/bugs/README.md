@@ -6,9 +6,9 @@ Each file records the defect, the evidence in the dnd5e 5.3.3 source (read from
 the actual system source, per the ADR-008 discipline), the user-visible impact,
 and a suggested fix.
 
-**B027–B035, B037 and B038 were fixed in 1.0.1** (F027–F038 in `ROADMAP.md`);
-B031 only partially — see its entry. **B029, B030, B036 and B039–B042 remain
-open.**
+**B027–B035 were fixed in 1.0.1 and B037–B038 in 1.0.2** (F027–F038 in
+`ROADMAP.md`); B031 only partially — see its entry. **B029, B030, B036 and
+B039–B042 remain open.**
 
 Reference material used: dnd5e 5.3.3 source (`module/config.mjs`,
 `module/data/**`), a live dnd5e 5.x install (LevelDB packs), and two published
@@ -33,8 +33,7 @@ mechanically for the physical-item class of defect.
 | [B035](B035-hlbonus-comparison-noop.md) | Minor | `hlbonus == ""` no-op comparison — spells with `spellhlbonus = 0` get junk `" + 0"` scaling and a scaling mode they shouldn't have. |
 | [B036](B036-innate-uses-single-digit.md) | Minor | Innate uses regex `(\d)` — "10/day" becomes 1 use with no recovery period. |
 | [B037](B037-toolprof-legacy-traits.md) | Minor | Fixed (F037) | Character tool proficiencies emitted as legacy `traits.toolProf`; 5.x stores a `system.tools` mapping (works only via a migration shim). |
-| [B038](B038-shaped-skills-legacy-shape.md) | Minor | Fixed (F038) | Shaped-sheet custom skills still emit the pre-5.x shape B022 removed elsewhere; `passive = mod = …` chained assignment and an inverted bonus sign on top. |
-| [B039](B039-recovery-periods-charges.md) | Minor | `RECOVERY_PERIODS` whitelists `"charges"`, which is not a 5.x recovery period (latent — `ItemUses.PER_CHARGES` is never assigned). |
+| [B038](B038-shaped-skills-legacy-shape.md) | Minor | Fixed (F038) | Shaped-sheet custom skills still emit the pre-5.x shape B022 removed elsewhere; `passive = mod = …` chained assignment and an inverted bonus sign on top. || [B039](B039-recovery-periods-charges.md) | Minor | `RECOVERY_PERIODS` whitelists `"charges"`, which is not a 5.x recovery period (latent — `ItemUses.PER_CHARGES` is never assigned). |
 | [B040](B040-backpack-type-and-capacity.md) | Minor | `"backpack"` type triggers dnd5e's source migration (`persistSourceMigration`) and the 1.5.6 capacity shape is dropped (latent — path currently unreachable). |
 | [B041](B041-npc-creature-type-not-split.md) | Minor | `details.type.value` stores "humanoid (goblinoid)" whole instead of value + subtype; swarms unhandled. |
 | [B042](B042-short-hex-color-expansion.md) | Minor | 3-digit hex colors expand ×16 instead of ×17 (`#fff` → `#f0f0f0`). |

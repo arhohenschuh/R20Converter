@@ -1,6 +1,6 @@
 # B037: Character tool proficiencies emitted as legacy `traits.toolProf` — 5.x uses `system.tools`
 
-- **Status**: Fixed in 1.0.1 (F037)
+- **Status**: Fixed in 1.0.2 (F037)
 - **Severity**: Minor (works today via a dnd5e migration shim; violates ADR-008's zero-migration invariant)
 - **Found**: 2026-08-03 audit
 - **Component**: `src/entities/actors.py:1522-1555`, `1567-1572` (`createActorTraits`)
