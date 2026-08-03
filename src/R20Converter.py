@@ -12,6 +12,7 @@ from collections import OrderedDict
 
 import utils
 import foundry
+import leveldb_pack
 from version import version
 from world import World
 from module import Module
@@ -113,12 +114,15 @@ class R20Converter(object):
             pass
 
     def warnIfLevelDBPacks(self, packs_dir):
-        """Report the one cause behind a run of pack-load failures (B031).
+        """Report unreadable LevelDB packs (B031).
 
-        Systems have shipped LevelDB pack *directories* since Foundry v11. This
-        converter reads the older newline-delimited JSON, so every pack fails
-        with an unhelpful per-file error unless the real reason is named.
+        Systems have shipped LevelDB pack *directories* since Foundry v11.
+        Since ADR-009 those are readable, so this only fires when LevelDB
+        support is missing -- a source install without plyvel -- and names the
+        one cause rather than letting every pack fail separately.
         """
+        if leveldb_pack.isAvailable():
+            return False
         try:
             entries = os.listdir(packs_dir)
         except OSError:
@@ -129,27 +133,51 @@ class R20Converter(object):
         if not leveldb:
             return False
         self.logWarning(
-            "Warning: '%s' contains LevelDB pack directories (%s), which this version cannot read.\n"
+            "Warning: '%s' contains LevelDB pack directories (%s), which this build cannot\n"
+            "read: %s.\n"
             "Compendium enrichment is disabled for this conversion: items, spells and class features\n"
             "will not be matched against the game system's content, so they keep the Roll20 icons and\n"
             "descriptions and compendium links in journals are left as Roll20 URLs.\n"
             "The conversion itself is unaffected."
-            % (packs_dir, ", ".join(sorted(leveldb)[:5])))
+            % (packs_dir, ", ".join(sorted(leveldb)[:5]), leveldb_pack.IMPORT_ERROR))
         return True
+
+    def _packPath(self, packs_dir, name, declared=None):
+        """Locate a pack, preferring the LevelDB directory over a NeDB file."""
+        candidates = []
+        if declared:
+            candidates.append(os.path.join(self.fvtt_path, "Data", "systems",
+                                           self.game_system, declared))
+        candidates.append(os.path.join(packs_dir, name))
+        candidates.append(os.path.join(packs_dir, "%s.db" % name))
+        for candidate in candidates:
+            if os.path.isdir(candidate) or os.path.isfile(candidate):
+                return candidate
+        return None
 
     def loadDnD5ePacks(self):
         self.packs = {}
         packs_dir = os.path.join(self.fvtt_path, "Data", "systems", "dnd5e", "packs")
         if self.warnIfLevelDBPacks(packs_dir):
             return
+        # The 2014 SRD packs: a Roll20 campaign's content predates the 2024
+        # rules, so matching against the `*24` packs would swap a converted
+        # sheet's content for a different edition of the same name.
+        loaded = 0
         for file in ["items", "spells", "classfeatures", "classes", "monsters"]:
-            db  = DatabaseFile(self, "%s.db" % file, "dnd5e", file)
-            path = os.path.join(packs_dir, "%s.db" % file)
+            path = self._packPath(packs_dir, file)
+            if path is None:
+                continue
+            db = DatabaseFile(self, "%s.db" % file, "dnd5e", file)
             try:
                 db.load(path)
                 self.packs[file] = db
+                loaded += len(db.entities)
             except Exception as e:
-                self.logWarning("Warning: Could not load dnd5e compendium pack '%s.db': %s" % (file, e))
+                self.logWarning("Warning: Could not load dnd5e compendium pack '%s': %s" % (file, e))
+        if self.packs:
+            self.logInfo("Loaded %d documents from %d dnd5e compendium packs (%s)."
+                         % (loaded, len(self.packs), ", ".join(sorted(self.packs))))
 
     def loadSystemPacks(self):
         self.packs = {}
@@ -158,13 +186,15 @@ class R20Converter(object):
         if self.warnIfLevelDBPacks(packs_dir):
             return
         for pack in self.system_manifest.get('packs', []):
-            db  = DatabaseFile(self, "%s.db" % pack['name'], self.game_system, pack['name'])
-            path = os.path.join(self.fvtt_path, "Data", "systems", self.game_system, pack['path'])
+            path = self._packPath(packs_dir, pack['name'], pack.get('path'))
+            if path is None:
+                continue
+            db = DatabaseFile(self, "%s.db" % pack['name'], self.game_system, pack['name'])
             try:
                 db.load(path)
                 self.packs[pack['name']] = db
             except Exception as e:
-                self.logWarning("Warning: Could not load compendium pack '%s' (%s.db): %s" % (pack['name'], pack['name'], e))
+                self.logWarning("Warning: Could not load compendium pack '%s': %s" % (pack['name'], e))
     def loadSystemVersion(self):
         path = os.path.join(self.fvtt_path, "Data", "systems", self.game_system, "system.json")
         with open(path, "r", encoding='utf-8') as f:

@@ -137,12 +137,16 @@ def writePack(path, documents, collection):
     return path
 
 
-def readPack(path, collection):
+def readPack(path, collection=None):
     """Read a pack back, folding embedded entries into their parents.
 
-    Used by the tests and available for dumping a pack when a conversion needs
-    debugging -- ADR-009 gives up greppable JSON for module packs, so this is
-    what replaces ``type actors.db``.
+    ``collection`` is optional: a primary document is one whose key prefix has
+    no dot, which is how a system pack can be read without knowing in advance
+    what it holds -- dnd5e ships packs named ``spells24`` and ``actors24`` whose
+    names say nothing about their document type.
+
+    Also what replaces ``type actors.db`` when a conversion needs debugging,
+    since ADR-009 gives up greppable JSON for module packs.
     """
     if plyvel is None:
         raise RuntimeError("plyvel is not available")
@@ -152,14 +156,17 @@ def readPack(path, collection):
     try:
         for raw_key, raw_value in db:
             key = raw_key.decode("utf-8")
-            _, prefix, identifier = key.split("!", 2)
+            try:
+                _, prefix, identifier = key.split("!", 2)
+            except ValueError:
+                continue
             document = json.loads(raw_value.decode("utf-8"))
-            if prefix == collection:
-                primaries[identifier] = document
-            else:
+            if "." in prefix:
                 field = prefix.split(".", 1)[1]
                 parent_id = identifier.split(".", 1)[0]
                 children.setdefault(parent_id, {}).setdefault(field, []).append(document)
+            elif collection is None or prefix == collection:
+                primaries[identifier] = document
     finally:
         db.close()
 
@@ -169,6 +176,8 @@ def readPack(path, collection):
         for field, entries in owned.items():
             by_id = {entry.get("_id"): entry for entry in entries}
             # Restore the parent's order rather than LevelDB's key order.
-            primary[field] = [by_id[i] for i in primary.get(field, []) if i in by_id]
+            ordered = [by_id[i] for i in primary.get(field, []) if i in by_id]
+            # A pack we did not write may not list its children in the parent.
+            primary[field] = ordered or entries
         documents.append(primary)
     return documents

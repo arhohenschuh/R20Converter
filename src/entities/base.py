@@ -204,13 +204,13 @@ class DatabaseFile(object):
             full_path = os.path.join(self._path, self.getDirectoryName(), self._filename)
         self.entities = []
         if os.path.isdir(full_path):
-            # A LevelDB pack. Reading one is only supported where plyvel is
-            # present; without it this is B031's silent degradation, so say so.
-            name = os.path.basename(full_path.rstrip(os.path.sep))
+            if not leveldb_pack.isAvailable():
+                raise IOError("'%s' is a LevelDB pack and LevelDB support is "
+                              "unavailable (%s)" % (full_path, leveldb_pack.IMPORT_ERROR))
+            name = os.path.basename(full_path.rstrip("\\/"))
+            # A system pack is named for its content, not its document type, so
+            # the collection is read off the keys rather than assumed.
             collection = leveldb_pack.collectionFor(name)
-            if collection is None or not leveldb_pack.isAvailable():
-                raise IOError("'%s' is a LevelDB pack, which cannot be read here"
-                              % full_path)
             for data in leveldb_pack.readPack(full_path, collection):
                 self.entities.append(Entity.createFromData(self, data))
             return

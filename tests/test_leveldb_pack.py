@@ -118,6 +118,32 @@ class TestRoundTrip(object):
         restored = leveldb_pack.readPack(path, "tables")[0]
         assert [r["_id"] for r in restored["results"]] == ["r9", "r1", "r5"]
 
+    def test_collection_is_detected_when_not_given(self, tmp_path):
+        # A system pack is named for its content, not its document type --
+        # dnd5e ships "spells24" and "actors24" -- so B031's reader has to work
+        # them out from the keys.
+        path = str(tmp_path / "spells24")
+        leveldb_pack.writePack(path, [actorDocument(items=2)], "actors")
+        restored = leveldb_pack.readPack(path)
+        assert len(restored) == 1
+        assert restored[0]["name"] == "Goblin"
+        assert [i["_id"] for i in restored[0]["items"]] == ["item0", "item1"]
+
+    def test_a_parent_that_does_not_list_its_children_still_gets_them(self, tmp_path):
+        # Packs we did not write are not obliged to keep the id array.
+        path = str(tmp_path / "actors")
+        leveldb_pack.writePack(path, [actorDocument(items=2)], "actors")
+        import plyvel
+        db = plyvel.DB(path)
+        try:
+            document = json.loads(db.get(b"!actors!actor1").decode("utf-8"))
+            document["items"] = []
+            db.put(b"!actors!actor1", json.dumps(document).encode("utf-8"))
+        finally:
+            db.close()
+        restored = leveldb_pack.readPack(path)[0]
+        assert len(restored["items"]) == 2
+
 
 class TestRewrite(object):
     def test_rewriting_a_pack_drops_the_previous_contents(self, tmp_path):

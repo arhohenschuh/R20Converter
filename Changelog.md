@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.3.0
+
+Compendium enrichment works again on current installs (B031, fully fixed).
+
+dnd5e has shipped LevelDB compendium packs since 3.0, and the converter read
+only NeDB files — so on any current install no pack loaded, every item kept its
+Roll20 icon and description, and journal compendium links stayed Roll20 URLs.
+1.0.1 made that visible; ADR-009 then added the LevelDB dependency for writing
+module packs, and reading them is the same dependency.
+
+- Pack loading prefers the LevelDB directory and falls back to a NeDB file.
+- The reader works the collection out from the key prefixes rather than being
+  told it. A system pack is named for its content, not its document type —
+  `spells24`, `actors24` — so the name is no help.
+- The 2014 SRD packs are used rather than the `*24` ones: a Roll20 campaign
+  predates the 2024 rules, and matching against a 2024 document of the same
+  name would swap in a different edition of the spell.
+- The "cannot read LevelDB" warning now only appears when LevelDB support is
+  genuinely missing, and names the import error that caused it.
+
+Measured on a real dnd5e 5.3.3 install: 1,851 documents across five packs read
+in under a second, and a *Sunless Citadel* conversion matched 114 of 357 items
+— 68 spells, 34 weapons, 12 feats — which now arrive with system icons and
+their compendium activities.
+
 ## v1.2.2
 
 Two follow-ups to 1.2.1, both found by running the new detection against real
