@@ -160,24 +160,35 @@ class R20Converter(object):
         packs_dir = os.path.join(self.fvtt_path, "Data", "systems", "dnd5e", "packs")
         if self.warnIfLevelDBPacks(packs_dir):
             return
-        # The 2014 SRD packs: a Roll20 campaign's content predates the 2024
-        # rules, so matching against the `*24` packs would swap a converted
-        # sheet's content for a different edition of the same name.
+        edition = self.getArgument("srd_edition", foundry.DEFAULT_SRD_EDITION)
+        mapping = foundry.DND5E_SRD_PACKS.get(edition)
+        if mapping is None:
+            self.logWarning("Warning: unknown SRD edition '%s', using %s."
+                            % (edition, foundry.DEFAULT_SRD_EDITION))
+            edition = foundry.DEFAULT_SRD_EDITION
+            mapping = foundry.DND5E_SRD_PACKS[edition]
+
         loaded = 0
-        for file in ["items", "spells", "classfeatures", "classes", "monsters"]:
-            path = self._packPath(packs_dir, file)
+        cache = {}
+        for role, pack in mapping.items():
+            path = self._packPath(packs_dir, pack)
             if path is None:
                 continue
-            db = DatabaseFile(self, "%s.db" % file, "dnd5e", file)
-            try:
-                db.load(path)
-                self.packs[file] = db
+            if pack not in cache:
+                # 2024 keeps classes and their features in one pack; read it once.
+                db = DatabaseFile(self, "%s.db" % pack, "dnd5e", pack)
+                try:
+                    db.load(path)
+                except Exception as e:
+                    self.logWarning("Warning: Could not load dnd5e compendium pack '%s': %s"
+                                    % (pack, e))
+                    continue
+                cache[pack] = db
                 loaded += len(db.entities)
-            except Exception as e:
-                self.logWarning("Warning: Could not load dnd5e compendium pack '%s': %s" % (file, e))
+            self.packs[role] = cache[pack]
         if self.packs:
-            self.logInfo("Loaded %d documents from %d dnd5e compendium packs (%s)."
-                         % (loaded, len(self.packs), ", ".join(sorted(self.packs))))
+            self.logInfo("Loaded %d documents from %d dnd5e %s SRD compendium packs (%s)."
+                         % (loaded, len(cache), edition, ", ".join(sorted(cache))))
 
     def loadSystemPacks(self):
         self.packs = {}

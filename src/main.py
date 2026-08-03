@@ -22,6 +22,7 @@ if sys.stdout is None:
         sys.stderr = io.BytesIO()
 
 import messages
+import foundry
 from version import version
 from R20Converter import R20Converter
 
@@ -77,7 +78,14 @@ parser.add_argument("--maximum-wall-angle", default=30, type=float, help="Maximu
                     "Note that the angle here is related to a straight line, so a maximum angle of 30 means an angle between 150 and 210 degrees between the 3 points (Default: 30)")
 parser.add_argument("--scene-padding", default=0.25, type=float, help="Side-table padding around each scene")
 parser.add_argument("--debug-page", default=None, help="Only convert a specific page. Useful for debugging")
-parser.add_argument("--fvtt-data-path", default=None, help="Path to the FVTT Data directory (used for importing items and spells from dnd5e system)")
+parser.add_argument("--fvtt-data-path", default=None, help="Path to the FVTT Data directory, or to a Foundry installation directory containing Config/options.json (used for importing items and spells from dnd5e system)")
+parser.add_argument("--srd-edition", default=foundry.DEFAULT_SRD_EDITION,
+                    choices=sorted(foundry.DND5E_SRD_PACKS),
+                    help="Which dnd5e SRD generation to match converted content against. "
+                         "A Roll20 campaign's sheets are 2014 content, and the two generations "
+                         "share names while differing in text and mechanics, so 2024 will "
+                         "replace matched items with a different edition of the same name "
+                         "(Default: %s)" % foundry.DEFAULT_SRD_EDITION)
 parser.add_argument("--npc-source", default="Roll 20", help="Source reference for NPC actors (displayed in the character sheet)")
 parser.add_argument("--no-compendium-overwrite", action="store_true", help="If enabled, items, feats and spells found in the Compendium will not be overwritten with custom description/damage/etc.. from the Roll20 data")
 parser.add_argument("--images-as-drawings", action="store_true", help="Set all images on the scene as textured drawings instead of tiles (requires Furnace to function properly)")

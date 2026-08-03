@@ -55,6 +55,37 @@ PACKAGE_VERSION = "1.0.0"
 #: Author recorded on generated packages.
 PACKAGE_AUTHOR = "R20Converter"
 
+#: Which SRD generation a converted campaign is matched against.
+#:
+#: dnd5e ships both: the 2014 packs and a parallel set of ``*24`` packs for the
+#: 2024 rules. A Roll20 campaign's sheets are 2014 content, and the two
+#: generations share spell and item *names* while differing in their text and
+#: mechanics -- so matching a converted 2014 sheet against a 2024 document
+#: replaces it with a different edition of the same-named thing. 2014 is
+#: therefore the default; 2024 is for campaigns already rebuilt on those rules.
+#:
+#: Roles are what ``findCompendiumItem`` asks for; the values are pack
+#: directory names, read from the packs themselves rather than inferred from
+#: their names -- ``classes24`` holds classes *and* their features, and the
+#: 2024 monsters live in ``actors24``.
+DEFAULT_SRD_EDITION = "2014"
+DND5E_SRD_PACKS = {
+    "2014": {
+        "items": "items",
+        "spells": "spells",
+        "classes": "classes",
+        "classfeatures": "classfeatures",
+        "monsters": "monsters",
+    },
+    "2024": {
+        "items": "equipment24",
+        "spells": "spells24",
+        "classes": "classes24",
+        "classfeatures": "classes24",
+        "monsters": "actors24",
+    },
+}
+
 
 # --- Manifest schema -------------------------------------------------------
 

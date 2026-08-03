@@ -72,6 +72,7 @@ export default {
         maximum_wall_angle: opt.maximumWallAngle,
         npc_source: opt.npcSource,
         no_compendium_overwrite: opt.noCompendiumOverwrite,
+        srd_edition: opt.srdEdition,
         disable_module_journal: opt.disableModuleJournal,
         disable_module_actors: opt.disableModuleActors,
         disable_module_scenes: opt.disableModuleScenes,

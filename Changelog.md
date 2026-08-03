@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.4.0
+
+An SRD edition switch, and a correctness fix in the pack reader 1.3.0 shipped.
+
+- `--srd-edition {2014,2024}`, and a matching selector in the GUI's advanced
+  settings. **Defaults to 2014**: a Roll20 campaign's sheets are 2014 content,
+  and the two generations share spell and item *names* while differing in text
+  and mechanics, so matching against 2024 replaces an item with a different
+  edition of the same name.
+
+  Measured on *Sunless Citadel*: 2014 matches 114 of 357 items and 2024 matches
+  110, with 92 in common. The difference is mostly class and monster features
+  (12 under 2014, 6 under 2024) — `Multiattack` and `Protection` resolve only
+  against the 2014 packs, `Chromatic Orb` only against the 2024 ones.
+
+  The pack names behind each edition were read from the packs themselves, not
+  inferred: `classes24` holds classes *and* their features, so it serves two
+  roles and is read once, and the 2024 monsters are in `actors24`.
+
+- **Folders are no longer read as documents.** A Foundry pack keeps its folder
+  tree under `!folders!`, and those entries carry a `name` — so the reader
+  added in 1.3.0 saw a folder called "Wand" as an item called "Wand", and a
+  lookup could match one. This inflated the 2014 pack read from 1,769 documents
+  to 1,834 and could have attached a folder's data to a converted item.
+
 ## v1.3.0
 
 Compendium enrichment works again on current installs (B031, fully fixed).

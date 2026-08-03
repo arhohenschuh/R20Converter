@@ -59,6 +59,12 @@ EMBEDDED_COLLECTIONS = {
 }
 
 
+#: Key prefixes in a pack that are not documents. Foundry stores a pack's
+#: folder tree under ``!folders!``, and those entries carry a ``name`` -- a
+#: folder called "Wand" would answer a lookup for the item of that name.
+NON_DOCUMENT_COLLECTIONS = ("folders",)
+
+
 def isAvailable():
     """Whether LevelDB packs can be written at all."""
     return plyvel is not None
@@ -165,6 +171,8 @@ def readPack(path, collection=None):
                 field = prefix.split(".", 1)[1]
                 parent_id = identifier.split(".", 1)[0]
                 children.setdefault(parent_id, {}).setdefault(field, []).append(document)
+            elif prefix in NON_DOCUMENT_COLLECTIONS:
+                continue
             elif collection is None or prefix == collection:
                 primaries[identifier] = document
     finally:
