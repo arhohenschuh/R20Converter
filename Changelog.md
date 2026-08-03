@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.4.2
+
+The SRD edition options are now labelled **2014 (Legacy)** and **2024
+(Modern)**.
+
+1.4.0 labelled 2014 "matches Roll20 campaigns" and justified the default that
+way in the GUI, the `--srd-edition` help and the `foundry.py` comment. That was
+wrong: Roll20 campaigns can be built on either edition. 2014 remains the
+default because it is the larger body of existing material — a default, not an
+assumption about the input.
+
 ## v1.4.1
 
 - The SRD edition selector moves from Advanced Settings to the main page,

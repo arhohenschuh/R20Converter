@@ -58,11 +58,11 @@ PACKAGE_AUTHOR = "R20Converter"
 #: Which SRD generation a converted campaign is matched against.
 #:
 #: dnd5e ships both: the 2014 packs and a parallel set of ``*24`` packs for the
-#: 2024 rules. A Roll20 campaign's sheets are 2014 content, and the two
-#: generations share spell and item *names* while differing in their text and
-#: mechanics -- so matching a converted 2014 sheet against a 2024 document
-#: replaces it with a different edition of the same-named thing. 2014 is
-#: therefore the default; 2024 is for campaigns already rebuilt on those rules.
+#: 2024 rules. The two generations share spell and item *names* while differing
+#: in their text and mechanics, so matching against the wrong one replaces an
+#: item with a different edition of the same-named thing. 2014 is the default
+#: because it is the larger body of existing material, not because a Roll20
+#: campaign cannot be 2024 — it is a default, not an assumption.
 #:
 #: Roles are what ``findCompendiumItem`` asks for; the values are pack
 #: directory names, read from the packs themselves rather than inferred from

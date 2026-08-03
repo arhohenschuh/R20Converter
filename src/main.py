@@ -82,10 +82,10 @@ parser.add_argument("--fvtt-data-path", default=None, help="Path to the FVTT Dat
 parser.add_argument("--srd-edition", default=foundry.DEFAULT_SRD_EDITION,
                     choices=sorted(foundry.DND5E_SRD_PACKS),
                     help="Which dnd5e SRD generation to match converted content against. "
-                         "A Roll20 campaign's sheets are 2014 content, and the two generations "
-                         "share names while differing in text and mechanics, so 2024 will "
-                         "replace matched items with a different edition of the same name "
-                         "(Default: %s)" % foundry.DEFAULT_SRD_EDITION)
+                         "The two generations share spell and item names while differing in "
+                         "text and mechanics, so the wrong one replaces a matched item with a "
+                         "different edition of the same name. Pick the edition the campaign "
+                         "was built on (Default: %s)" % foundry.DEFAULT_SRD_EDITION)
 parser.add_argument("--npc-source", default="Roll 20", help="Source reference for NPC actors (displayed in the character sheet)")
 parser.add_argument("--no-compendium-overwrite", action="store_true", help="If enabled, items, feats and spells found in the Compendium will not be overwritten with custom description/damage/etc.. from the Roll20 data")
 parser.add_argument("--images-as-drawings", action="store_true", help="Set all images on the scene as textured drawings instead of tiles (requires Furnace to function properly)")
