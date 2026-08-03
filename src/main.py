@@ -87,6 +87,19 @@ parser.add_argument("--srd-edition", default=foundry.DEFAULT_SRD_EDITION,
                          "different edition of the same name. Pick the edition the campaign "
                          "was built on (Default: %s)" % foundry.DEFAULT_SRD_EDITION)
 parser.add_argument("--npc-source", default="Roll 20", help="Source reference for NPC actors (displayed in the character sheet)")
+parser.add_argument("--custom-compendium", default=None,
+                    help="Match content against a custom compendium module as well as the game "
+                         "system's. Takes a module id (found under Data/modules) or a path to "
+                         "the module directory. Documents are classified by their own type, so "
+                         "the module's pack names do not matter")
+parser.add_argument("--custom-compendium-mode", default=foundry.DEFAULT_CUSTOM_MODE,
+                    choices=list(foundry.CUSTOM_COMPENDIUM_MODES),
+                    help="Whether the custom compendium joins the system packs or stands in for "
+                         "them (Default: %s)" % foundry.DEFAULT_CUSTOM_MODE)
+parser.add_argument("--custom-compendium-precedence", default=foundry.DEFAULT_CUSTOM_PRECEDENCE,
+                    choices=list(foundry.CUSTOM_COMPENDIUM_PRECEDENCE),
+                    help="Which source answers first when both hold a document of the same name "
+                         "(Default: %s)" % foundry.DEFAULT_CUSTOM_PRECEDENCE)
 parser.add_argument("--no-compendium-overwrite", action="store_true", help="If enabled, items, feats and spells found in the Compendium will not be overwritten with custom description/damage/etc.. from the Roll20 data")
 parser.add_argument("--images-as-drawings", action="store_true", help="Set all images on the scene as textured drawings instead of tiles (requires Furnace to function properly)")
 parser.add_argument("--disable-module-journal", action="store_true", help="Disable conversion of Journal entries in the module (requires --export-as-module)")

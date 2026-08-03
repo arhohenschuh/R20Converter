@@ -180,6 +180,48 @@
                 description="If enabled, items, feats and spells found in the Game System's Compendiums will not be overwritten with custom description/damage/etc.. from the Roll20 data."
                 v-model="form.noCompendiumOverwrite"
               />
+
+              <boolean-option
+                label="Use a custom compendium"
+                description="Match content against an installed compendium module as well as the game system's own. Documents are classified by their own type, so the module's pack names do not matter."
+                v-model="form.useCustomCompendium"
+              />
+              <template v-if="form.useCustomCompendium">
+                <b-form-group
+                  label="Compendium module"
+                  label-cols
+                  label-align="right"
+                  description="Module id as found under Data/modules, or a full path to the module directory."
+                >
+                  <b-form-input
+                    v-model="form.customCompendium"
+                    placeholder="forge-vtt-shared-compendiums-beyond5e"
+                  ></b-form-input>
+                </b-form-group>
+                <b-form-group
+                  label="Custom compendium mode"
+                  label-cols
+                  label-align="right"
+                  description="Additive keeps the game system's compendiums as well; Replace uses only the custom one."
+                >
+                  <b-form-select
+                    v-model="form.customCompendiumMode"
+                    :options="customCompendiumModes"
+                  ></b-form-select>
+                </b-form-group>
+                <b-form-group
+                  label="Precedence"
+                  label-cols
+                  label-align="right"
+                  description="Which source answers first when both hold something of the same name."
+                  v-if="form.customCompendiumMode === 'additive'"
+                >
+                  <b-form-select
+                    v-model="form.customCompendiumPrecedence"
+                    :options="customCompendiumPrecedences"
+                  ></b-form-select>
+                </b-form-group>
+              </template>
               <boolean-option
                 label="Set all backgrounds as tiles"
                 description="Sets all page map images as tiles rather than setting them as the scene's background"
@@ -268,6 +310,10 @@ export default {
         maximumWallAngle: 30,
         npcSource: "Roll 20",
         noCompendiumOverwrite: false,
+        useCustomCompendium: false,
+        customCompendium: "",
+        customCompendiumMode: "additive",
+        customCompendiumPrecedence: "custom",
         disableModuleJournal: false,
         disableModuleActors: false,
         disableModuleScenes: false,
@@ -284,6 +330,14 @@ export default {
         { value: "", text: "Keep Roll20 settings" },
         { value: "enable", text: "Enable Fog of War" },
         { value: "disable", text: "Disable Fog of War" }
+      ],
+      customCompendiumModes: [
+        { value: "additive", text: "Additive (alongside the game system)" },
+        { value: "replace", text: "Replace the game system's compendiums" }
+      ],
+      customCompendiumPrecedences: [
+        { value: "custom", text: "Custom compendium wins" },
+        { value: "system", text: "Game system wins" }
       ],
       selectedFolderAsItems: "",
       folderItemsNameToAdd: ""
@@ -328,6 +382,11 @@ export default {
       maximumWallAngle: this.form.maximumWallAngle,
       npcSource: this.form.npcSource,
       noCompendiumOverwrite: this.form.noCompendiumOverwrite,
+      customCompendium: this.form.useCustomCompendium
+        ? this.form.customCompendium.trim() || null
+        : null,
+      customCompendiumMode: this.form.customCompendiumMode,
+      customCompendiumPrecedence: this.form.customCompendiumPrecedence,
       disableModuleJournal: this.form.disableModuleJournal,
       disableModuleActors: this.form.disableModuleActors,
       disableModuleScenes: this.form.disableModuleScenes,

@@ -86,6 +86,34 @@ DND5E_SRD_PACKS = {
     },
 }
 
+#: Document ``type`` to the compendium role ``findCompendiumItem`` asks for.
+#:
+#: A custom compendium's pack *names* say nothing reliable: Beyond5e keeps its
+#: class features in ``item-3-classes`` and ships an empty
+#: ``item-5-class-features``, exactly as dnd5e keeps 2024 features in
+#: ``classes24``. Classifying each document by its own type survives both.
+COMPENDIUM_DOCUMENT_ROLES = {
+    "spell": "spells",
+    "npc": "monsters",
+    "class": "classes",
+    "subclass": "classes",
+    "feat": "classfeatures",
+    "weapon": "items",
+    "equipment": "items",
+    "consumable": "items",
+    "loot": "items",
+    "tool": "items",
+    "container": "items",
+}
+
+#: Which source answers first when both hold a document of the same name.
+CUSTOM_COMPENDIUM_PRECEDENCE = ("custom", "system")
+DEFAULT_CUSTOM_PRECEDENCE = "custom"
+
+#: Whether the custom compendium joins the system packs or stands in for them.
+CUSTOM_COMPENDIUM_MODES = ("additive", "replace")
+DEFAULT_CUSTOM_MODE = "additive"
+
 
 # --- Manifest schema -------------------------------------------------------
 

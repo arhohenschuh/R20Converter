@@ -189,6 +189,108 @@ class R20Converter(object):
         if self.packs:
             self.logInfo("Loaded %d documents from %d dnd5e %s SRD compendium packs (%s)."
                          % (loaded, len(cache), edition, ", ".join(sorted(cache))))
+        self.loadCustomCompendium()
+
+    def resolveCustomCompendium(self, name):
+        """Locate a custom compendium's ``packs`` directory.
+
+        ``name`` is a module id or a path. The id is preferred because it is
+        portable between machines and the data directory is already known; a
+        path is accepted for a module kept outside it.
+        """
+        candidates = []
+        if self.fvtt_path:
+            candidates.append(os.path.join(self.fvtt_path, "Data", "modules", name))
+        candidates.append(name)
+        for candidate in candidates:
+            if not os.path.isdir(candidate):
+                continue
+            packs = os.path.join(candidate, "packs")
+            if os.path.isdir(packs):
+                return packs
+            if os.path.isdir(os.path.join(candidate, "CURRENT")):
+                continue
+            # Pointed straight at a packs directory.
+            if any(os.path.isdir(os.path.join(candidate, e, "")) for e in os.listdir(candidate)):
+                return candidate
+        return None
+
+    def loadCustomCompendium(self):
+        """Merge a user-supplied compendium module into the system packs."""
+        name = self.getArgument("custom_compendium", None)
+        if not name:
+            return
+        packs_dir = self.resolveCustomCompendium(name)
+        if packs_dir is None:
+            self.logWarning(
+                "Warning: custom compendium '%s' was not found as a module id under "
+                "Data/modules or as a path, so it is ignored." % name)
+            return
+
+        buckets = {}
+        total = 0
+        for entry in sorted(os.listdir(packs_dir)):
+            path = os.path.join(packs_dir, entry)
+            if not os.path.isdir(path):
+                continue
+            db = DatabaseFile(self, "%s.db" % entry, name, entry)
+            try:
+                db.load(path)
+            except Exception as e:
+                self.logWarning("Warning: Could not load custom compendium pack '%s': %s"
+                                % (entry, e))
+                continue
+            for entity in db.entities:
+                role = foundry.COMPENDIUM_DOCUMENT_ROLES.get(entity.entity.get("type"))
+                if role:
+                    buckets.setdefault(role, []).append(entity)
+                    total += 1
+        if not buckets:
+            self.logWarning("Warning: custom compendium '%s' held no documents this "
+                            "converter can use." % name)
+            return
+
+        mode = self.getArgument("custom_compendium_mode", None) or foundry.DEFAULT_CUSTOM_MODE
+        precedence = (self.getArgument("custom_compendium_precedence", None)
+                      or foundry.DEFAULT_CUSTOM_PRECEDENCE)
+        for role, entities in buckets.items():
+            merged = DatabaseFile(self, "%s.db" % role, name, role)
+            existing = self.packs.get(role)
+            if mode == "replace" or existing is None:
+                merged.entities = list(entities)
+            elif precedence == "custom":
+                # getBy returns the first match, so order *is* the precedence.
+                merged.entities = list(entities) + list(existing.entities)
+            else:
+                merged.entities = list(existing.entities) + list(entities)
+            self.packs[role] = merged
+        self.logInfo("Loaded %d documents from custom compendium '%s' (%s, %s precedence): %s."
+                     % (total, name, mode, precedence, ", ".join(sorted(buckets))))
+        self.warnAboutCompendiumAssets(name, buckets)
+
+    def warnAboutCompendiumAssets(self, name, buckets):
+        """Name the modules a custom compendium's artwork lives in.
+
+        Matched documents keep their own ``img``, and a compendium module often
+        stores artwork in a *separate* assets module. Anything converted with it
+        then needs that module installed too, which is otherwise discovered as
+        missing images long after the conversion.
+        """
+        modules = set()
+        for entities in buckets.values():
+            for entity in entities:
+                image = entity.entity.get("img") or ""
+                parts = image.replace("\\", "/").split("/")
+                if len(parts) > 2 and parts[0] == "modules":
+                    modules.add(parts[1])
+        modules.discard(name)
+        if modules:
+            self.logWarning(
+                "Note: artwork from '%s' lives in %s. Anything matched against it keeps "
+                "those image paths, so %s must also be installed wherever this conversion "
+                "is opened."
+                % (name, ", ".join("'%s'" % m for m in sorted(modules)),
+                   "that module" if len(modules) == 1 else "those modules"))
 
     def loadSystemPacks(self):
         self.packs = {}

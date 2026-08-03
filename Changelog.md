@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.5.0
+
+Content can now be matched against a **custom compendium module**, not just the
+game system's own packs.
+
+- `--custom-compendium <module-id-or-path>`, with "Use a custom compendium" in
+  the GUI's advanced settings. It takes a **module id** as found under
+  `Data/modules` — portable between machines, and resolvable because the data
+  directory is already detected — or a path for a module kept elsewhere.
+- `--custom-compendium-mode {additive,replace}` (default `additive`): join the
+  system packs, or stand in for them.
+- `--custom-compendium-precedence {custom,system}` (default `custom`): which
+  source answers first when both hold something of the same name. Only
+  meaningful in additive mode, and the GUI hides it otherwise.
+- Documents are classified by their **own type**, not by the pack they sit in.
+  A module's pack names are not trustworthy: Beyond5e keeps its class features
+  in `item-3-classes` and ships an empty `item-5-class-features`, exactly as
+  dnd5e keeps its 2024 features in `classes24`.
+- Matched documents keep their own artwork, which often lives in a *separate*
+  assets module. The converter now names those modules, because the alternative
+  is discovering broken images long after the conversion.
+
+Measured on *Sunless Citadel* with Beyond5e (4,104 usable documents against the
+SRD's 1,769): matches rise from 114 of 357 to 136.
+
 ## v1.4.2
 
 The SRD edition options are now labelled **2014 (Legacy)** and **2024
