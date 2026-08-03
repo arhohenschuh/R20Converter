@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.2.1
+
+Foundry data directory detection no longer takes a path on trust.
+
+- A candidate is only accepted if it actually contains `Data/systems`. A stale
+  `Config/options.json` — one copied from another machine, or a default install
+  pointing at itself while the real data lives with a portable copy — was
+  followed silently, and the conversion then ran with no compendium enrichment
+  and no explanation of why.
+- `--fvtt-data-path` now accepts an *installation* directory as well as a data
+  directory. A portable install keeps `Config/options.json` beside the
+  application and its data on another drive entirely, so pointing at the folder
+  the user actually knows now works; the `dataPath` inside is followed and
+  validated.
+- When no usable directory is found the converter says which path it tried and
+  how to override it, instead of continuing quietly.
+
 ## v1.2.0
 
 Module exports now write Foundry LevelDB compendium packs directly instead of

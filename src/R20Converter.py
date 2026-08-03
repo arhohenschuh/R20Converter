@@ -44,12 +44,33 @@ class R20Converter(object):
         if (self.game_system == ""):
             self.game_system = foundry.DEFAULT_GAME_SYSTEM
         self.fvtt_path = self.getArgument("fvtt_data_path", None)
+        if self.fvtt_path is not None:
+            # Accept an installation directory as well as the data directory:
+            # a portable install keeps Config/options.json beside the app and
+            # its data elsewhere, and the install folder is what a user knows.
+            resolved = utils.resolveFVTTDataPath(self.fvtt_path)
+            if resolved is None:
+                self.logWarning(
+                    "Warning: '%s' does not contain Data/systems and names no usable "
+                    "dataPath in Config/options.json. Compendium enrichment will be "
+                    "skipped." % self.fvtt_path)
+            elif resolved != self.fvtt_path:
+                self.logInfo("Using FVTT data path '%s' from '%s'."
+                             % (resolved, self.fvtt_path))
+            self.fvtt_path = resolved
         if self.fvtt_path is None:
             potential_path = os.path.abspath(os.path.join(self.path, "..", "..", ".."))
             if os.path.exists(os.path.join(potential_path, "Data", "systems", self.game_system, "system.json")):
                 self.fvtt_path = potential_path
             else:
                 self.fvtt_path = utils.getFVTTDataPath()
+                if not utils.isFVTTDataPath(self.fvtt_path):
+                    self.logWarning(
+                        "Warning: no Foundry data directory found (looked at '%s'). "
+                        "Pass --fvtt-data-path with your Foundry data or installation "
+                        "directory, or set FOUNDRY_VTT_DATA_PATH."
+                        % self.fvtt_path)
+                    self.fvtt_path = None
         self.loadSystemManifest()
         if self.game_system == "dnd5e":
             if self.fvtt_path is not None:
