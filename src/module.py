@@ -76,7 +76,7 @@ class Module(object):
                 "type": foundry.PACKAGE_TYPE_MODULE,
                 "title": self._title,
                 "description": self._description,
-                "version": version,
+                "version": self._converter.getArgument("package_version", None) or version,
                 "authors": [{"name": foundry.PACKAGE_AUTHOR}],
                 "compatibility": foundry.compatibility(),
                 "relationships": {

@@ -87,6 +87,11 @@ parser.add_argument("--srd-edition", default=foundry.DEFAULT_SRD_EDITION,
                          "different edition of the same name. Pick the edition the campaign "
                          "was built on (Default: %s)" % foundry.DEFAULT_SRD_EDITION)
 parser.add_argument("--npc-source", default="Roll 20", help="Source reference for NPC actors (displayed in the character sheet)")
+parser.add_argument("--package-version", default=None,
+                    help="Version stamped on the generated world or module manifest. Defaults "
+                         "to %s for a world and the converter's own version for a module. Set "
+                         "it when publishing so the manifest and the release agree"
+                         % foundry.PACKAGE_VERSION)
 parser.add_argument("--custom-compendium", default=None,
                     help="Match content against a custom compendium module as well as the game "
                          "system's. Takes a module id (found under Data/modules) or a path to "

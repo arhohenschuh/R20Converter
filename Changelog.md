@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.5.1
+
+- An entry Roll20 left unnamed is converted as `Unnamed Weapon`, `Unnamed
+  Feature`, `Unnamed Spell` and so on, and the actor holding it is reported.
+  The old placeholder was the literal `<no name>`, which sorts to the top of
+  every list, says nothing about where it came from and matches no compendium
+  entry. Found by diffing a fresh conversion against the same campaign after a
+  manual repair pass: 11 of them, which the repair had deleted by hand.
+- `--package-version` sets the version stamped on the generated world or module
+  manifest. Publishing a release as one version while its manifest declares
+  another is the kind of version-lie the rest of this project exists to remove.
+
 ## v1.5.0
 
 Content can now be matched against a **custom compendium module**, not just the

@@ -31,7 +31,8 @@ class World(object):
             "type": foundry.PACKAGE_TYPE_WORLD,
             "title": self._title,
             "description": self._description,
-            "version": foundry.PACKAGE_VERSION,
+            "version": self._converter.getArgument("package_version", None)
+                       or foundry.PACKAGE_VERSION,
             "system": self._converter.game_system,
             # Declares which document schema this world was written with, and so
             # which migrations Foundry runs on first launch. Must stay truthful.

@@ -1799,9 +1799,24 @@ class Actor(Entity):
         item.entity["folder"] = folder_id
         self._converter.items.addEntity(item)
 
+    def nameOrPlaceholder(self, name, kind):
+        """Name an entry Roll20 left blank.
+
+        The old placeholder was the literal ``<no name>``, which sorts to the
+        top of every list, tells nobody which sheet it came from and matches no
+        compendium entry. Dropping the entry instead would lose whatever damage
+        or description it carries, so it is named and reported.
+        """
+        if name != "":
+            return name
+        label = "Unnamed %s" % kind.capitalize()
+        self.logWarning("Warning: '%s' has a %s with no name in Roll20; converted as '%s'."
+                        % (self.getName(), kind, label))
+        return label
+
     def createItemInventory(self, items, name, description, inventory_type, attributes,
                             activity=None, attack=None, specific=None, **kwargs):
-        name = name if name != "" else "<no name>"
+        name = self.nameOrPlaceholder(name, inventory_type)
         description = Entity.textToHtml(description)
         compendium_item = self.findCompendiumItem("Items", name)
         kwargs.setdefault("ability_mods", self.abilityMods())
@@ -1997,7 +2012,7 @@ class Actor(Entity):
 
 
     def createItemFeat(self, items, name, description, activation=None, attack=None, recharge=None, **kwargs):
-        name = name if name != "" else "<no name>"
+        name = self.nameOrPlaceholder(name, "feature")
         description = self.textToHtml(description)
         compendium_item = self.findCompendiumItem("Class Features", name)
         kwargs.setdefault("ability_mods", self.abilityMods())
@@ -2328,7 +2343,7 @@ class Actor(Entity):
 
     def createItemSpell(self, items, name, description, activation, attack,
                         level, school, components, preparation, scaling, **kwargs):
-        name = name if name != "" else "<no name>"
+        name = self.nameOrPlaceholder(name, "spell")
         description = self.textToHtml(description)
         compendium_item = self.findCompendiumItem("Spells", name)
         kwargs.setdefault("ability_mods", self.abilityMods())
