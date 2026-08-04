@@ -1,5 +1,44 @@
 # Changelog
 
+## v1.7.0
+
+Tokens are no longer converted blind, and player characters keep their senses.
+
+Three defects, found by chasing one symptom: on a fully dark map in a converted
+world, player characters could see nothing at all — not even a light placed next
+to them.
+
+**Sight and light arcs (B045).** Roll20 records unrestricted vision by *omitting*
+a field-of-vision limit, and the converter turned that absence into `angle: 0`.
+Foundry reads `sight.angle` as the aperture of a cone and defaults it to 360, so 0
+is not "unlimited" but a **zero-degree cone** — the exact opposite. Every affected
+token was blind no matter what its senses said. The same mistake applied to
+emitted light. Both now convert to 360, an out-of-range or unparseable angle falls
+back to 360 rather than 0, and a genuinely narrowed cone is still preserved along
+with the rotation flip that goes with it. Measured on *Wardens of the North*: 394
+of 394 prototype tokens carried a zero-degree cone.
+
+**Player-character senses (B044).** `createAttributeSenses` parsed senses only for
+NPCs, so no code path could ever give a player character darkvision. This is not
+cosmetic: a vision module derives a token's vision from the **actor's senses**, not
+from the token's sight range, so a PC with darkvision 0 falls back to light
+perception and sees only what is already lit. Characters now take their darkvision
+from the night vision configured on their Roll20 token, ignoring the one-foot
+value that only means "has sight, no radius".
+
+Senses are also emitted in the shape dnd5e 5.3 actually declares —
+`senses.ranges.*` rather than the flat keys. The old shape survived on a
+compatibility shim that dnd5e removes in 6.1, at which point NPC senses would have
+broken too.
+
+**NPC special senses (B046).** `passive Perception` leaked into
+`senses.special`, because the guard compared case-sensitively against Roll20's
+capitalised text while the loop removed entries from the list it was iterating —
+skipping whatever followed. Found by a regression test written for B044 rather
+than by reading the code.
+
+Suite: **594 → 624**.
+
 ## v1.6.1
 
 Player characters convert with a friendly token disposition.

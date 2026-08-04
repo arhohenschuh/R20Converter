@@ -11,6 +11,13 @@ B039–B042 in 1.1.0** (F027–F042 in `ROADMAP.md`). **B031 is only partially
 fixed** — see its entry — and **B043 is an open documented limitation.** Every
 bug found in the 2026-08-03 audit is now either fixed or explained.
 
+**B044–B046 were found on 2026-08-04**, outside that audit, starting from a live
+vision failure in a converted world and tracing back to the converter rather than
+to the world. **All three are fixed in 1.7.0** (F044–F046). B044 and B045 are
+independent causes of one symptom — how far a token sees and through what arc —
+which is why neither fix restores vision alone. B046 was found by a regression
+test written for B044, not by reading the code.
+
 Reference material used: dnd5e 5.3.3 source (`module/config.mjs`,
 `module/data/**`), a live dnd5e 5.x install (LevelDB packs), and two published
 converted modules (*Lost Mine of Phandelver*, *Out of the Abyss*) for
@@ -40,6 +47,9 @@ mechanically for the physical-item class of defect.
 | [B041](B041-npc-creature-type-not-split.md) | Minor | Fixed (F041) | `details.type.value` stores "humanoid (goblinoid)" whole instead of value + subtype; swarms unhandled. |
 | [B042](B042-short-hex-color-expansion.md) | Minor | Fixed (F042) | 3-digit hex colors expand ×16 instead of ×17 (`#fff` → `#f0f0f0`). |
 | [B043](B043-foundry-14-unverified.md) | Info | Partial | `compatibility.verified` is now 14, matching the reference module and backed by a document-level comparison against it. `coreVersion` stays 13 deliberately — claiming 14 would make Foundry skip the NeDB→LevelDB migration the output depends on. Writing LevelDB packs directly is still open. |
+| [B044](B044-senses-not-populated-and-legacy-path.md) | Major | Partial (F044) | Senses now emit the dnd5e 5.3 `senses.ranges.*` mapping instead of the flat pre-5.3 keys (394/394 verified), and NPC parsing is unaffected (215/371). **Player characters still convert with `darkvision: 0`** — 0 of 23 in the reference campaign. Roll20 stores no PC senses and the token radius is not equivalent (a High Elf with 60 ft carries a 5 ft token). Post-conversion repair for now. |
+| [B045](B045-zero-sight-angle-blinds-token.md) | Critical | Fixed (F045) | `sightAngle`/`lightAngle` returned **0** for Roll20's "no field-of-vision limit", but Foundry reads `sight.angle: 0` as a **zero-degree cone** (schema default 360). The token was blind whatever its senses said. 394 of 394 prototype tokens affected in the reference world. |
+| [B046](B046-passive-perception-and-list-mutation.md) | Minor | Fixed (F046) | NPC `senses.special` kept `passive Perception NN`: the guard compared case-sensitively against Roll20's capitalised text, and the loop called `pop(i)` while enumerating, skipping the following entry. Found by a B044 regression test, not by reading. |
 
 ## Cross-cutting observations
 

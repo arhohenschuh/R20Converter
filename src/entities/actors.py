@@ -12,6 +12,11 @@ DISPLAY_ATTRIBUTES = False
 release = "legacy"
 defaultLegacyEnabled = True
 
+# Foundry treats sight/light `angle` as the aperture of a cone and defaults it to
+# 360 (common/documents/token.mjs, common/data/data.mjs). 0 is a zero-degree cone,
+# i.e. blind, which is the opposite of Roll20's "no field-of-vision limit".
+FULL_ANGLE = 360
+
 
 def _compendiumWeaponType(compendium_item):
     """Read a weapon's category from an SRD compendium entry.
@@ -88,8 +93,8 @@ class Token(Entity):
         # dropping a player character onto a scene should not show up hostile.
         self.disposition = self.DISPOSITION_HOSTILE
         self.light_alpha = 1
-        self.light_angle = 0
-        self.sight_angle = 0
+        self.light_angle = FULL_ANGLE
+        self.sight_angle = FULL_ANGLE
         self.light_color = ""
         self.mirrorX = False
         self.mirrorY = False
@@ -214,19 +219,24 @@ class Token(Entity):
     @staticmethod
     def sightAngle(token):
         legacy = token.get("legacy_lighting_enabled", defaultLegacyEnabled)
-        angle = 0
+        angle = FULL_ANGLE
         if legacy:
             angle = token.get("light_losangle", angle)
         else:
             if token.get("has_limit_field_of_vision", False):
                 angle = token.get("limit_field_of_vision_total", angle)
             else:
-                return 0
-        
+                return FULL_ANGLE
+
+        # Roll20 says "unlimited" by omitting the limit; Foundry reads angle 0 as a
+        # zero-degree cone, which blinds the token outright.
         try:
-            return int(angle)
+            angle = int(angle)
         except:
-            return 0
+            return FULL_ANGLE
+        if angle <= 0 or angle > FULL_ANGLE:
+            return FULL_ANGLE
+        return angle
 
     @staticmethod
     def emitsLight(token):
@@ -239,18 +249,21 @@ class Token(Entity):
     @staticmethod
     def lightAngle(token):
         legacy = token.get("legacy_lighting_enabled", defaultLegacyEnabled)
-        angle = 0
+        angle = FULL_ANGLE
         if legacy:
-            angle = token.get("light_angle", 0)
+            angle = token.get("light_angle", FULL_ANGLE)
         else:
             if token.get("has_directional_bright_light", False):
-                angle = token.get("directional_bright_light_total", 0)
+                angle = token.get("directional_bright_light_total", FULL_ANGLE)
             else:
-                return 0
+                return FULL_ANGLE
         try:
-            return int(angle)
+            angle = int(angle)
         except:
-            return 0
+            return FULL_ANGLE
+        if angle <= 0 or angle > FULL_ANGLE:
+            return FULL_ANGLE
+        return angle
 
     @staticmethod
     def lightColor(token):
@@ -285,8 +298,9 @@ class Token(Entity):
 
     def getDict(self):
         has_bar1 = self.bar1_max != 0 or self.bar1_val != 0
-        # Roll20 light/sight angles are going downward, FVTT's are going upward... do some magic
-        if self.sight_angle != 0 or self.light_angle != 0:
+        # Roll20 light/sight angles are going downward, FVTT's are going upward... do some magic.
+        # FULL_ANGLE means "no cone at all", so only a narrowed arc needs the flip.
+        if self.sight_angle != FULL_ANGLE or self.light_angle != FULL_ANGLE:
             rotation = (self.rotation + 180) % 360
             lockRotation = (self.rotation == 0)
         else:
@@ -954,39 +968,66 @@ class Actor(Entity):
 
         return movement
     def createAttributeSenses(self):
-        senses = {
+        # dnd5e 5.3 moved the flat keys into a `ranges` mapping
+        # (module/data/shared/senses-field.mjs); the flat shape only survives via a
+        # shim that goes away in 6.1.
+        ranges = {
             "darkvision": 0,
             "blindsight": 0,
             "tremorsense": 0,
             "truesight": 0,
-            "units": "ft",
-            "special": ""
         }
+        special = ""
         if self.isNPC():
             try:
-                senseTypes = ["darkvision", "blindsight", "tremorsense", "truesight"]
+                senseTypes = list(ranges.keys())
                 npc_senses = self.getAttribute("npc_senses", "")[0].lower()
                 for senseType in senseTypes:
-                    senses[senseType] = 0
+                    ranges[senseType] = 0
                     match = re.search(senseType + r"\s+(\d+)", npc_senses)
                     if match:
-                        senses[senseType] = int(match.group(1))
-                # Find special senses
+                        ranges[senseType] = int(match.group(1))
+                # Find special senses. Build a new list rather than popping while
+                # enumerating -- pop(i) shifts the tail and skips the next entry, so
+                # "darkvision 60 ft., passive Perception 12" left the passive score behind.
                 npc_senses = self.getAttribute("npc_senses", "")[0].split(",")
-                npc_senses = list(map(lambda x: x.strip(), npc_senses))
-                for i, sense in enumerate(npc_senses):
-                    if sense.strip().startswith("passive perception"):
-                        npc_senses.pop(i)
+                kept = []
+                for sense in npc_senses:
+                    sense = sense.strip()
+                    if not sense:
                         continue
-                    for senseType in senseTypes:
-                        if senseType in sense.lower():
-                            npc_senses.pop(i)
-                            break
-                senses["special"] = ", ".join(npc_senses)
+                    lowered = sense.lower()
+                    if lowered.startswith("passive perception"):
+                        continue
+                    if any(senseType in lowered for senseType in senseTypes):
+                        continue
+                    kept.append(sense)
+                special = ", ".join(kept)
             except:
                 pass
+        else:
+            # A player character has no senses block on the Roll20 sheet, so the only
+            # evidence is the night vision configured on its token. Without this a PC
+            # converts with darkvision 0 and a vision module -- which derives from the
+            # actor's senses, not from the token's sight range -- grants it nothing.
+            ranges["darkvision"] = self.getCharacterDarkvision()
 
-        return senses
+        return {
+            "ranges": ranges,
+            "units": "ft",
+            "special": special
+        }
+
+    def getCharacterDarkvision(self):
+        """Night vision configured on the character's Roll20 token, in feet."""
+        token = getattr(self, "token", None)
+        if token is None or not token.has_vision:
+            return 0
+        radius = max(token.dim_sight, token.bright_sight)
+        # setupLighting stores 1 ft as a "has sight but no radius" sentinel, not a sense.
+        if radius <= 1:
+            return 0
+        return int(radius)
 
 
     def getSpellcastingAbility(self):
