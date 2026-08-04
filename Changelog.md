@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.7.3
+
+Fixes a regression in 1.7.1 that broke **every** conversion.
+
+The conversion log added in 1.7.1 opened its file lazily and created the output
+directory on the way, with `makedirs(..., exist_ok=True)`. `convert()` logs its
+opening line before anything else, so the log created the directory a single
+statement before `convert()` tried to create it itself — and `convert()` uses a
+bare `makedirs`, which raises when the directory already exists:
+
+```
+FileExistsError: [WinError 183] ... 'Data/worlds/<id>'
+```
+
+The obvious repair — relaxing that `makedirs` to `exist_ok=True` — would have
+been the wrong one. It is not merely creating a directory; it is the check that
+stops a conversion from writing into a world that already exists. The CLI
+guards the destination separately and offers `--overwrite`, but the GUI does
+not, so for GUI users that one call is the only thing standing between a typo
+and an overwritten campaign. Relaxing it would have traded a loud crash for a
+silent loss.
+
+The log now buffers its lines until the output directory exists, and never
+creates it. Nothing is lost: the buffered lines are written as soon as the
+directory appears, so a finished conversion still carries a complete log
+starting from its first line.
+
 ## v1.7.2
 
 Player characters convert with working darkvision (B044, take two).

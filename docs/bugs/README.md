@@ -23,6 +23,13 @@ symptom — how far a token sees and through what arc — which is why neither f
 restores vision alone. B046 was found by a regression test written for B044, not
 by reading the code.
 
+**B047 was found on 2026-08-04 by a user**, not by the suite: the
+`conversion-log.txt` feature added in 1.7.1 created the output directory a
+statement before `convert()` did, so **1.7.1 and 1.7.2 could not convert
+anything at all**. Fixed in 1.7.3 (F048). The suite went 594 -> 644 green across
+those releases while the product's one function was broken, because every test
+exercised a component and none exercised a conversion.
+
 Reference material used: dnd5e 5.3.3 source (`module/config.mjs`,
 `module/data/**`), a live dnd5e 5.x install (LevelDB packs), and two published
 converted modules (*Lost Mine of Phandelver*, *Out of the Abyss*) for
@@ -55,6 +62,7 @@ mechanically for the physical-item class of defect.
 | [B044](B044-senses-not-populated-and-legacy-path.md) | Major | Fixed (F044, F047) | Senses now emit the dnd5e 5.3 `senses.ranges.*` mapping instead of the flat pre-5.3 keys (394/394 verified), and NPC parsing is unaffected (215/371). Player-character darkvision is derived from a hand-verified race-name table (F047), not a compendium lookup (ADR-007 already rejected that) and not the token's night-vision radius (F044's first attempt, measured unsound the same day). |
 | [B045](B045-zero-sight-angle-blinds-token.md) | Critical | Fixed (F045) | `sightAngle`/`lightAngle` returned **0** for Roll20's "no field-of-vision limit", but Foundry reads `sight.angle: 0` as a **zero-degree cone** (schema default 360). The token was blind whatever its senses said. 394 of 394 prototype tokens affected in the reference world. |
 | [B046](B046-passive-perception-and-list-mutation.md) | Minor | Fixed (F046) | NPC `senses.special` kept `passive Perception NN`: the guard compared case-sensitively against Roll20's capitalised text, and the loop called `pop(i)` while enumerating, skipping the following entry. Found by a B044 regression test, not by reading. |
+| [B047](B047-conversion-log-creates-output-directory.md) | Critical | Fixed (F048) | The 1.7.1 conversion log created the output directory via `makedirs(exist_ok=True)`, one statement before `convert()`'s bare `makedirs` — so every conversion died with `FileExistsError`. Relaxing that second call was rejected: it is the GUI's only guard against converting over an existing world. The log now buffers until the directory exists. |
 
 ## Cross-cutting observations
 

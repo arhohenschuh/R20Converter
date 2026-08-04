@@ -16,13 +16,20 @@ class _Args(object):
         self.path = path
 
 
-def _converter(tmp_path, logger=None):
-    """Build a converter without running __init__ -- it wants a real campaign zip."""
+def _converter(tmp_path, logger=None, create=True):
+    """Build a converter without running __init__ -- it wants a real campaign zip.
+
+    ``create`` mirrors the state after ``convert()`` has made the output folder;
+    pass False to exercise the window before that happens.
+    """
     c = R20Converter.__new__(R20Converter)
     c._logger = logger if logger is not None else _Collector()
     c._log_fh = None
     c._log_disabled = False
+    c._log_buffer = []
     c.path = str(tmp_path / "world")
+    if create:
+        os.makedirs(c.path, exist_ok=True)
     return c
 
 
@@ -48,12 +55,22 @@ class TestConversionLog(object):
         c.closeLog()
         assert _read(c) == "Creating Handout : Volo\n"
 
-    def test_output_directory_is_created_if_absent(self, tmp_path):
-        c = _converter(tmp_path)
+    def test_log_never_creates_the_output_directory(self, tmp_path):
+        # Regression: the log used to makedirs(exist_ok=True) here, which ran
+        # before convert()'s bare makedirs and turned every conversion into
+        # FileExistsError. That bare call is also the GUI's only guard against
+        # converting into an existing world, so it must stay the one to create it.
+        c = _converter(tmp_path, create=False)
+        c.logInfo("*** Converting Campaign 'Storm over Savage Frontier' ***")
         assert not os.path.exists(c.path)
-        c.logInfo("first line")
+
+    def test_lines_logged_before_the_directory_exists_are_not_lost(self, tmp_path):
+        c = _converter(tmp_path, create=False)
+        c.logInfo("logged early")
+        os.makedirs(c.path)          # what convert() does next
+        c.logInfo("logged later")
         c.closeLog()
-        assert os.path.isdir(c.path)
+        assert _read(c).splitlines() == ["logged early", "logged later"]
 
     def test_warnings_and_errors_are_captured_too(self, tmp_path):
         c = _converter(tmp_path)
@@ -93,14 +110,16 @@ class TestConversionLog(object):
 
     def test_an_unwritable_path_never_breaks_the_conversion(self, tmp_path):
         c = _converter(tmp_path)
-        c.path = "\0invalid"          # makedirs/open both reject this
+        # The directory exists, so the log gets as far as open() -- and finds a
+        # directory sitting where its file should go.
+        os.makedirs(os.path.join(c.path, R20Converter.LOG_FILENAME))
         c.logInfo("must not raise")
         assert c._log_disabled is True
 
     def test_logging_continues_on_the_console_after_a_file_failure(self, tmp_path):
         collector = _Collector()
         c = _converter(tmp_path, collector)
-        c.path = "\0invalid"
+        os.makedirs(os.path.join(c.path, R20Converter.LOG_FILENAME))
         c.logInfo("one")
         c.logInfo("two")
         assert collector.lines == ["one", "two"]

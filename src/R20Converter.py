@@ -31,6 +31,7 @@ class R20Converter(object):
         self._logger = utils if logger is None else logger
         self._log_fh = None
         self._log_disabled = False
+        self._log_buffer = []
         self.args = args
         self.path = args.path
         self.name = os.path.basename(os.path.dirname(os.path.join(self.path, ".")))
@@ -446,22 +447,32 @@ class R20Converter(object):
     def _writeLog(self, msg):
         """Mirror a log line into the output folder so the run leaves a record.
 
-        Opened lazily: the output directory does not exist yet when the converter
-        is constructed. Every failure disables the file rather than aborting the
-        conversion -- a log is worth less than the run it describes.
+        Buffered until ``convert()`` creates the output directory. Creating it
+        here instead would pre-empt the bare ``os.makedirs`` in ``convert()``,
+        which is the only thing stopping the GUI from converting into an
+        existing world -- the CLI checks separately, the GUI does not.
+
+        Every failure disables the file rather than aborting the conversion --
+        a log is worth less than the run it describes.
         """
         if self._log_disabled:
             return
         try:
             if self._log_fh is None:
-                os.makedirs(self.path, exist_ok=True)
+                if not os.path.isdir(self.path):
+                    self._log_buffer.append(msg)
+                    return
                 self._log_fh = open(os.path.join(self.path, self.LOG_FILENAME),
                                     "w", encoding="utf-8")
+                for buffered in self._log_buffer:
+                    self._log_fh.write("%s\n" % buffered)
+                self._log_buffer = []
             self._log_fh.write("%s\n" % msg)
             self._log_fh.flush()   # a crashed run must still leave its log behind
         except Exception:
             self._log_disabled = True
             self._log_fh = None
+            self._log_buffer = []
 
     def closeLog(self):
         if self._log_fh is not None:
