@@ -1,6 +1,8 @@
 # B044: Player-character senses are never populated, and senses use the pre-5.3 path
 
-- **Status**: Schema fixed in 1.7.0 (F044). **PC senses remain unfixed** — see "Field result" below.
+- **Status**: **Fixed in 1.7.2 (F047)**, via a race-name lookup rather than the token-radius
+  guess 1.7.0 shipped (F044) — see "Resolution" below for why the first attempt was replaced
+  rather than repaired.
 - **Severity**: Major (player-visible — darkvision does not work; PCs are blind on unlit scenes)
 - **Found**: 2026-08-04, live diagnosis against *Wardens of the North* on Foundry 14.365 / dnd5e 5.3.3
 - **Component**: `src/entities/actors.py:956-989` (`createAttributeSenses`), `:324-331` (`prototypeToken.sight`)
@@ -136,7 +138,43 @@ radius is not a substitute: Darthoridan Pastina is a **High Elf**, who should ha
 derivation would have written 5 — a wrong value that looks configured, which is
 worse than an obviously absent one.
 
-The defensible source is the **race**, which the converter already matches to a
-compendium Item. Until that is implemented, PC senses are a **post-conversion
-repair step** and are documented as such in the pipeline (`R20_to_Foundry_Pipeline.md`,
-§B6b).
+**Correction, 2026-08-04: the previous paragraph's premise was wrong.** "The race,
+which the converter already matches to a compendium Item" does not describe this
+codebase. `createItemOrigin` (`actors.py`) emits the `race` document verbatim from
+the Roll20 name, with **no** compendium lookup at all — deliberately, per
+[ADR-007](../adr/ADR-007-dnd5e-species-background-documents.md), which rejected
+resolving species names against installed content because SRD 5.1 lacks most of
+the names a real sheet carries (there is no `Variant Human` or `Standard Human`
+entry, and `High Elf` is a subrace, not a top-level one) and a wrong guess silently
+attaches traits the character never had. Suggested fix #3 below would have
+reopened that exact rejection. See "Resolution" for what was built instead.
+
+## Resolution (1.7.2, F047)
+
+Suggestion #3 ("match the race against a compendium") was not implemented, for
+the reason the correction above gives — it is the same trade-off ADR-007 already
+weighed and declined. Reversing an architectural decision to fix a bug the
+decision did not cause was rejected.
+
+Instead, `Actor.getRaceDarkvision()` matches the **Roll20 race name string itself**
+— the same one already carried onto the `race` document verbatim — against a small,
+hand-verified table of SRD 2014 darkvision ranges (`RACE_DARKVISION` in
+`actors.py`), mirroring the regex table already field-tested in the post-conversion
+pipeline (`R20_to_Foundry_Pipeline.md`, §B6b). This is a narrower claim than a
+compendium match: it never touches the race document's identity, name or
+features (which stay exactly as ADR-007 mandates), and it asserts nothing beyond
+a single public game-mechanical number for a name pattern common enough to be
+unambiguous. An unrecognised race — homebrew, or a name the table does not
+cover — is left at **0**, not guessed from the token radius: that heuristic is
+what this fix replaces, precisely because it produced a wrong-but-plausible
+number instead of an honest absence.
+
+`visionMode` (suggestion #4) was deliberately left as `"basic"`. The pipeline's
+own recommended workflow for vision-5e is to leave the token's vision mode alone
+and let the module derive everything from `system.attributes.senses` — hand-setting
+it would fight the module rather than help it.
+
+PC senses are consequently **no longer** a required post-conversion step for any
+race the table recognises; the pipeline document's §B6b macro remains useful only
+for a name the table does not cover, or for a world already converted with an
+older build.

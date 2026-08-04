@@ -17,6 +17,29 @@ defaultLegacyEnabled = True
 # i.e. blind, which is the opposite of Roll20's "no field-of-vision limit".
 FULL_ANGLE = 360
 
+# SRD 2014 racial darkvision, in feet, keyed by a pattern matched against the
+# Roll20 race name (B044). Roll20 has no PC senses block at all, so this is the
+# only rules-grounded signal available without a live Foundry install -- and it
+# is deliberately NOT a compendium lookup: ADR-007 already rejected resolving a
+# race name against installed content, because SRD 5.1 lacks most of the names a
+# real sheet carries ("Variant Human", "Standard Human") and a subrace like
+# "High Elf" is not a top-level entry, so a lookup would misfire on exactly the
+# names it most needs to handle. This table instead mirrors the hand-maintained
+# one in the post-conversion pipeline (R20_to_Foundry_Pipeline.md, B6b), which
+# was field-verified against Wardens of the North: of six PCs, the High Elf and
+# Half-Elf resolve to 60 and the Dragonborn and three Humans resolve to 0.
+# Order matters -- first match wins, so "drow" is checked before the "elf"
+# pattern it would otherwise also match.
+RACE_DARKVISION = [
+    (re.compile(r"drow|dark elf", re.I), 120),
+    (re.compile(r"elf|eladrin", re.I), 60),
+    (re.compile(r"dwarf|duergar", re.I), 60),
+    (re.compile(r"gnome", re.I), 60),
+    (re.compile(r"half-orc|orc", re.I), 60),
+    (re.compile(r"tiefling", re.I), 60),
+    (re.compile(r"human|dragonborn|halfling", re.I), 0),
+]
+
 
 def _compendiumWeaponType(compendium_item):
     """Read a weapon's category from an SRD compendium entry.
@@ -1006,11 +1029,17 @@ class Actor(Entity):
             except:
                 pass
         else:
-            # A player character has no senses block on the Roll20 sheet, so the only
-            # evidence is the night vision configured on its token. Without this a PC
-            # converts with darkvision 0 and a vision module -- which derives from the
-            # actor's senses, not from the token's sight range -- grants it nothing.
-            ranges["darkvision"] = self.getCharacterDarkvision()
+            # A player character has no senses block on the Roll20 sheet at all, so
+            # the race name is the only rules-grounded signal available (see
+            # RACE_DARKVISION above). An unrecognised race -- homebrew, or a name
+            # the table does not cover -- is left at 0 rather than guessed: a
+            # wrong value that looks configured is worse than an obviously absent
+            # one (B044). The token's own night-vision radius was tried first and
+            # measured unsound -- a High Elf token carried 5 ft against the 60 ft
+            # the race actually grants -- so it is not consulted here.
+            race = self.getAttribute("race_display", "")[0]
+            darkvision = self.getRaceDarkvision(race)
+            ranges["darkvision"] = darkvision if darkvision is not None else 0
 
         return {
             "ranges": ranges,
@@ -1018,16 +1047,16 @@ class Actor(Entity):
             "special": special
         }
 
-    def getCharacterDarkvision(self):
-        """Night vision configured on the character's Roll20 token, in feet."""
-        token = getattr(self, "token", None)
-        if token is None or not token.has_vision:
-            return 0
-        radius = max(token.dim_sight, token.bright_sight)
-        # setupLighting stores 1 ft as a "has sight but no radius" sentinel, not a sense.
-        if radius <= 1:
-            return 0
-        return int(radius)
+    @staticmethod
+    def getRaceDarkvision(race):
+        """Darkvision in feet for a common SRD race name, or None if unrecognised."""
+        race = (race or "").strip()
+        if not race:
+            return None
+        for pattern, feet in RACE_DARKVISION:
+            if pattern.search(race):
+                return feet
+        return None
 
 
     def getSpellcastingAbility(self):

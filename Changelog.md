@@ -1,5 +1,34 @@
 # Changelog
 
+## v1.7.2
+
+Player characters convert with working darkvision (B044, take two).
+
+1.7.0's fix derived a PC's darkvision from the night-vision radius configured on
+their Roll20 token. That was already known to be unsound when it shipped: a High
+Elf in the reference campaign carries a 5 ft token radius against the 60 ft the
+race actually grants, and a "working" derivation would have written the wrong
+number instead of an honest zero.
+
+The corrected fix drops the token radius entirely and matches the Roll20 race
+name itself — the same string already written onto the character's `race`
+document — against a small, hand-verified table of SRD 2014 darkvision ranges.
+This mirrors the regex table already field-tested in the post-conversion
+pipeline: a High Elf or Half-Elf now converts to 60 ft, a Drow to 120 ft, and a
+Human, Dragonborn or Halfling correctly to 0. A race the table does not
+recognise — homebrew, or a name it does not cover — is left at 0 rather than
+guessed.
+
+This is deliberately *not* a compendium lookup. `createItemOrigin` still emits
+the `race` document verbatim, with no lookup at all, exactly as ADR-007 already
+decided: SRD 5.1 has no `Variant Human` or `Standard Human` entry and `High Elf`
+is a subrace rather than a top-level one, so matching the document itself would
+reopen a trade-off that was already rejected for good reason. Only the numeric
+darkvision range is derived, from the name string, never the document's
+identity or features.
+
+Suite: 633 -> 644.
+
 ## v1.7.1
 
 Every conversion now leaves a `conversion-log.txt` in the folder it produced.

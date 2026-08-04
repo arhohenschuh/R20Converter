@@ -7,19 +7,22 @@ converted with darkvision 0 and vision modules -- which read the actor's senses,
 not the token's sight range -- granted them nothing.
 """
 
-from entities.actors import Actor, Token
+from entities.actors import Actor
 
 
 class _StubActor(object):
     """Exercises the senses builder without constructing a whole campaign."""
 
     createAttributeSenses = Actor.createAttributeSenses
-    getCharacterDarkvision = Actor.getCharacterDarkvision
+    # re-wrap: Actor.getRaceDarkvision is already unwrapped by the staticmethod
+    # descriptor at class-body time, so a plain assignment here would silently
+    # turn it back into a bound instance method and break on the extra `self`.
+    getRaceDarkvision = staticmethod(Actor.getRaceDarkvision)
 
-    def __init__(self, npc=False, npc_senses="", token=None):
+    def __init__(self, npc=False, npc_senses="", race=""):
         self._npc = npc
         self._npc_senses = npc_senses
-        self.token = token
+        self._race = race
 
     def isNPC(self):
         return self._npc
@@ -27,15 +30,9 @@ class _StubActor(object):
     def getAttribute(self, name, default=""):
         if name == "npc_senses":
             return (self._npc_senses, None, None)
+        if name == "race_display":
+            return (self._race, None, None)
         return (default, None, None)
-
-
-def _pc_token(dim=0, bright=0, has_vision=True):
-    t = Token("id", "Somebody", None)
-    t.has_vision = has_vision
-    t.dim_sight = dim
-    t.bright_sight = bright
-    return t
 
 
 class TestSensesSchema(object):
@@ -95,24 +92,66 @@ class TestNPCSenses(object):
 
 
 class TestCharacterSenses(object):
-    """B044: the PC branch did not exist -- everything returned 0."""
+    """B044: the PC branch did not exist -- everything returned 0.
 
-    def test_token_night_vision_becomes_darkvision(self):
-        a = _StubActor(token=_pc_token(dim=60))
-        assert a.createAttributeSenses()["ranges"]["darkvision"] == 60
+    The first fix (1.7.0) derived darkvision from the token's own night-vision
+    radius. That was measured unsound before it ever shipped to a user: a High
+    Elf in the reference campaign carries a 5 ft token radius against the 60 ft
+    the race actually grants. The race name is the only signal that is actually
+    grounded in the rules, so it is the only one used now.
+    """
 
-    def test_bright_vision_counts_too(self):
-        a = _StubActor(token=_pc_token(dim=0, bright=30))
-        assert a.createAttributeSenses()["ranges"]["darkvision"] == 30
+    def test_elf_gets_standard_darkvision(self):
+        assert _StubActor(race="High Elf").createAttributeSenses()["ranges"]["darkvision"] == 60
 
-    def test_token_without_sight_grants_nothing(self):
-        a = _StubActor(token=_pc_token(dim=60, has_vision=False))
-        assert a.createAttributeSenses()["ranges"]["darkvision"] == 0
+    def test_half_elf_gets_standard_darkvision(self):
+        assert _StubActor(race="Half-Elf").createAttributeSenses()["ranges"]["darkvision"] == 60
 
-    def test_one_foot_sentinel_is_not_a_sense(self):
-        # setupLighting stores 1 ft to mean "has sight but no configured radius".
-        a = _StubActor(token=_pc_token(dim=1))
-        assert a.createAttributeSenses()["ranges"]["darkvision"] == 0
+    def test_drow_gets_superior_darkvision(self):
+        assert _StubActor(race="Drow").createAttributeSenses()["ranges"]["darkvision"] == 120
 
-    def test_missing_token_is_survivable(self):
-        assert _StubActor(token=None).createAttributeSenses()["ranges"]["darkvision"] == 0
+    def test_dwarf_gets_standard_darkvision(self):
+        assert _StubActor(race="Hill Dwarf").createAttributeSenses()["ranges"]["darkvision"] == 60
+
+    def test_human_has_no_darkvision(self):
+        assert _StubActor(race="Standard Human").createAttributeSenses()["ranges"]["darkvision"] == 0
+
+    def test_variant_human_has_no_darkvision(self):
+        assert _StubActor(race="Variant Human").createAttributeSenses()["ranges"]["darkvision"] == 0
+
+    def test_dragonborn_has_no_darkvision(self):
+        assert _StubActor(race="Dragonborn").createAttributeSenses()["ranges"]["darkvision"] == 0
+
+    def test_unrecognised_race_declines_to_guess(self):
+        # Homebrew or a name the table does not cover: 0, not a guess.
+        assert _StubActor(race="Warforged").createAttributeSenses()["ranges"]["darkvision"] == 0
+
+    def test_empty_race_declines_to_guess(self):
+        assert _StubActor(race="").createAttributeSenses()["ranges"]["darkvision"] == 0
+
+
+class TestRaceDarkvisionTable(object):
+    """Direct coverage of the lookup, including the ordering trap."""
+
+    def test_drow_beats_the_generic_elf_pattern(self):
+        # "Drow" contains no literal "elf", but "Dark Elf" does -- and must still
+        # resolve to superior darkvision, not the generic elf entry.
+        assert Actor.getRaceDarkvision("Dark Elf") == 120
+
+    def test_gnome_gets_standard_darkvision(self):
+        assert Actor.getRaceDarkvision("Rock Gnome") == 60
+
+    def test_half_orc_gets_standard_darkvision(self):
+        assert Actor.getRaceDarkvision("Half-Orc") == 60
+
+    def test_tiefling_gets_standard_darkvision(self):
+        assert Actor.getRaceDarkvision("Tiefling") == 60
+
+    def test_halfling_has_no_darkvision(self):
+        assert Actor.getRaceDarkvision("Lightfoot Halfling") == 0
+
+    def test_unrecognised_name_returns_none(self):
+        assert Actor.getRaceDarkvision("Warforged") is None
+
+    def test_blank_name_returns_none(self):
+        assert Actor.getRaceDarkvision("   ") is None
