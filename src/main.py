@@ -183,6 +183,7 @@ if __name__ == "__main__":
         print("Use only this option for testing purposes for example.")
     
     error = None
+    converter = None
     try:
         converter = R20Converter(args)
         converter.convert()
@@ -196,9 +197,15 @@ if __name__ == "__main__":
             pass
 
     if error:
-        print(messages.conversionErrorMessage(version, error))
+        message = messages.conversionErrorMessage(version, error)
+        if converter is not None:
+            converter.finishLog(message)
+        print(message)
         # Exit non-zero so that shell scripts, CI and batch conversions can
         # actually detect a failed run; previously every outcome exited 0.
         sys.exit(1)
 
-    print(messages.conversionSuccessMessage())
+    message = messages.conversionSuccessMessage()
+    if converter is not None:
+        converter.finishLog(message)
+    print(message)

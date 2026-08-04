@@ -25,8 +25,12 @@ from entities import DatabaseFile, EmptyDB, \
 
 
 class R20Converter(object):
+    LOG_FILENAME = "conversion-log.txt"
+
     def __init__(self, args, logger=None):
         self._logger = utils if logger is None else logger
+        self._log_fh = None
+        self._log_disabled = False
         self.args = args
         self.path = args.path
         self.name = os.path.basename(os.path.dirname(os.path.join(self.path, ".")))
@@ -439,11 +443,48 @@ class R20Converter(object):
             self.items.save()
             self.world = World(self).save()
 
+    def _writeLog(self, msg):
+        """Mirror a log line into the output folder so the run leaves a record.
+
+        Opened lazily: the output directory does not exist yet when the converter
+        is constructed. Every failure disables the file rather than aborting the
+        conversion -- a log is worth less than the run it describes.
+        """
+        if self._log_disabled:
+            return
+        try:
+            if self._log_fh is None:
+                os.makedirs(self.path, exist_ok=True)
+                self._log_fh = open(os.path.join(self.path, self.LOG_FILENAME),
+                                    "w", encoding="utf-8")
+            self._log_fh.write("%s\n" % msg)
+            self._log_fh.flush()   # a crashed run must still leave its log behind
+        except Exception:
+            self._log_disabled = True
+            self._log_fh = None
+
+    def closeLog(self):
+        if self._log_fh is not None:
+            try:
+                self._log_fh.close()
+            except Exception:
+                pass
+            self._log_fh = None
+
+    def finishLog(self, message=None):
+        """Append the closing message main.py prints, then release the file."""
+        if message:
+            self._writeLog(message)
+        self.closeLog()
+
     def logInfo(self, msg):
+        self._writeLog(msg)
         self._logger.logInfo(msg)
     def logWarning(self, msg):
+        self._writeLog(msg)
         self._logger.logWarning(msg)
     def logError(self, msg):
+        self._writeLog(msg)
         self._logger.logError(msg)
 
 if __name__ == "__main__":

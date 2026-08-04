@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.7.1
+
+Every conversion now leaves a `conversion-log.txt` in the folder it produced.
+
+The log previously existed only on stdout (CLI) or inside the Electron window
+(GUI), so a finished world carried no record of its own conversion — and the list
+of compendium items that could not be matched, which is the most useful thing in
+it, had to be copied out of the UI by hand before it was lost.
+
+Lines are written verbatim and flushed one at a time, so a run that crashes still
+leaves the log that explains why. Any failure to write it disables the file and
+lets the conversion continue: a log is worth less than the run it describes.
+
+> **Known limitation, measured on a real campaign.** Player characters still
+> convert with `darkvision: 0`. Roll20 stores no senses block for a PC, and the
+> only nearby signal — the token's night-vision radius — is not the same thing: in
+> *Wardens of the North* a High Elf who should have 60 ft carries a 5 ft token
+> radius. The converter declines to invent a value from it. Setting PC senses is
+> therefore a post-conversion step; see the pipeline document.
+
 ## v1.7.0
 
 Tokens are no longer converted blind, and player characters keep their senses.
