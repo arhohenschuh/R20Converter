@@ -316,6 +316,19 @@ class Items(DatabaseFile):
         return Item.createItemBackground(self, id, name, description, **kwargs)
 
 class Item(Entity):
+    #: Per-character state, by item type. A compendium document is a template and
+    #: cannot know any of this, so these keys survive `--no-compendium-overwrite`
+    #: while everything else still yields to the compendium (B050).
+    CHARACTER_STATE_KEYS = {
+        "class": ("levels", "hitDiceUsed"),
+        "weapon": ("proficient", "equipped", "quantity", "attuned", "attunement"),
+        "equipment": ("proficient", "equipped", "quantity", "attuned", "attunement"),
+        "consumable": ("quantity", "uses"),
+        "tool": ("proficient", "equipped", "quantity"),
+        "container": ("equipped", "quantity"),
+        "spell": ("preparation",),
+    }
+
     def __init__(self, database, item_id, name, item_type="loot", img=None, data={}):
         Entity.__init__(self, database, item_id)
         # Don't want to print for every item created in a character sheet
@@ -440,8 +453,17 @@ class Item(Entity):
         item.entity["folder"] = None
         # Older compendium packs may still use the pre-v10 `data` key (ADR-002).
         Entity.normalizeSystemData(item)
-        if custom_data and item.getArgument("no_compendium_overwrite", False) is False:
-            item.entity["system"].update(custom_data)
+        if custom_data:
+            if item.getArgument("no_compendium_overwrite", False) is False:
+                item.entity["system"].update(custom_data)
+            else:
+                # B050: the flag protects the compendium's *template* data, but
+                # `update()` is all-or-nothing, so it was also discarding state that
+                # describes this one character and can never come from a template --
+                # a class's levels, a weapon's proficiency. Those always win.
+                for key in Item.CHARACTER_STATE_KEYS.get(item.entity["type"], ()):
+                    if key in custom_data:
+                        item.entity["system"][key] = custom_data[key]
         # The compendium copy carries whatever `_stats` its pack was built with.
         # If that is older than the version we claim, dnd5e migrates the item —
         # the exact outcome this port exists to avoid.

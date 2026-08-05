@@ -60,6 +60,13 @@ MED = "https://s3.amazonaws.com/files.d20.io/images/1/med.png"
 THUMB = "https://s3.amazonaws.com/files.d20.io/images/1/thumb.png"
 SOURCE = "https://s3.amazonaws.com/files.d20.io/images/1/thumb.png"
 
+# Roll20 renamed its asset CDN, so each resolution is attempted on the current
+# host before the old one (B048).
+RENAMED_ORIGINAL = "https://files.d20.io/images/1/original.png"
+RENAMED_MAX = "https://files.d20.io/images/1/max.png"
+RENAMED_MED = "https://files.d20.io/images/1/med.png"
+RENAMED_THUMB = "https://files.d20.io/images/1/thumb.png"
+
 
 class TestDownloadResource(object):
     def test_successful_download_writes_the_file(self, entity, stub_session):
@@ -85,13 +92,18 @@ class TestDownloadResource(object):
     def test_falls_back_through_smaller_resolutions(self, entity, stub_session):
         session = stub_session({MED: StubResponse(200, b"PNG")})
         dest, _ = entity.downloadResource(SOURCE, "scenes/map.png")
-        assert session.requested == [ORIGINAL, MAX, MED]
+        assert session.requested == [RENAMED_ORIGINAL, ORIGINAL,
+                                     RENAMED_MAX, MAX,
+                                     RENAMED_MED, MED]
         assert open(dest, "rb").read() == b"PNG"
 
     def test_gives_up_after_the_smallest_resolution(self, entity, stub_session):
         session = stub_session({})
         dest, config = entity.downloadResource(SOURCE, "scenes/map.png")
-        assert session.requested == [ORIGINAL, MAX, MED, THUMB]
+        assert session.requested == [RENAMED_ORIGINAL, ORIGINAL,
+                                     RENAMED_MAX, MAX,
+                                     RENAMED_MED, MED,
+                                     RENAMED_THUMB, THUMB]
         assert dest is None
         assert config == ""
 
@@ -117,7 +129,7 @@ class TestDownloadResource(object):
         first, _ = entity.downloadResource(SOURCE, "scenes/one.png")
         second, _ = entity.downloadResource(SOURCE, "scenes/two.png")
         # Second entity reuses the cache but still gets its own file on disk.
-        assert session.requested == [ORIGINAL]
+        assert session.requested == [RENAMED_ORIGINAL, ORIGINAL]
         assert first != second
         assert open(second, "rb").read() == b"PNG"
 
@@ -133,7 +145,7 @@ class TestDownloadResource(object):
         first, _ = entity.downloadResource(SOURCE, "scenes/one.png")
         os.remove(first)
         second, _ = entity.downloadResource(SOURCE, "scenes/two.png")
-        assert session.requested == [ORIGINAL, ORIGINAL]
+        assert session.requested == [RENAMED_ORIGINAL, ORIGINAL] * 2
         assert open(second, "rb").read() == b"PNG"
 
     def test_extension_is_taken_from_the_url(self, entity, stub_session):

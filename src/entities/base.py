@@ -658,6 +658,27 @@ class Entity(object):
         Entity.resource_cache[originalUrl] = dest_filename
         return (dest_filename, config_path)
 
+    @staticmethod
+    def hostCandidates(url):
+        """Return ``url`` spelled for every Roll20 CDN host, best first.
+
+        Roll20 moved its asset CDN: objects that used to be served from
+        ``s3.amazonaws.com/files.d20.io/...`` now answer on ``files.d20.io/...``
+        directly, and the old spelling returns 403 for everything (B048). The
+        bucket name is the first path segment, so the new URL is recoverable
+        from the old one without a lookup. The renamed host goes first because
+        it is the one that currently answers; the original is kept as a fallback
+        so nothing regresses if Roll20 moves back.
+        """
+        parsed = urlparse(url)
+        if parsed.netloc != "s3.amazonaws.com":
+            return [url]
+        segments = parsed.path.lstrip("/").split("/", 1)
+        if len(segments) != 2 or segments[0] not in ("files.d20.io", "files.staging.d20.io"):
+            return [url]
+        renamed = parsed._replace(netloc=segments[0], path="/" + segments[1]).geturl()
+        return [renamed, url]
+
     def _fetchResource(self, url, originalUrl):
         """Fetch ``url``, degrading through Roll20's image resolutions.
 
@@ -667,6 +688,9 @@ class Entity(object):
         down to progressively smaller variants rather than losing the asset.
         The walk only applies when ``fixImageUrl`` actually rewrote the URL --
         for a non-Roll20 URL there is nothing to degrade to.
+
+        Each resolution is tried on every known CDN host before dropping to a
+        smaller one, so a host rename never costs image quality (B048).
 
         Returns the response body, or ``None`` if every attempt failed. All
         failures are logged with their cause: a silent failure here used to be
@@ -683,19 +707,20 @@ class Entity(object):
                 candidates.append(nextUrl)
 
         for candidate in candidates:
-            try:
-                # A timeout is mandatory here: without one a stalled connection
-                # blocks the entire conversion indefinitely. Connection errors
-                # and 5xx responses are retried with backoff by the session
-                # adapter; a 404 is not retried, we fall through to the next
-                # resolution instead.
-                response = _resourceSession().get(candidate, timeout=DOWNLOAD_TIMEOUT)
-            except requests.RequestException as e:
-                self.logWarning("Error downloading '%s': %s" % (candidate, e))
-                continue
-            if response.status_code == 200:
-                return response.content
-            self.logWarning("Error downloading '%s': HTTP %d" % (candidate, response.status_code))
+            for spelling in Entity.hostCandidates(candidate):
+                try:
+                    # A timeout is mandatory here: without one a stalled connection
+                    # blocks the entire conversion indefinitely. Connection errors
+                    # and 5xx responses are retried with backoff by the session
+                    # adapter; a 404 is not retried, we fall through to the next
+                    # resolution instead.
+                    response = _resourceSession().get(spelling, timeout=DOWNLOAD_TIMEOUT)
+                except requests.RequestException as e:
+                    self.logWarning("Error downloading '%s': %s" % (spelling, e))
+                    continue
+                if response.status_code == 200:
+                    return response.content
+                self.logWarning("Error downloading '%s': HTTP %d" % (spelling, response.status_code))
         return None
 
     @staticmethod
@@ -734,6 +759,13 @@ class Entity(object):
                         pass
 
         if zipfile is None:
+            # B049: the export zip is not the only copy. The asset URL is still in
+            # hand, so a miss here is a reason to download, not to give up -- the
+            # old behaviour dropped the image and left the document pointing at
+            # nothing. Only give up once the download has failed too.
+            if url:
+                self.logWarning("Cannot find file '%s' in Zip, downloading instead" % filename)
+                return self.downloadResource(url, destination, type, dedup)
             self.logWarning("Cannot find file '%s' in Zip" % filename)
             return (None, "")
         with open(dest_filename, "wb") as f:
