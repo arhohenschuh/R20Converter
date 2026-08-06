@@ -121,22 +121,37 @@ before being kept.
 
 ## Blast radius
 
-Swept every export in the local archive (23 zips) by replaying `addToFolder`'s numbering
-both ways and scoring each against the folder names actually present in the zip — no
+Swept every export in the local archive (30 zips) by replaying `addToFolder`'s numbering both
+ways and scoring the result against the directory names actually present in the zip — no
 conversion required:
 
-| campaign | PDFs | pre-1.7.4 folders correct | 1.7.4 |
-|---|---:|---|---|
-| **Dragoncoast Danger** | 8 | **2 / 29** | 29 / 29 |
-| Storm over Savage Frontier | 7 | 68 / 68 | 68 / 68 |
-| Wardens of the North | 3 | 59 / 59 | 59 / 59 |
-| the other 20 | 0 | all correct | all correct |
+| campaign | PDFs | folders pre-1.7.4 | **handout dirs pre-1.7.4** | 1.7.4 |
+|---|---:|---|---|---|
+| **Dragoncoast Danger** | 8 | **2 / 29** | **5 / 130** | all correct |
+| **Storm over Savage Frontier** | 7 | 68 / 68 | **397 / 448** | all correct |
+| Wardens of the North | 3 | 59 / 59 | 353 / 353 | all correct |
+| the other 27 | 0 | all correct | all correct | all correct |
 
-**Dragoncoast is the only campaign affected.** Holding PDFs is not sufficient: a skipped
-entity shifts paths only when it sits **above** a folder or handout in sibling order, and
-Storm's 7 and Wardens' 3 do not. The check is self-validating — it reproduces the known
-defect on Dragoncoast without running the converter, so the clean result elsewhere means
-something.
+**Two campaigns are affected, not one.** Holding PDFs is not sufficient — a skipped entity
+shifts paths only when it sits **above** a folder or handout in sibling order — but the
+condition has to be evaluated separately for each numbered sequence.
+
+> ⚠ **The first version of this table was wrong, and the error is instructive.**
+> `b053-drift-check.py` originally compared only journal **folder** names, and on that
+> evidence this document stated "Dragoncoast is the only campaign affected". Storm scores a
+> clean 68 / 68 on folders — and **51 of its 448 handout directories are still misnumbered**.
+> Wardens' 3 PDFs really are harmless in both sequences; Storm's 7 are not. The tool was
+> extended to score handout directories as well before any of these numbers were trusted.
+>
+> The measurable cost of believing the first table: Storm shipped 1.0.9 with **45 handout
+> images missing** and Dragoncoast shipped 1.2.0 with **85 downgraded to CDN thumbnails**,
+> 125.7 MB short. Both were repaired in Storm 1.0.10 / Dragoncoast 1.2.1 by rewriting the
+> asset files from the export — the dedup filename derives from the source URL, so no
+> document changes and no re-conversion was needed.
+
+The check remains self-validating: it reproduces the known defect on Dragoncoast without
+running the converter, so a clean result elsewhere means something — **as long as it is
+pointed at every numbered sequence the exporter emits.**
 
 ## Follow-up
 

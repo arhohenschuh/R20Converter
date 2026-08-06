@@ -68,7 +68,8 @@ mechanically for the physical-item class of defect.
 | [B050](B050-pc-class-level-always-one.md) | Critical | Fixed | `--no-compendium-overwrite` discarded per-character state on compendium-matched items, so every PC's class level reverted to 1. Silent, and the sheet looks fine. |
 | [B051](B051-properties-boolean-map-breaks-migration.md) | High | Not a defect in 1.7.3 | `system.properties` as a boolean map fails item validation. Legacy data in packs built by older converters; current output is correct. |
 | [B052](B052-line-separator-breaks-nedb-world.md) | Critical (where it occurs) | Not a converter defect | A raw U+2028 makes a NeDB world unloadable. Traced to a post-conversion repair tool — the converter's `json.dumps` escapes it. Gated by the pipeline suite (G19). |
-| [B053](B053-pdf-in-journal-shifts-zip-paths.md) | High | Fixed | Roll20 allows PDFs in the journal tree; `addToFolder` skipped them without advancing its index, so every later sibling was numbered one below the zip. Cost 116 assets on *Dragoncoast Danger* and was misattributed to the exporter. The root cause behind B049. |
+| [B053](B053-pdf-in-journal-shifts-zip-paths.md) | High | Fixed | Roll20 allows PDFs in the journal tree; `addToFolder` skipped them without advancing its index, so every later sibling was numbered one below the zip. Cost 116 assets on *Dragoncoast Danger* and was misattributed to the exporter. The root cause behind B049. **Blast radius initially understated:** the first sweep scored only journal *folders* and cleared *Storm over Savage Frontier*, whose handout directories were 397/448 correct. |
+| [B054](B054-ac-bonus-overwrites-base-armor-value.md) | High | Open | Roll20 emits `AC: 15` and `AC +2` as separate `itemmodifiers` entries; `addInventoryItem` parses them into a flat dict, so the bonus **overwrites the base** and a Half Plate +2 converts with `armor.value = 2`. Invisible until the armour is equipped. Also turns rings/cloaks granting +1 AC into `clothing` items that grant nothing. |
 
 ## Cross-cutting observations
 
@@ -79,13 +80,19 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B054**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B055**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent
   suspecting the exporter. A fix that silently restores the expected output removes the
   pressure to explain the anomaly; `noteZipMiss` now makes the fallback announce how often
   it fires.
+- **B050 × B054**: both corrupt a character silently and both stay hidden until something
+  *recomputes* the sheet. B054 in particular survived three published worlds because the
+  affected armour was never equipped — the file-reading gates saw correct-looking item data
+  and a correct-looking flat AC override at the same time. **A check that only reads the
+  file cannot see what the system computes**; verifying a character means loading the world
+  and reading the derived value.
 
 ## Candidates resolved
 
