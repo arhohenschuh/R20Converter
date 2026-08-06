@@ -90,9 +90,10 @@ can, since they carry no manifest.
 it before falling back to the derived name. Derivation cannot know about entity types the
 converter does not consume; the manifest does not have to guess.
 
-This is a second line of defence rather than the repair. Only **3 of the 21 exports** in the
+This is a second line of defence rather than the repair. Only **5 of the 23 exports** in the
 local archive carry a manifest (Sunless Citadel 0.14.0, Curse of Strahd 0.15.0, Dragoncoast
-1.0.0); the other 18 predate it, and those are exactly the exports behind every shipped pack.
+1.0.0, Wardens 1.0.1, Storm 1.0.1); the other 18 predate it, and those are exactly the
+exports behind every shipped pack.
 
 Both paths remain in place: manifest first, derivation second, download third (B049).
 
@@ -117,6 +118,25 @@ count, so the drift is not re-introduced in the other direction) and
 `TestExportManifestPathWins` (manifest beats a wrong derivation; derivation still used with
 no manifest; misses are counted). Each was confirmed to fail against the unfixed source
 before being kept.
+
+## Blast radius
+
+Swept every export in the local archive (23 zips) by replaying `addToFolder`'s numbering
+both ways and scoring each against the folder names actually present in the zip — no
+conversion required:
+
+| campaign | PDFs | pre-1.7.4 folders correct | 1.7.4 |
+|---|---:|---|---|
+| **Dragoncoast Danger** | 8 | **2 / 29** | 29 / 29 |
+| Storm over Savage Frontier | 7 | 68 / 68 | 68 / 68 |
+| Wardens of the North | 3 | 59 / 59 | 59 / 59 |
+| the other 20 | 0 | all correct | all correct |
+
+**Dragoncoast is the only campaign affected.** Holding PDFs is not sufficient: a skipped
+entity shifts paths only when it sits **above** a folder or handout in sibling order, and
+Storm's 7 and Wardens' 3 do not. The check is self-validating — it reproduces the known
+defect on Dragoncoast without running the converter, so the clean result elsewhere means
+something.
 
 ## Follow-up
 
