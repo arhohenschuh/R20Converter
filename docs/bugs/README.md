@@ -63,6 +63,12 @@ mechanically for the physical-item class of defect.
 | [B045](B045-zero-sight-angle-blinds-token.md) | Critical | Fixed (F045) | `sightAngle`/`lightAngle` returned **0** for Roll20's "no field-of-vision limit", but Foundry reads `sight.angle: 0` as a **zero-degree cone** (schema default 360). The token was blind whatever its senses said. 394 of 394 prototype tokens affected in the reference world. |
 | [B046](B046-passive-perception-and-list-mutation.md) | Minor | Fixed (F046) | NPC `senses.special` kept `passive Perception NN`: the guard compared case-sensitively against Roll20's capitalised text, and the loop called `pop(i)` while enumerating, skipping the following entry. Found by a B044 regression test, not by reading. |
 | [B047](B047-conversion-log-creates-output-directory.md) | Critical | Fixed (F048) | The 1.7.1 conversion log created the output directory via `makedirs(exist_ok=True)`, one statement before `convert()`'s bare `makedirs` — so every conversion died with `FileExistsError`. Relaxing that second call was rejected: it is the GUI's only guard against converting over an existing world. The log now buffers until the directory exists. |
+| [B048](B048-cdn-host-not-updated-art-lost.md) | High | Fixed | Downloads never tried Roll20's current CDN host, so every `s3.amazonaws.com` asset 403'd and was lost. `hostCandidates` derives the renamed host from the old URL — no lookup needed. Must be fixed together with B049. |
+| [B049](B049-zip-miss-not-downloaded.md) | High | Fixed (keep) | An asset absent from the export zip was abandoned without trying the URL already in hand. **Re-diagnosed:** 111 of the 116 misses were B053, not missing assets — this fallback masked that defect by silently downloading files that were on disk. Kept as a safety net, now with a bulk-miss warning. |
+| [B050](B050-pc-class-level-always-one.md) | Critical | Fixed | `--no-compendium-overwrite` discarded per-character state on compendium-matched items, so every PC's class level reverted to 1. Silent, and the sheet looks fine. |
+| [B051](B051-properties-boolean-map-breaks-migration.md) | High | Not a defect in 1.7.3 | `system.properties` as a boolean map fails item validation. Legacy data in packs built by older converters; current output is correct. |
+| [B052](B052-line-separator-breaks-nedb-world.md) | Critical (where it occurs) | Not a converter defect | A raw U+2028 makes a NeDB world unloadable. Traced to a post-conversion repair tool — the converter's `json.dumps` escapes it. Gated by the pipeline suite (G19). |
+| [B053](B053-pdf-in-journal-shifts-zip-paths.md) | High | Fixed | Roll20 allows PDFs in the journal tree; `addToFolder` skipped them without advancing its index, so every later sibling was numbered one below the zip. Cost 116 assets on *Dragoncoast Danger* and was misattributed to the exporter. The root cause behind B049. |
 
 ## Cross-cutting observations
 
@@ -73,7 +79,13 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B044**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B054**; fixes take F0xx numbers.
+- **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
+  download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
+  presented as flaky CDN behaviour and survived two days — including a day spent
+  suspecting the exporter. A fix that silently restores the expected output removes the
+  pressure to explain the anomaly; `noteZipMiss` now makes the fallback announce how often
+  it fires.
 
 ## Candidates resolved
 

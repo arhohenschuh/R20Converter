@@ -1,5 +1,53 @@
 # Changelog
 
+## v1.7.4
+
+Fixes **B053**: a PDF in the journal tree shifted every later zip path by one,
+so 111 assets on *Dragoncoast Danger* were looked for in
+`journal/006 - Handouts/` while the export held `journal/007 - Handouts/`.
+
+Roll20's `journalfolder` is one ordered array mixing folders with loose entity
+ids, and the exporter numbers **every** sibling it writes. `addToFolder`
+advanced its index only for folders, handouts and characters, so an entity type
+the converter does not consume — a PDF — was skipped silently and everything
+below it was numbered one low, whole subtrees included.
+
+The interesting part is why it took two days to find. B049's download fallback,
+added the day before, catches a zip miss and refetches the asset from its
+original URL. It worked: 112 of the 116 came back, the world looked right, and
+a systematic path bug therefore presented as intermittent CDN trouble. The
+fallback was masking the very defect it was compensating for. It is kept — four
+of those assets really were absent, and the exporter's own report confirms it —
+but `copyZipFile` now counts misses and says so once past 25, because a
+workaround that succeeds quietly is a workaround that hides its cause.
+
+Three changes:
+
+- `Journal.addToFolder` counts the siblings it skips, and `Entity.findID` gained
+  a `"pdf"` case so they can be recognised. The `pdf` lookup is placed last, so
+  no id that already resolved changes meaning. This alone repairs **legacy
+  exports**, which carry no manifest and can only be handled by derivation.
+- R20Exporter 0.14.0+ ships `export_report.json`, recording the path it actually
+  wrote for every asset. `loadExportReport` builds a URL → path map at startup
+  and `copyZipFile` consults it before its own derivation. Derivation cannot
+  know about entity types the converter does not consume; the manifest does not
+  have to guess. This is a second line of defence, not the repair — **18 of the
+  21 exports in the local archive predate the manifest**, so derivation still
+  carries most of the work.
+- `noteZipMiss` warns once past 25 misses when no manifest is present.
+
+Order is now manifest → derivation → download.
+
+Verified by re-converting *Dragoncoast Danger* from both exports: **116 zip
+misses → 5** with the 1.0.0 export (488 URLs resolved from the manifest) and
+**116 → 5** with the 4 Aug export that has no manifest at all. The residual five
+lines are four distinct assets, and `export_report.json` independently reports
+`failed: 4` for exactly those URLs.
+
+The same derivation pattern lives in `items.py`, `playlists.py`, `scenes.py` and
+`tables.py`. Only the journal path is confirmed defective; the others are
+recorded in B053 as unaudited.
+
 ## v1.7.3
 
 Fixes a regression in 1.7.1 that broke **every** conversion.

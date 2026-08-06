@@ -97,6 +97,13 @@ class DatabaseFile(object):
             matches = [item for item in self._campaign["jukebox"] if item["id"] == id]
             if len(matches) > 0:
                 return matches[0]
+        # Roll20 allows PDFs in the journal tree. Looked up last so no existing
+        # unqualified findID() result changes; only ids that used to resolve to
+        # nothing can now resolve to a PDF (B053).
+        if where == "pdf" or where is None:
+            matches = [item for item in self._campaign.get("pdfs", []) if item["id"] == id]
+            if len(matches) > 0:
+                return matches[0]
         return None
 
     def getBy(self, field, value, respect_case=True):
@@ -746,8 +753,18 @@ class Entity(object):
         # without copying it from the zip a second time
         if os.path.exists(dest_filename):
             return (dest_filename, config_path)
+        # R20Exporter 0.14.0+ records the path it actually wrote for every asset. Trust
+        # that over our own derivation, which cannot know about entity types we do not
+        # consume -- a single PDF in a journal folder shifted 111 paths by one (B053).
+        manifest_path = self._database._converter.getZipPathForUrl(url)
+        if manifest_path:
+            try:
+                zipfile = self._database._converter.getZipFile(manifest_path)
+            except Exception:
+                zipfile = None
         try:
-            zipfile = self._database._converter.getZipFile(filename)
+            if zipfile is None:
+                zipfile = self._database._converter.getZipFile(filename)
         except Exception as e:
             if extension:
                 splitext = os.path.splitext(filename)
@@ -759,6 +776,7 @@ class Entity(object):
                         pass
 
         if zipfile is None:
+            self._database._converter.noteZipMiss(filename)
             # B049: the export zip is not the only copy. The asset URL is still in
             # hand, so a miss here is a reason to download, not to give up -- the
             # old behaviour dropped the image and left the document pointing at

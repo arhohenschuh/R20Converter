@@ -21,7 +21,10 @@ class Journal(DatabaseFile):
                 if handout != None:
                     handouts.append(Handout(self, handout, index, folder_id, folder_path))
                     index += 1
-                elif self.findID(item, "character") != None:
+                # The exporter numbers EVERY sibling it writes, so anything it counted
+                # and we skip shifts each later path by one -- one PDF cost 111 assets
+                # on Dragoncoast Danger (B053). Count the types we do not convert too.
+                elif self.findID(item, "character") != None or self.findID(item, "pdf") != None:
                     index += 1
                     
         # Look for orphan handouts and add them to the root folder

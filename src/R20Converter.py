@@ -42,6 +42,11 @@ class R20Converter(object):
         else:
             self.zip = zipfile.ZipFile(args.zip_file, "r")
             self.campaign = json.load(self.getZipFile("campaign.json"), object_pairs_hook=OrderedDict)
+        self.zip_paths_by_url = {}
+        self.export_report = None
+        self._zip_misses = 0
+        if not args.json:
+            self.loadExportReport()
         self.packs = {}
         self.system_manifest = None
         self.system_templates = {}
@@ -104,6 +109,45 @@ class R20Converter(object):
         # On japanese systems, path separator is actually '¥' which won't work
         # when opening the files in the zip.
         return self.zip.open(filename.replace(os.path.sep, "/"))
+
+    def loadExportReport(self):
+        """Map asset URL -> the path the exporter actually wrote (R20Exporter 0.14.0+).
+
+        Re-deriving that path from campaign.json is what B053 got wrong: the exporter
+        numbers every sibling in a journal folder, we skipped the types we do not
+        consume, and every later path was off by one. Read the path when it is given.
+
+        Most of the export archive predates this file, so it is an improvement on the
+        derivation and not a replacement for fixing it.
+        """
+        try:
+            with self.getZipFile("export_report.json") as f:
+                report = json.load(f)
+        except Exception:
+            return
+        for asset in report.get("assets") or []:
+            url = asset.get("url")
+            path = asset.get("path")
+            if url and path and asset.get("outcome") not in ("failed", "skipped"):
+                self.zip_paths_by_url.setdefault(url, path)
+        if not self.zip_paths_by_url:
+            return
+        self.export_report = report
+        self.logInfo("Export manifest found (R20Exporter %s): resolving %d asset paths by URL."
+                     % (report.get("exporter_version", "?"), len(self.zip_paths_by_url)))
+
+    def getZipPathForUrl(self, url):
+        return self.zip_paths_by_url.get(url) if url else None
+
+    def noteZipMiss(self, filename):
+        """A single miss is plausible; a hundred means the paths are derived wrong."""
+        self._zip_misses += 1
+        if self._zip_misses == 25 and not self.zip_paths_by_url:
+            self.logWarning(
+                "25+ assets were not found at their derived zip paths. That pattern is a "
+                "path-derivation fault far more often than an incomplete export (B053) — "
+                "re-exporting with R20Exporter 0.14.0 or later lets the converter read the "
+                "paths from the export manifest instead of recomputing them.")
 
     def getArgument(self, name, default=None):
         return getattr(self.args, name, default)

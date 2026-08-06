@@ -6,9 +6,12 @@ the finished world, so each test asserts the observable outcome rather than the
 call sequence that produces it. No network access -- the session is stubbed.
 """
 
+import os
+
 import pytest
 
 import entities.base as base
+import entities.journal as journal
 from entities.items import Item
 
 from test_base_download import StubResponse, StubSession, stub_session, clear_resource_cache  # noqa: F401
@@ -66,13 +69,21 @@ class TestHostFallbackRecoversArt(object):
 
 
 class FakeConverter(object):
-    def __init__(self, members):
+    def __init__(self, members, zip_paths=None):
         self._members = members
+        self._zip_paths = zip_paths or {}
+        self.misses = []
 
     def getZipFile(self, filename):
         if filename not in self._members:
             raise KeyError(filename)
         return self._members[filename]
+
+    def getZipPathForUrl(self, url):
+        return self._zip_paths.get(url)
+
+    def noteZipMiss(self, filename):
+        self.misses.append(filename)
 
 
 class FakeMember(object):
@@ -106,6 +117,100 @@ class TestZipMissFallsBackToDownload(object):
         stub_session({})
         dest, config = entity.copyZipFile("", "images/gone.png", "scenes/map.png")
         assert dest is None and config == ""
+
+
+class TestExportManifestPathWins(object):
+    """B053 -- the exporter numbers every sibling in a journal folder, so a path we
+    derive ourselves drifts as soon as the campaign holds an entity type we skip.
+    When the export ships a manifest, the recorded path is authoritative."""
+
+    def test_manifest_path_is_used_when_derivation_is_wrong(self, entity, stub_session, tmp_path):
+        # The asset is in the zip at 007; our derivation says 006, as on Dragoncoast.
+        converter = FakeConverter(
+            {"journal/007 - Handouts/avatar.png": FakeMember(b"REAL")},
+            zip_paths={S3: "journal/007 - Handouts/avatar.png"})
+        entity._database._converter = converter
+        stub_session({})  # any network use would be a failure
+        dest, _ = entity.copyZipFile(S3, "journal/006 - Handouts/avatar.png", "scenes/map.png")
+        assert dest is not None
+        with open(dest, "rb") as f:
+            assert f.read() == b"REAL"
+        assert converter.misses == []
+
+    def test_without_a_manifest_the_derived_path_is_still_used(self, entity, stub_session):
+        converter = FakeConverter({"journal/006 - Handouts/avatar.png": FakeMember(b"LEGACY")})
+        entity._database._converter = converter
+        stub_session({})
+        dest, _ = entity.copyZipFile(S3, "journal/006 - Handouts/avatar.png", "scenes/map.png")
+        with open(dest, "rb") as f:
+            assert f.read() == b"LEGACY"
+
+    def test_a_miss_is_counted_so_bulk_drift_is_visible(self, entity, stub_session):
+        converter = FakeConverter({})
+        entity._database._converter = converter
+        stub_session({RENAMED: StubResponse(200, b"PNG")})
+        entity.copyZipFile(S3, "journal/006 - Handouts/avatar.png", "scenes/map.png")
+        assert converter.misses == ["journal/006 - Handouts/avatar.png"]
+
+
+class StubHandout(object):
+    def __init__(self, database, handout, index, parent, path, zip_path=None, zip_index=None):
+        self._id = handout["id"]
+        self.index = index
+        self.path = path
+
+    def getID(self, normalize=True):
+        return self._id
+
+
+class FakeJournal(object):
+    """Just enough of Journal to exercise the folder walk."""
+
+    findID = base.DatabaseFile.findID
+    addToFolder = journal.Journal.addToFolder
+
+    def __init__(self, campaign):
+        self._campaign = campaign
+        self._handouts = campaign["handouts"]
+
+    def logInfo(self, message):
+        pass
+
+
+def campaign(folder, handouts=(), pdfs=(), characters=()):
+    return {
+        "handouts": [{"id": h, "name": h} for h in handouts],
+        "pdfs": [{"id": p} for p in pdfs],
+        "characters": [{"id": c} for c in characters],
+        "pages": [], "players": [], "jukebox": [],
+        "journalfolder": folder,
+    }
+
+
+class TestJournalFolderNumbering(object):
+    """B053 -- for legacy exports with no manifest we still derive the path, so the
+    walk has to number siblings exactly the way the exporter did."""
+
+    def test_a_pdf_sibling_still_consumes_an_index(self, monkeypatch):
+        monkeypatch.setattr(journal, "Handout", StubHandout)
+        c = campaign(["h1", "pdf1", "h2"], handouts=["h1", "h2"], pdfs=["pdf1"])
+        result = FakeJournal(c).addToFolder(None, c["journalfolder"], "journal")
+        assert [h.index for h in result] == [0, 2]
+
+    def test_a_pdf_shifts_later_subfolder_names(self, monkeypatch):
+        monkeypatch.setattr(journal, "Handout", StubHandout)
+        folder = ["pdf1", {"n": "Handouts", "id": "f1", "i": ["h1"]}]
+        c = campaign(folder, handouts=["h1"], pdfs=["pdf1"])
+        result = FakeJournal(c).addToFolder(None, folder, "journal")
+        assert [h.path for h in result] == [os.path.join("journal", "001 - Handouts")]
+
+    def test_an_unknown_id_is_still_skipped_without_counting(self, monkeypatch):
+        # Only types the exporter actually writes may consume an index; a dangling
+        # reference must not, or we would re-introduce the drift in the other direction.
+        monkeypatch.setattr(journal, "Handout", StubHandout)
+        c = campaign(["h1", "ghost", "h2"], handouts=["h1", "h2"])
+        result = FakeJournal(c).addToFolder(None, c["journalfolder"], "journal")
+        assert [h.index for h in result] == [0, 1]
 
 
 class FakeCompendiumItem(object):
