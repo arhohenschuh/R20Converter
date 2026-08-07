@@ -632,9 +632,35 @@ class Entity(object):
         url = re.sub(r"/(thumb|med|max)\.([^/]*)$", r"/original.\2", url)
         return url
 
+    # Foundry refuses to render a path whose extension is not one of these
+    # (CONST.IMAGE_FILE_EXTENSIONS / VIDEO_FILE_EXTENSIONS / AUDIO_FILE_EXTENSIONS).
+    RENDERABLE_EXTENSIONS = frozenset([
+        "apng", "avif", "bmp", "gif", "jpeg", "jpg", "png", "svg", "tiff", "webp",
+        "m4v", "mp4", "ogv", "webm",
+        "aac", "flac", "m4a", "mid", "mp3", "ogg", "opus", "wav", "webm",
+    ])
+    # Aliases Roll20 serves that hold a format Foundry does render.
+    EXTENSION_ALIASES = {"jfif": "jpg", "jpe": "jpg", "jif": "jpg", "jfi": "jpg", "tif": "tiff"}
+
+    def assetExtension(self, url):
+        """Return the file extension to store a Roll20 asset under, or "".
+
+        Roll20 URLs carry cache-busting fragments after either `?` or `&`, and the
+        extension they advertise is not always one Foundry can render -- a `.jfif`
+        map is dropped silently by the client (B056). Keep only the leading
+        alphanumeric run and translate known aliases.
+        """
+        match = re.match(r"\.[A-Za-z0-9]+", os.path.splitext(url)[1])
+        if not match:
+            return ""
+        extension = match.group(0)
+        suffix = extension[1:].lower()
+        if suffix in self.EXTENSION_ALIASES:
+            return "." + self.EXTENSION_ALIASES[suffix]
+        return extension
+
     def downloadResource(self, url, destination, type=None, dedup=None):
-        splitext = os.path.splitext(url)
-        extension = splitext[1].split("?")[0]
+        extension = self.assetExtension(url)
         if extension:
             splitext = os.path.splitext(destination)
             destination = splitext[0] + extension

@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.7.7
+
+Fixes **B056**: assets were stored under the extension the Roll20 URL advertised, so files
+landed on disk that Foundry silently refuses to draw.
+
+Only a `?` fragment was stripped, so a cache-buster after `&` survived into the filename —
+**52 assets** across *Storm over Savage Frontier* and *Curse of Strahd* were written as
+`….svg&cb=5`. And `.jfif`, an ordinary JPEG container Roll20 serves, is not in Foundry's
+`CONST.IMAGE_FILE_EXTENSIONS`; the *Lakeside* map on *Wardens of the North* converted, was
+written to the right path, passed G07/G09/G10 — and never appeared.
+
+Extension derivation moves into `Entity.assetExtension`, which keeps only the leading
+alphanumeric run and maps the aliases Foundry does not list (`jfif`/`jpe`/`jif`/`jfi` → `jpg`,
+`tif` → `tiff`). `RENDERABLE_EXTENSIONS` records the client's accepted set next to it.
+
+Note for anyone repairing an existing world: the two Wardens files' magic bytes showed one is
+actually **PNG** despite the `.jfif` name, so rename by content, not by extension.
+
 ## v1.7.6
 
 Fixes **B055**: `Items.addToFolder` advanced its directory index only for sub-folders, so
