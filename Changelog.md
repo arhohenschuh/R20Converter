@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.7.5
+
+Fixes **B054**: a magic armour's enchantment overwrote its base AC, so a Half
+Plate +2 converted with `armor.value = 2` instead of 15.
+
+Roll20 lists both under the same name in `itemmodifiers` —
+`"Item Type: Medium Armor, AC: 15, AC +2"` — and the parser assigned each entry
+into a flat dict, so the bonus landed on top of the base and `int("+2")` became
+the armour value. The damage is invisible until the armour is equipped and the
+sheet recomputes, which is why it survived three published worlds.
+
+A repeated modifier whose value is signed is now kept under `"<key> bonus"`, and
+the bonus is emitted as `armor.magicalBonus` rather than being discarded. Items
+whose only `AC` entry is a bonus — a Ring of Protection — are unchanged.
+
 ## v1.7.4
 
 Fixes **B053**: a PDF in the journal tree shifted every later zip path by one,

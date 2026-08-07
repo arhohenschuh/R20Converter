@@ -55,6 +55,45 @@ def _compendiumWeaponType(compendium_item):
             return value
     return system.get("weaponType", "")
 
+
+def parseItemModifiers(mods):
+    """Parse a Roll20 ``itemmodifiers`` string into a dict.
+
+    Roll20 lists magic armour's base value and its enchantment under the *same*
+    name -- ``"Item Type: Medium Armor, AC: 15, AC +2"``. A plain assignment let
+    the ``+2`` overwrite the ``15``, so the armour shipped with an AC of 2 (B054).
+    A repeated key whose value is signed is kept under ``"<key> bonus"`` instead.
+    """
+    modifiers = {}
+    for mod in mods.split(","):
+        if mod == "":
+            continue
+        # In case the mods aren't properly formatted, let's not crash here, kthxbye
+        try:
+            if ":" in mod:
+                key, value = mod.split(":", 1)
+                key, value = key.strip(), value.strip()
+            elif "+" in mod:
+                key, value = mod.split(" +", 1)
+                key, value = key.strip(), "+" + value
+            elif "-" in mod:
+                key, value = mod.split(" -", 1)
+                key, value = key.strip(), "-" + value
+            else:
+                key, value = mod.strip(), mod
+            if key in modifiers and value[:1] in ("+", "-"):
+                modifiers[key + " bonus"] = value
+            elif key in modifiers and modifiers[key][:1] in ("+", "-"):
+                # The bonus arrived first; promote it and keep the base.
+                modifiers[key + " bonus"] = modifiers[key]
+                modifiers[key] = value
+            else:
+                modifiers[key] = value
+        except:
+            pass
+    return modifiers
+
+
 class Actors(DatabaseFile):
     def __init__(self, converter):
         DatabaseFile.__init__(self, converter, "actors.db")
@@ -1935,27 +1974,10 @@ class Actor(Entity):
         count = self.getAttributeInt("itemcount", 1, from_dict=item)
         weight = self.getAttributeInt("itemweight", 1, from_dict=item)
         mods = self.getAttribute("itemmodifiers", "", from_dict=item)[0]
-        modifiers = {}
-        for mod in mods.split(","):
-            if mod == "":
-                continue
-            # In case the mods aren't properly formatted, let's not crash here, kthxbye
-            try:
-                if ":" in mod:
-                    key, value = mod.split(":", 1)
-                    modifiers[key.strip()] = value.strip()
-                elif "+" in mod:
-                    key, value = mod.split(" +", 1)
-                    modifiers[key.strip()] = "+" + value
-                elif "-" in mod:
-                    key, value = mod.split(" -", 1)
-                    modifiers[key.strip()] = "-" + value
-                else:
-                    modifiers[mod.strip()] = mod
-            except:
-                pass
+        modifiers = parseItemModifiers(mods)
         item_type = modifiers.get("Item Type", "Gear")
         armor = modifiers.get("AC", 0)
+        armor_bonus = modifiers.get("AC bonus", 0)
         damage = modifiers.get("Damage", "")
         damage_type = modifiers.get("Damage Type", "").lower()
         damage2 = modifiers.get("Alternate Damage", "")
@@ -1986,6 +2008,12 @@ class Actor(Entity):
             equipment.proficient = False
             try:
                 equipment.ac  = int(armor)
+            except ValueError:
+                pass
+            try:
+                bonus = int(armor_bonus)
+                if bonus != 0:
+                    equipment.magical_bonus = bonus
             except ValueError:
                 pass
             armor_type = item_type.split(" ")[0].lower()

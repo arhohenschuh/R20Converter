@@ -1109,13 +1109,15 @@ class ItemEquipment:
     SHIELD = "shield"
     TRINKET = "trinket"
 
-    def __init__(self, _type=CLOTHING, dexterity=None, ac=10, strength=0, stealth=False, proficient=True):
+    def __init__(self, _type=CLOTHING, dexterity=None, ac=10, strength=0, stealth=False, proficient=True,
+                 magical_bonus=None):
         self.type = _type
         self.dexterity = dexterity
         self.ac = ac
         self.strength = strength
         self.stealth = stealth
         self.proficient = proficient
+        self.magical_bonus = magical_bonus
 
     def getDict(self):
         # `dex` is nullable: None is uncapped, 0 is a real cap of +0 (B033).
@@ -1126,7 +1128,7 @@ class ItemEquipment:
             "armor": {
                 "value": self.ac,
                 "dex": dexterity,
-                "magicalBonus": None
+                "magicalBonus": self.magical_bonus
             },
             "type": dnd5e.itemType(self.type, dnd5e.armorBaseItem(getattr(self, "name", ""))),
             "properties": [dnd5e.STEALTH_DISADVANTAGE] if self.stealth else [],

@@ -1,6 +1,6 @@
 # B054 — a magic AC bonus overwrites the armour's base AC
 
-**Status:** open
+**Status:** fixed in v1.7.5
 **Severity:** high — silently destroys the base AC of every magic armour
 **Component:** `src/entities/actors.py` → `addInventoryItem`
 **Found:** 6 Aug 2026, while repairing the AC collapse in Wardens / Storm / Dragoncoast
