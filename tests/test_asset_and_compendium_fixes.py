@@ -12,6 +12,7 @@ import pytest
 
 import entities.base as base
 import entities.journal as journal
+import entities.items as items_module
 from entities.items import Item
 
 from test_base_download import StubResponse, StubSession, stub_session, clear_resource_cache  # noqa: F401
@@ -211,6 +212,75 @@ class TestJournalFolderNumbering(object):
         c = campaign(["h1", "ghost", "h2"], handouts=["h1", "h2"])
         result = FakeJournal(c).addToFolder(None, c["journalfolder"], "journal")
         assert [h.index for h in result] == [0, 1]
+
+
+class StubItem(object):
+    def __init__(self, database, handout, index, parent, source, path):
+        self.index = index
+        self.path = path
+
+
+class FakeItems(object):
+    """Just enough of Items to exercise the folder walk."""
+
+    findID = base.DatabaseFile.findID
+    addToFolder = items_module.Items.addToFolder
+
+    def __init__(self, campaign, folders_as_items=("Magic Items",)):
+        self._campaign = campaign
+        self._handouts = campaign["handouts"]
+        self._folders_as_items = list(folders_as_items)
+
+    def getArgument(self, name, default=None):
+        return self._folders_as_items if name == "folder_as_items" else default
+
+    def logInfo(self, message):
+        pass
+
+
+class TestItemFolderNumbering(object):
+    """B055 -- Items.addToFolder gated its index on is_items_folder, so siblings in an
+    ordinary folder never advanced it and every later subfolder path was numbered low.
+    Storm's "Magic Items" resolved to 029 while the zip held 074."""
+
+    def test_handouts_in_a_plain_folder_still_consume_an_index(self, monkeypatch):
+        monkeypatch.setattr(items_module.Item, "createItemFromHandout", StubItem)
+        folder = ["h1", "h2", {"n": "Magic Items", "id": "f1", "i": ["h3"]}]
+        c = campaign(folder, handouts=["h1", "h2", "h3"])
+        result = FakeItems(c).addToFolder(None, None, folder, "journal")
+        assert [i.path for i in result] == [os.path.join("journal", "002 - Magic Items")]
+
+    def test_a_pdf_sibling_still_consumes_an_index(self, monkeypatch):
+        monkeypatch.setattr(items_module.Item, "createItemFromHandout", StubItem)
+        folder = ["pdf1", {"n": "Magic Items", "id": "f1", "i": ["h1"]}]
+        c = campaign(folder, handouts=["h1"], pdfs=["pdf1"])
+        result = FakeItems(c).addToFolder(None, None, folder, "journal")
+        assert [i.path for i in result] == [os.path.join("journal", "001 - Magic Items")]
+
+    def test_characters_consume_an_index_too(self, monkeypatch):
+        monkeypatch.setattr(items_module.Item, "createItemFromHandout", StubItem)
+        folder = ["c1", "c2", "c3", {"n": "Magic Items", "id": "f1", "i": ["h1"]}]
+        c = campaign(folder, handouts=["h1"], characters=["c1", "c2", "c3"])
+        result = FakeItems(c).addToFolder(None, None, folder, "journal")
+        assert [i.path for i in result] == [os.path.join("journal", "003 - Magic Items")]
+
+    def test_items_are_still_only_created_inside_an_items_folder(self, monkeypatch):
+        # Numbering became unconditional; item *creation* must stay gated.
+        monkeypatch.setattr(items_module.Item, "createItemFromHandout", StubItem)
+        c = campaign(["h1", "h2"], handouts=["h1", "h2"])
+        assert FakeItems(c).addToFolder(None, "Junk", c["journalfolder"], "journal") == []
+
+    def test_an_items_folder_numbers_its_own_handouts(self, monkeypatch):
+        monkeypatch.setattr(items_module.Item, "createItemFromHandout", StubItem)
+        c = campaign(["h1", "pdf1", "h2"], handouts=["h1", "h2"], pdfs=["pdf1"])
+        result = FakeItems(c).addToFolder(None, "Magic Items", c["journalfolder"], "journal")
+        assert [i.index for i in result] == [0, 2]
+
+    def test_an_unknown_id_is_still_skipped_without_counting(self, monkeypatch):
+        monkeypatch.setattr(items_module.Item, "createItemFromHandout", StubItem)
+        c = campaign(["h1", "ghost", "h2"], handouts=["h1", "h2"])
+        result = FakeItems(c).addToFolder(None, "Magic Items", c["journalfolder"], "journal")
+        assert [i.index for i in result] == [0, 1]
 
 
 class FakeCompendiumItem(object):

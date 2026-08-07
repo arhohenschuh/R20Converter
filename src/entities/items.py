@@ -252,14 +252,18 @@ class Items(DatabaseFile):
                 dirname = "%03d - %s" % (index, item["n"])
                 items.extend(self.addToFolder("item" + item["id"], item["n"], item["i"], os.path.join(folder_path, dirname)))
                 index += 1
-            elif is_items_folder:
+            else:
+                # The exporter numbers every sibling it writes, so the index must advance
+                # for entries this folder does not convert -- gating it on is_items_folder
+                # put "Magic Items" at 029 when the zip held 074 (B055, same cause as B053).
                 handout = self.findID(item, "handout")
                 if handout != None:
-                    items.append(Item.createItemFromHandout(self, handout, index, folder_id, folder_name, folder_path))
+                    if is_items_folder:
+                        items.append(Item.createItemFromHandout(self, handout, index, folder_id, folder_name, folder_path))
                     index += 1
-                elif self.findID(item, "character") != None:
+                elif self.findID(item, "character") != None or self.findID(item, "pdf") != None:
                     index += 1
-                    
+
         return items
 
     def genEntities(self):

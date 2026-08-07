@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.7.6
+
+Fixes **B055**: `Items.addToFolder` advanced its directory index only for sub-folders, so
+handouts, characters and PDFs consumed no index and every later folder was numbered low.
+*Storm over Savage Frontier* derived `029 - Magic Items` where the export holds
+`074 - Magic Items`; *Wardens of the North* derived `005` against a real `083`.
+
+The handout and character branches sat behind `elif is_items_folder`, which describes the
+folder being walked rather than the child, so for every ordinary folder they never ran.
+Inside an items folder there was still no `pdf` branch — B053 verbatim, which this walk
+never received. Numbering is now unconditional and matches the exporter; item *creation*
+stays gated on `is_items_folder`.
+
+No shipped world needs repairing: every archived export carries `export_report.json`, and
+the 1.7.4 manifest lookup already resolved these assets by URL. As with B049 masking B053,
+the workaround hid the defect — the derived path is the fallback for legacy exports, and it
+was wrong.
+
+`Folders.addJournalFolder` was audited and is unaffected (it numbers for sidebar sort
+order, not zip paths). `playlists.py`, `scenes.py` and `tables.py` have no such walk.
+
 ## v1.7.5
 
 Fixes **B054**: a magic armour's enchantment overwrote its base AC, so a Half
