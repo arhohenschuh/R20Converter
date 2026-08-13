@@ -668,11 +668,16 @@ class Scene(Entity):
         tiles = map_tiles + objects_tiles
 
         folder = None
+        sort = page.get("placement", 0) * Entity.SORT_ORDER
         if page["archived"] and not self.getArgument("disable_archived", False):
             folder = "archived-scenes-folder-id"
-        if self.getArgument("export_as_module", False):
-            folder = None
-            
+        # Roll20 has no folders for pages, so grouping is declared, not derived
+        # (ADR-011). Unassigned pages keep their Roll20 placement order.
+        folders = getattr(self._converter, "folders", None)
+        assignment = folders.sceneAssignment(page["id"]) if folders else None
+        if assignment is not None:
+            (folder, sort) = assignment
+
         if release == "jumpgate":
             tokenVision = page.get("dynamic_lighting_enabled", True)
             fogExploration = not self.getArgument("disable_fog", False) and (self.getArgument("enable_fog", False) or page["showdarkness"])
@@ -691,7 +696,7 @@ class Scene(Entity):
                        "ownership": {"default": 0},
                        "folder": Entity.normalizeID(folder),
                        "flags": {},
-                       "sort": page.get("placement", 0) * Entity.SORT_ORDER,
+                       "sort": sort,
                        "navOrder": page.get("placement", 0),
                        "navigation": not page["archived"],
                        "active": active_page == page["id"],

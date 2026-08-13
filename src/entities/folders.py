@@ -1,11 +1,28 @@
+import json
+
 from .base import DatabaseFile, Entity
 
 class Folders(DatabaseFile):
+    #: Schema an explicit scene-folder manifest must declare (ADR-011). Roll20
+    #: has no folders for pages, so chapter structure is input, never inferred.
+    SCENE_FOLDER_SCHEMA = "r20converter-scene-folders/v1"
+
     def __init__(self, converter):
         DatabaseFile.__init__(self, converter, "folders.db")
         self._preserve_order = self.getArgument("preserve_folder_order", False)
+        self._scene_assignments = {}
         self.entities = self.genEntities()
-        
+        self.entities.extend(self.genSceneFolders())
+
+    def forType(self, folder_type):
+        """Folder documents of one type, for that type's compendium pack."""
+        return [folder.entity for folder in self.entities
+                if folder.entity["type"] == folder_type]
+
+    def sceneAssignment(self, page_id):
+        """``(folder id, sort)`` the manifest gave a page, or ``None``."""
+        return self._scene_assignments.get(page_id)
+
     def addJournalFolder(self, folder, parent, index, depth=0):
         folders = []
         name = folder["n"].strip()
@@ -83,9 +100,89 @@ class Folders(DatabaseFile):
                 for deck in self._campaign.get("decks", []):
                     folders.append(Folder(self, "items-" + deck["id"], deck["name"], "Item", "items-decks", len(folders)))
         return folders
-    
+
+    def genSceneFolders(self):
+        """Scene folders declared by ``--scene-folders`` (ADR-011).
+
+        Every reference must resolve to exactly one page. A name that matches
+        nothing, matches twice, or is claimed by two folders aborts the
+        conversion: a mis-filed scene is invisible in a module that otherwise
+        looks correctly organized.
+        """
+        path = self.getArgument("scene_folders", None)
+        if not path:
+            return []
+        with open(path, "r", encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        if manifest.get("schema") != Folders.SCENE_FOLDER_SCHEMA:
+            raise ValueError("--scene-folders needs schema '%s', found '%s'"
+                             % (Folders.SCENE_FOLDER_SCHEMA, manifest.get("schema")))
+
+        by_id = {}
+        by_name = {}
+        for page in self._campaign["pages"]:
+            by_id[page["id"]] = page
+            by_name.setdefault((page["name"] or "").strip(), []).append(page)
+
+        folders = []
+        root_id = None
+        root_name = (manifest.get("root") or "").strip()
+        if root_name:
+            root_id = "scene-folder-root"
+            folders.append(Folder(self, root_id, root_name, "Scene", None, 0))
+
+        groups = manifest.get("folders", [])
+        for index, group in enumerate(groups):
+            name = (group.get("name") or "").strip()
+            if not name:
+                raise ValueError("scene folder %d in the manifest has no name" % index)
+            folder_id = "scene-folder-%s" % name
+            folders.append(Folder(self, folder_id, name, "Scene", root_id, index))
+            for position, reference in enumerate(group.get("scenes", [])):
+                self.assignScene(reference, folder_id, position, by_name, by_id)
+        for position, reference in enumerate(manifest.get("rootScenes", [])):
+            self.assignScene(reference, root_id, len(groups) + position, by_name, by_id)
+
+        assigned = len(self._scene_assignments)
+        unplaced = len(by_id) - assigned
+        if unplaced:
+            self.logInfo("Scene folder manifest placed %d scenes; %d stay at the root"
+                         % (assigned, unplaced))
+        return folders
+
+    def assignScene(self, reference, folder_id, position, by_name, by_id):
+        page = self.resolveScenePage(reference, by_name, by_id)
+        if page["id"] in self._scene_assignments:
+            raise ValueError("scene folder manifest declares '%s' more than once"
+                             % page["name"])
+        self._scene_assignments[page["id"]] = (folder_id,
+                                               (position + 1) * Entity.SORT_ORDER)
+
+    @staticmethod
+    def resolveScenePage(reference, by_name, by_id):
+        """The one page a manifest entry names, by Roll20 id or page name."""
+        if isinstance(reference, dict) and reference.get("id"):
+            identifier = reference["id"]
+            if identifier not in by_id:
+                raise ValueError("scene folder manifest references unknown page id '%s'"
+                                 % identifier)
+            return by_id[identifier]
+        if isinstance(reference, dict):
+            name = (reference.get("name") or "").strip()
+        else:
+            name = str(reference).strip()
+        matches = by_name.get(name, [])
+        if len(matches) != 1:
+            raise ValueError("scene folder manifest reference '%s' matches %d pages"
+                             % (name, len(matches)))
+        return matches[0]
+
 
 class Folder(Entity):
+    #: Gap between siblings. Wide enough that a folder can be dragged between
+    #: two others in Foundry without renumbering the tree.
+    SORT_INCREMENT = 100000
+
     def __init__(self, database, id, name, folder_type, parent, index=None):
         Entity.__init__(self, database, id)
         # TODO: add hierarchy for journal
@@ -100,5 +197,8 @@ class Folder(Entity):
                        # Foundry renamed Folder#parent to Folder#folder in v10
                        # and dropped the migration in 12.316 (ADR-002).
                        "folder": Entity.normalizeID(parent),
-                       "sort": 100000 * (index if index else 1)
+                       # Foundry defaults Folder#sorting to "a", which re-sorts a
+                       # correctly restored tree alphabetically (ADR-010).
+                       "sorting": "m",
+                       "sort": Folder.SORT_INCREMENT * (1 if index is None else index + 1)
                        }

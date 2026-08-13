@@ -257,6 +257,24 @@
                 v-model="form.disableModuleScenes"
                 v-if="exportAsModule"
               />
+              <b-form-group
+                label="Scene Folder Manifest"
+                label-cols
+                label-align="right"
+                description="Optional r20converter-scene-folders/v1 JSON manifest. It declares chapter folders and manual Scene order; unlisted Scenes remain at the root."
+                v-if="exportAsModule && !form.disableModuleScenes"
+              >
+                <b-input-group>
+                  <b-form-input
+                    v-model="form.sceneFolders"
+                    placeholder="Path to scene-folders.json"
+                  ></b-form-input>
+                  <b-input-group-append>
+                    <b-button @click="browseSceneFolders">Browse</b-button>
+                    <b-button @click="form.sceneFolders = ''" :disabled="!form.sceneFolders">Clear</b-button>
+                  </b-input-group-append>
+                </b-input-group>
+              </b-form-group>
               <boolean-option
                 label="Disable Playlists Conversion"
                 description="Disable conversion of Playlists entries in the compendium module"
@@ -324,6 +342,7 @@ export default {
         disableModuleJournal: false,
         disableModuleActors: false,
         disableModuleScenes: false,
+        sceneFolders: "",
         disableModulePlaylists: false,
         disableModuleTables: false,
         disableModuleDecks: false,
@@ -365,6 +384,10 @@ export default {
         f => f !== this.selectedFolderAsItems
       );
       this.selectedFolderAsItems = "";
+    },
+    async browseSceneFolders() {
+      const path = await eel.ask_scene_folders()();
+      if (path) this.form.sceneFolders = path;
     }
   },
   destroyed() {
@@ -398,6 +421,7 @@ export default {
       disableModuleJournal: this.form.disableModuleJournal,
       disableModuleActors: this.form.disableModuleActors,
       disableModuleScenes: this.form.disableModuleScenes,
+      sceneFolders: this.form.sceneFolders.trim() || null,
       disableModulePlaylists: this.form.disableModulePlaylists,
       disableModuleTables: this.form.disableModuleTables,
       disableModuleDecks: this.form.disableModuleDecks,

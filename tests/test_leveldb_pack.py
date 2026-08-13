@@ -145,6 +145,42 @@ class TestRoundTrip(object):
         assert len(restored["items"]) == 2
 
 
+class TestFolders(object):
+    """A pack carries its own folder tree under ``!folders!`` (ADR-010)."""
+
+    def folder(self, identifier="folder1", parent=None):
+        return {"_id": identifier, "name": "Chapter 1", "type": "JournalEntry",
+                "folder": parent, "sorting": "m", "sort": 100000}
+
+    def test_folders_are_written_under_their_own_prefix(self, tmp_path):
+        path = str(tmp_path / "journal")
+        leveldb_pack.writePack(path, [], "journal", folders=[self.folder()])
+        assert "!folders!folder1" in readKeys(path)
+
+    def test_folder_values_are_plain_json(self, tmp_path):
+        path = str(tmp_path / "journal")
+        leveldb_pack.writePack(path, [], "journal", folders=[self.folder()])
+        stored = json.loads(readRaw(path, "!folders!folder1").decode("utf-8"))
+        assert stored["type"] == "JournalEntry"
+        assert stored["sorting"] == "m"
+
+    def test_folders_are_not_read_back_as_documents(self, tmp_path):
+        # A folder carries a `name`, so counting it as a document would answer
+        # a lookup for the entry of that name.
+        path = str(tmp_path / "actors")
+        leveldb_pack.writePack(path, [actorDocument()], "actors",
+                               folders=[self.folder()])
+        restored = leveldb_pack.readPack(path, "actors")
+        assert [d["_id"] for d in restored] == ["actor1"]
+
+    def test_rewriting_a_pack_drops_stale_folders(self, tmp_path):
+        path = str(tmp_path / "journal")
+        leveldb_pack.writePack(path, [], "journal", folders=[self.folder("gone")])
+        leveldb_pack.writePack(path, [], "journal", folders=[self.folder("kept")])
+        keys = [k for k in readKeys(path) if k.startswith("!folders!")]
+        assert keys == ["!folders!kept"]
+
+
 class TestRewrite(object):
     def test_rewriting_a_pack_drops_the_previous_contents(self, tmp_path):
         # LevelDB merges by default, so a second conversion into the same

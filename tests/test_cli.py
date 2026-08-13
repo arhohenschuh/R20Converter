@@ -43,7 +43,6 @@ class TestFolderAsItems(object):
         # argparse's "append" action appends to its default, so the default must
         # stay empty; main applies DEFAULT_FOLDERS_AS_ITEMS after parsing.
         assert parse(parser).folder_as_items == []
-
     def test_user_values_replace_rather_than_extend_the_default(self, parser, defaultFolders):
         args = parse(parser, "--folder-as-items", "Spells")
         assert args.folder_as_items == ["Spells"]
@@ -62,6 +61,17 @@ class TestModuleOptions(object):
         # declared, so it was unreachable from the command line.
         args = parse(parser, "--disable-module-%s" % name)
         assert getattr(args, "disable_module_%s" % name) is True
+
+
+class TestSceneFolders(object):
+    """Roll20 exports no page folders, so the manifest is the only source."""
+
+    def test_defaults_to_no_manifest(self, parser):
+        assert parse(parser).scene_folders is None
+
+    def test_takes_a_manifest_path(self, parser):
+        args = parse(parser, "--scene-folders", "chapters.json")
+        assert args.scene_folders == "chapters.json"
 
 
 class TestDefaults(object):

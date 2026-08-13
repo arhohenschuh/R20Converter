@@ -64,6 +64,20 @@ EMBEDDED_COLLECTIONS = {
 #: folder called "Wand" would answer a lookup for the item of that name.
 NON_DOCUMENT_COLLECTIONS = ("folders",)
 
+#: Folder ``type`` each pack's tree uses (ADR-010). Compendium folders are
+#: scoped to the pack holding them, so a pack carries only its own type --
+#: a JournalEntry folder in the actors pack would be an unreachable orphan.
+PACK_FOLDER_TYPES = {
+    "journal": "JournalEntry",
+    "actors": "Actor",
+    "items": "Item",
+    "scenes": "Scene",
+    "playlists": "Playlist",
+    "tables": "RollTable",
+    "decks": "RollTable",
+    "cards": "Item",
+}
+
 
 def isAvailable():
     """Whether LevelDB packs can be written at all."""
@@ -73,6 +87,11 @@ def isAvailable():
 def collectionFor(pack_name):
     """Collection name for a pack, or ``None`` if it is not one we map."""
     return PACK_COLLECTIONS.get(pack_name)
+
+
+def folderTypeFor(pack_name):
+    """Folder ``type`` a pack's tree must use, or ``None`` if unmapped."""
+    return PACK_FOLDER_TYPES.get(pack_name)
 
 
 def _key(collection, document_id):
@@ -113,12 +132,15 @@ def splitDocument(document, collection):
     return primary, children
 
 
-def writePack(path, documents, collection):
+def writePack(path, documents, collection, folders=()):
     """Write ``documents`` to the LevelDB pack at ``path``.
 
     An existing pack is removed first: LevelDB would otherwise merge the new
     documents into the old ones, leaving anything renamed or deleted behind as
     an orphan that Foundry still shows.
+
+    ``folders`` are written under ``!folders!`` so the pack keeps the Roll20
+    hierarchy rather than importing flat (ADR-010).
     """
     if plyvel is None:
         raise RuntimeError("plyvel is not available")
@@ -133,6 +155,8 @@ def writePack(path, documents, collection):
     db = plyvel.DB(path, create_if_missing=True)
     try:
         with db.write_batch() as batch:
+            for folder in folders:
+                batch.put(_key("folders", folder.get("_id")), _value(folder))
             for document in documents:
                 primary, children = splitDocument(document, collection)
                 for child_collection, child_key, child in children:

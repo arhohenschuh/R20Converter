@@ -22,6 +22,10 @@ referencing the ADR number, so the "why" is discoverable from the code.
 | [ADR-005](ADR-005-table-result-schema.md) | Emit the Foundry v13 `TableResult` schema | Accepted |
 | [ADR-006](ADR-006-dnd5e-subclass-documents.md) | Emit dnd5e subclasses as documents, not a string field | Accepted |
 | [ADR-007](ADR-007-dnd5e-species-background-documents.md) | Emit dnd5e species and backgrounds as documents, not string fields | Accepted |
+| [ADR-008](ADR-008-emit-dnd5e-5x-natively.md) | Emit dnd5e 5.x documents natively | Accepted |
+| [ADR-009](ADR-009-leveldb-module-packs.md) | Write LevelDB compendium packs for modules | Accepted |
+| [ADR-010](ADR-010-module-pack-folders.md) | Preserve the Roll20 folder hierarchy in module compendium packs | Accepted |
+| [ADR-011](ADR-011-scene-folder-manifest.md) | Scene folders come from an explicit manifest, never inference | Accepted |
 
 ## Numbering
 

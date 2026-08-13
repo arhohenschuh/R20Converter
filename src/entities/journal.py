@@ -87,8 +87,6 @@ class Handout(Entity):
                     (_, avatar_filename) = self.copyZipFile(handout["avatar"], zip_filename, filename)
         if handout["archived"] and not self.getArgument("disable_archived", False):
             parent = "archived-handouts-folder-id"
-        if self.getArgument("export_as_module", False):
-            parent = None
         name = handout["name"] or "Handout"
         self.entity = {"_id": self._id,
                        "name": name,

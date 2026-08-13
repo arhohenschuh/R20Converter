@@ -61,6 +61,7 @@ usage: R20Converter.py [-h] [--json] [--export-as-module]
                        [--disable-module-decks] [--disable-module-items]
                        [--dont-convert-chat]
                        [--folder-as-items FOLDER_AS_ITEMS]
+                       [--scene-folders SCENE_FOLDERS]
                        [--dont-export-actor-items]
                        [--no-duplicate-actor-items]
                        [--use-original-image-urls] [--max-path MAX_PATH]
@@ -185,6 +186,11 @@ options:
                         Useful for 'Magic Items' folders. Can be passed
                         multiple times to convert more than one folder.
                         (Default: Magic Items)
+  --scene-folders SCENE_FOLDERS
+                        Path to a scene folder manifest (schema
+                        'r20converter-scene-folders/v1') declaring the scene
+                        folders to create, which scenes go in each, and their
+                        order. Scenes it does not name stay at the root.
   --dont-export-actor-items
                         Items from actors will be exported as individual
                         Entity Items. This option disables that behavior and

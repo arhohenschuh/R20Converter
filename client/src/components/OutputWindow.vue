@@ -80,6 +80,7 @@ export default {
         disable_module_journal: opt.disableModuleJournal,
         disable_module_actors: opt.disableModuleActors,
         disable_module_scenes: opt.disableModuleScenes,
+        scene_folders: opt.sceneFolders || null,
         disable_module_playlists: opt.disableModulePlaylists,
         disable_module_tables: opt.disableModuleTables,
         disable_module_decks: opt.disableModuleDecks,

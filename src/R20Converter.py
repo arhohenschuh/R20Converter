@@ -413,6 +413,10 @@ class R20Converter(object):
         if self.getArgument("export_as_module", False):
             os.makedirs(os.path.join(self.path, "packs"))
 
+            # Folders first: the journal, actors and exported items all file
+            # themselves into this tree as they are built (ADR-010).
+            self.folders = Folders(self)
+
             # actors and journals can modify the items list, so create the correct class
             # and overwrite it with an emptyDB later if needed
             self.items = Items(self)

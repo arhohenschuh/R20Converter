@@ -127,6 +127,9 @@ parser.add_argument("--dont-convert-chat", action="store_true", help="Disable co
 # of. We default to an empty list and apply the fallback after parsing instead.
 DEFAULT_FOLDERS_AS_ITEMS = ["Magic Items"]
 parser.add_argument("--folder-as-items", action="append", default=[], help="Converts each entry in a journal folder into items. Useful for 'Magic Items' folders. Can be passed multiple times to convert more than one folder. (Default: %s)" % ", ".join(DEFAULT_FOLDERS_AS_ITEMS))
+# Roll20 has no folders for pages, so chapter structure has to be declared
+# rather than guessed from page names (ADR-011).
+parser.add_argument("--scene-folders", default=None, help="Path to a scene folder manifest (schema 'r20converter-scene-folders/v1') declaring the scene folders to create, which scenes go in each, and their order. Scenes it does not name stay at the root.")
 parser.add_argument("--dont-export-actor-items", action="store_true", help="Items from actors will be exported as individual Entity Items. This option disables that behavior and no items will be created.")
 parser.add_argument("--no-duplicate-actor-items", action="store_true", help="This option causes items with the same name from different actors to be exported under a single item. The first processed actor with the item of that name gets their item in the item entities.")
 parser.add_argument("--use-original-image-urls", action="store_true", help="Do not copy images to the world folder but use Roll20 URL instead. (NOT recommended)")

@@ -27,6 +27,7 @@ buildOptions = {
             ("Changelog.md", "Changelog.md"),
             ("README.md", "README.md"),
             ("README.html", "README.html"),
+            ("Advanced.md", "Advanced.md"),
             ("templates", "templates"),
             ("client/dist", "client/dist")
         ]

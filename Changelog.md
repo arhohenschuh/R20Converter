@@ -1,5 +1,70 @@
 # Changelog
 
+## v1.8.0
+
+Converted **modules** keep their folders. Until now they did not: four places
+cleared `folder` whenever `--export-as-module` was set, and the module branch
+never built a folder tree at all, so an adventure imported as one flat list per
+pack. Worlds were unaffected — they build the same tree from the same Roll20
+`journalfolder` data and always have.
+
+The cost of that was measured on the 18 adventure modules this converter
+produced: **5,108 journal entries, every one of them in a single flat Handouts
+folder**. Putting them back afterwards took a separate tool chain, an offline
+gate, a live import gate and 18 re-releases, and recreated **531 folders** the
+converter had already computed and then discarded. Preserving every document is
+not the same as preserving the campaign, and only one of those was being checked.
+
+Folders are now written into each pack under `!folders!`, scoped to the type
+that pack holds, so a journal pack carries journal folders and nothing else.
+Ids come from the Roll20 ids, so re-converting is still byte-stable. Empty
+branches are still dropped rather than shipped. See
+[ADR-010](docs/adr/ADR-010-module-pack-folders.md).
+
+**Order is part of the tree.** Foundry defaults `Folder#sorting` to `"a"`, so a
+perfectly restored hierarchy still comes out alphabetical — *Part 3* above
+*Part 12*, "Introduction" somewhere in the middle. Generated folders now declare
+manual sorting and carry explicit `sort` values. While pinning that down, two
+siblings turned out to share a sort value: the old expression read
+`100000 * (index if index else 1)`, so index 0 and index 1 both produced
+100000 and their order was left to chance. Worlds get that fix too.
+
+**Scenes: `--scene-folders`.** Roll20 has no folders for pages — the journal has
+`journalfolder`, pages are a flat list — so there is nothing to restore and
+chapter structure has to come from somewhere. It comes from an explicit
+manifest, not from guessing at page names, which is right for one adventure and
+quietly wrong for the next:
+
+```json
+{
+  "schema": "r20converter-scene-folders/v1",
+  "root": "Against the Giants - Scenes",
+  "folders": [
+    {"name": "Steading of the Hill Giant Chief",
+     "scenes": ["Upper Works", "The Dungeons"]},
+    {"name": "Glacial Rift of the Frost Giant Jarl", "scenes": ["Rift Map"]}
+  ],
+  "rootScenes": ["Start"]
+}
+```
+
+Scenes are named the way they appear in Roll20, or `{"id": "-Abc…"}` when two
+pages share a name. A reference that matches no page, matches two, or is claimed
+by two folders **aborts the conversion** — a mis-filed scene is invisible in a
+module that otherwise looks organized. Pages the manifest does not mention stay
+at the root, so a partial manifest organizes what it names and cannot lose
+anything. Without the option nothing changes. See
+[ADR-011](docs/adr/ADR-011-scene-folder-manifest.md).
+
+The manifest is CLI-only for now; the GUI does not expose it yet.
+
+Suite: **729 → 758 tests**. The frozen Python 3.8 environment with native
+`plyvel` passes **758/758**, covering the folder tree, pack layout, CLI option
+and every fail-closed manifest rule. Where `plyvel` is unavailable, the same
+suite reports **737 passed / 21 skipped**; the `!folders!` write contract still
+runs there through a stubbed binding instead of disappearing with the native
+LevelDB tests.
+
 ## v1.7.7
 
 Fixes **B056**: assets were stored under the extension the Roll20 URL advertised, so files

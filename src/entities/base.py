@@ -190,6 +190,20 @@ class DatabaseFile(object):
             return None
         return collection
 
+    def _packFolders(self):
+        """Folder documents for this pack, scoped to its own type (ADR-010).
+
+        A world writes ``folders.db`` instead, and a pack we do not map has no
+        tree to carry, so both return nothing.
+        """
+        folders = getattr(self._converter, "folders", None)
+        if folders is None or folders is self:
+            return []
+        folder_type = leveldb_pack.folderTypeFor(re.sub(r"\.db$", "", self._filename))
+        if folder_type is None:
+            return []
+        return folders.forType(folder_type)
+
     def save(self, full_path=None):
         collection = self._levelDBCollection()
         if collection is not None:
@@ -198,7 +212,8 @@ class DatabaseFile(object):
                                          re.sub(r"\.db$", "", self._filename))
             leveldb_pack.writePack(full_path,
                                    [entity.entity for entity in self.entities],
-                                   collection)
+                                   collection,
+                                   folders=self._packFolders())
             return self
         if full_path is None:
             full_path = os.path.join(self._path, self.getDirectoryName(), self._filename)

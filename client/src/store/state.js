@@ -8,7 +8,8 @@ export default {
     foundryDirectory: null,
     debugLog: "",
     options: {
-        srdEdition: "2014"
+        srdEdition: "2014",
+        sceneFolders: null
     },
     conversionDone: false,
     conversionError: false

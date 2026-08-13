@@ -169,6 +169,31 @@ def ask_file():
     return path
 
 @eel.expose
+def ask_scene_folders():
+    """Ask for an optional scene-folder JSON manifest."""
+    if useWx:
+        app = wx.App(None)
+        dialog = wx.FileDialog(None, 'Browse Scene Folder Manifest',
+                               wildcard="JSON File (*.json)|*.json",
+                               style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
+        app.SetTopWindow(dialog)
+        style = dialog.GetWindowStyle()
+        dialog.SetWindowStyle(style | wx.STAY_ON_TOP)
+        if platform.system() == 'Darwin':
+            os.system('''/usr/bin/osascript -e 'tell app "Finder" to set frontmost of process "R20Converter-{}" to true' '''.format(version))
+        path = dialog.GetPath() if dialog.ShowModal() == wx.ID_OK else None
+        dialog.Destroy()
+    else:
+        root = Tk()
+        root.wm_attributes('-topmost', 1)
+        root.withdraw()
+        file_path = askopenfilename(parent=root,
+                                    title="Browse Scene Folder Manifest",
+                                    filetypes=(("JSON File", "*.json"),))
+        path = None if file_path == "" else file_path
+    return path
+
+@eel.expose
 def ask_folder():
     """ Ask the user to select a folder """
     if useWx:

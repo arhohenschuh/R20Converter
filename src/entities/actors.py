@@ -641,9 +641,7 @@ class Actor(Entity):
                 actor_data = compendium_actor.entity.get("system", None)
                 owned_items = compendium_actor.entity["items"]
 
-        if self.getArgument("export_as_module", False):
-            folder = None
-        elif character["archived"] and not self.getArgument("disable_archived", False):
+        if character["archived"] and not self.getArgument("disable_archived", False):
             folder = "archived-characters-folder-id"
         else:
             folder = self.findFolder(character["id"],  self._database._campaign["journalfolder"])
@@ -1907,12 +1905,9 @@ class Actor(Entity):
     def exportItem(self, item, folder_prefix, force=False):
         if not force and self.getArgument("dont_export_actor_items", False):
             return
-        if self.getArgument("export_as_module", False):
-            folder_id = None
-        else:
-            folder_name = "%s (%s)" % (folder_prefix, "NPC" if self.isNPC() else "PC")
-            folder = self._converter.folders.ensureFolder(folder_name, folder_name, "Item")
-            folder_id = folder.getID()
+        folder_name = "%s (%s)" % (folder_prefix, "NPC" if self.isNPC() else "PC")
+        folder = self._converter.folders.ensureFolder(folder_name, folder_name, "Item")
+        folder_id = folder.getID()
         name = item.getName()
         if self.getArgument("no_duplicate_actor_items", False):
             for i in self._converter.items.entities:
