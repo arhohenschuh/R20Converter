@@ -1,6 +1,6 @@
 # B058 — legacy-DL doors convert to plain walls
 
-**Status:** fixed in v1.10.0
+**Status:** fixed in v1.10.1 — v1.10.0's rank classifier is superseded
 **Severity:** high — every door on a legacy dynamic-lighting page; rooms become sealed boxes
 **Component:** `src/entities/scenes.py` → `Scene.genEntities`, the `path` branch (door colour selection)
 **Found:** 14 Aug 2026, from a converted *Waterdeep: Dragon Heist* villa in a live world with zero doors
@@ -95,7 +95,12 @@ Contrast a Jumpgate page, *Tomb of Annihilation* → Hrakhamar `-Nz8rzupGT-G-ObX
 
 Its doors convert correctly, which is exactly why the defect looks intermittent.
 
-## Measured impact
+## Measured impact — original sweep, withdrawn
+
+> **Do not reuse the figures in this subsection.** The sweep counted paths on every layer,
+> not only `layer == "walls"`, and mixed personal campaigns with official modules. The
+> hash-pinned replacement population is in *Corrective fix (v1.10.1)* below. This material
+> remains only to preserve how the original diagnosis was reached.
 
 Sweep of one `campaign.json` per archived campaign (`legacy-door-sweep.cjs`). A page counts
 as legacy-encoded when it has walls, **no** `doors[]` objects, every `barrierType` is `wall`,
@@ -176,6 +181,38 @@ Temple of Asmodeus):
 
 Tool: `map-doors.cjs` (read-only planner; emits per-wall match error before anything writes).
 
+## Residual — the secret-door colour sweep
+
+`shouldClassifyDoorsByColour` picks the door colour correctly and rightly leaves pages with
+native `doors` alone. On the pages it *does* classify, rank 3 and below are still swept up
+wholesale:
+
+```python
+if len(wall_colors_sorted) > 2:
+    secret_door_colors = [color for color, count in wall_colors_sorted[2:]]
+```
+
+There is no minimum share, so on a legacy page with three or more wall colours **every**
+minority colour becomes a *secret* door — including stray one-segment colours from a
+mis-click. Measured per page, matching how the converter ranks (`barrierType: "wall"` only,
+counted in segments, pages with door objects excluded):
+
+| export | legacy pages | multi-colour | pages with rank 3+ | door segments | mis-typed as secret |
+|---|---:|---:|---:|---:|---:|
+| *Waterdeep: Dragon Heist* | 41 | 40 | **4** | 1,241 | **20** |
+| *Eberron — Rising from the Last War* (13 Aug 2026) | 19 | 17 | **1** | 433 | **1** |
+
+Small, but wrong in a way that is invisible: a secret door renders as wall until searched for,
+so a mis-typed segment looks exactly like the B058 symptom it was meant to fix. It also scales
+with the GM's palette rather than with map size — a campaign that used a third colour
+deliberately would convert all of it to secret doors.
+
+A minimum-share threshold, or requiring `--secret-door-color` to be explicit, would close it.
+
+> An earlier revision of this section ranked colours **globally across the whole export**,
+> which is not what the converter does — it ranks per page. The table above is the corrected
+> per-page measurement.
+
 ## Notes
 
 Same family as B048, B056 and B057: Roll20 changed where a meaning lives, and the converter
@@ -190,7 +227,7 @@ Frontier* export carries the identical page id and identical `zorder` (398) and 
 the only surviving copy of those wall and door positions. Archived exports should be treated
 as irreplaceable for any campaign Roll20 has since migrated.
 
-## Fix (v1.10.0)
+## Fix (v1.10.0 — superseded)
 
 `Scene.shouldClassifyDoorsByColour` derives the encoding from the page instead of requiring a
 flag, because neither "always classify" nor "never classify" is correct:
@@ -214,15 +251,41 @@ measured shapes of Cassalanter Villa, Temple of Asmodeus, Hrakhamar, Sargauth, C
 Labyrinth and Twisted Caverns. Negative-controlled: reverting to the flag-gated derivation
 turns 8 of them red.
 
-> ⚠ **Two independent counts of the affected population disagree and are not yet
-> reconciled.** This record measures **157 of 321 walled pages (49%)** and 3,887
-> non-dominant segments. A second pass over the same archived exports — counting a page as
-> affected when its `barrierType: "wall"` paths carry more than one distinct `stroke`, and
-> excluding *Storm over Savage Frontier* — measures **272 of 392 walled pages (69%)** and
-> 6,571 minority segments. The gap is in the criteria, not the fix, and the fix is per-page
-> so it is unaffected either way. Reconcile before either number is quoted anywhere else.
->
-> Where the two agree: **11 of 22 campaigns carry no door objects at all** — Dragon Heist
-> (40 of 41 walled pages), Storm King's Thunder (19 of 25), Dragons of Icespire Peak,
-> Ghosts of Saltmarsh, Princes of the Apocalypse, Out of the Abyss, Dragoncoast and all
-> seven TotYP modules. `#ff9900` is the door colour in every campaign checked.
+The native-door page guard remains valid, but the frequency classifier and implicit
+rank-3+ secret doors are not. They are replaced by v1.10.1.
+
+## Corrective fix (v1.10.1)
+
+A seven-round cross-model review re-measured a pinned population of **18 official-module
+export ZIPs** (each SHA-256 recorded in the review):
+
+| | |
+|---|---:|
+| walled pages | **314** — native 96, legacy-colour 155, single-colour 63 |
+| plain-wall segments | **179,434** |
+| minority-colour segments | **3,929** |
+| pages / segments rank 3+ | **15 / 84** |
+
+Frequency ranking is directly falsified by immutable source data. Dragon Heist's *Theater -
+Spring* and *Theater - Winter* each hold **195 orange door segments and 146 blue structural
+segments**; v1.10.0 selected blue as doors. Hidden Shrine *Temple* tied green 1 / orange 1
+and therefore made green the door and orange secret. Sunless Citadel *Fortress (Bottom)*
+made 40 literal `transparent` segments secret doors.
+
+The corrected precedence is conservative:
+
+1. Normalize source and option colours before comparison; preserve raw values for evidence.
+2. Explicit ordinary/secret colours win.
+3. Native door objects are emitted and normalized colour residue is warned, not converted.
+4. Without native doors, canonical Roll20 orange `#ff9900` becomes an ordinary door
+  regardless of rank.
+5. Unknown palettes are left unchanged with a warning; **no secret door is inferred**.
+6. Post-cleanup classified door counts must equal emitted door counts or conversion aborts.
+
+`--auto-doors` is deprecated and warns instead of enabling frequency inference.
+`--no-auto-doors` remains the inference opt-out. Real and synthetic controls cover inverted
+frequency, ties, near-orange, transparent, mixed raw colour tokens, native-page residue and
+conservation. Reverting to the 1.10.0 classifier makes 8 tests fail.
+
+The semantic status of orange residue on pages that also contain native doors remains an
+explicit acceptance-review population. It is reported rather than guessed in this release.

@@ -520,11 +520,19 @@ class Entity(object):
     # Used to fix the sometimes broken color codes in R20
     @staticmethod
     def color(val, default="#c0c0c0", allow_transparent=False):
+        if not isinstance(val, str):
+            return default
+        val = val.strip().lower()
         if allow_transparent and val == "transparent":
             return None
-        m = re.match(r"rgb\((\d+), (\d+), (\d+)\)", val)
+        m = re.fullmatch(
+            r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)"
+            r"(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)", val)
         if m:
-            return "#%02x%02x%02x" % tuple(map(int, m.groups()))
+            rgb = tuple(map(int, m.groups()))
+            if all(0 <= channel <= 255 for channel in rgb):
+                return "#%02x%02x%02x" % rgb
+            return default
         if not val.startswith("#") or len(val) < 4:
             return default
         val = val[1:]

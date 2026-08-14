@@ -1,5 +1,44 @@
 # Changelog
 
+## v1.10.1
+
+**Corrects the unsafe colour classifier shipped in 1.10.0.** The per-page native-door
+guard was right; frequency ranking was not. Three immutable source controls falsified it:
+
+| Page | Source colours (segments) | 1.10.0 did | 1.10.1 does |
+| --- | --- | --- | --- |
+| Dragon Heist, Theater ×2 | orange 195, blue 146 | made **blue walls** doors | orange doors |
+| Hidden Shrine, Temple | blue 272, green 1, orange 1 | green door, orange **secret** | orange ordinary door |
+| Sunless Citadel, Fortress Bottom | blue 473, orange 59, `transparent` 40 | `transparent` **secret doors** | orange ordinary doors; transparent unchanged |
+
+The corrective policy was agreed through a seven-round cross-model review and verified
+against a hash-pinned baseline of 18 official-module exports: **314** walled pages, **155**
+legacy-colour pages, **3,929** minority-colour segments, and **84** rank-3+ segments the old
+code would have turned into secret doors.
+
+- Explicit `--door-color` / `--secret-door-color` still win.
+- CSS colour tokens are normalized before comparison (`rgb()` / `rgba()` / shorthand hex),
+  while non-colour sentinels such as `transparent` remain distinct.
+- On pages without native door objects, only Roll20's demonstrated canonical orange
+  `#ff9900` is inferred automatically, regardless of frequency.
+- Unknown custom palettes are left as walls with a warning; the converter refuses to guess.
+- **Secret doors are never inferred.** They require an explicit `--secret-door-color`.
+- Pages with native door objects keep those doors and report normalized non-blue residue
+  without converting it. That residue remains scheduled evidence work, not silent loss.
+- `--auto-doors` is deprecated and warns; it no longer enables the unsafe heuristic.
+- A post-cleanup conservation assertion aborts if classified ordinary/secret door counts do
+  not equal the emitted counts.
+
+Real controls include Theater Spring/Winter, Hidden Shrine Temple, Sunless Fortress Bottom,
+Converted Windmill's near-orange `#e69138`, Ravenloft's mixed hex/`rgb()` blue, Twisted
+Caverns, Hrakhamar, Sargauth, Cragmaw and Crystal Labyrinth. Restoring the 1.10.0 algorithm
+makes **8** of those assertions fail. The conservation helper has its own fail-closed control.
+
+The 1.10.0 binary remains available as history but must not be used for Tyranny of Dragons or
+another conversion. No campaign/module data is changed by this release.
+
+Suite: **785 → 805 tests**.
+
 ## v1.10.0
 
 **Legacy doors are recognised again.** Roll20's legacy dynamic lighting had no door

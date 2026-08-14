@@ -50,8 +50,10 @@ class Scene(Entity):
     GRID_TYPES = {"square": 1, "hex": 2, "hexr": 4}
     PAD_X = 5
     PAD_Y = 5
+    LEGACY_DOOR_COLOR = "#ff9900"
 
     token_ids = {}
+    _auto_doors_warning_emitted = False
 
     def __init__(self, database, page, index, active_page):
         Entity.__init__(self, database, page["id"])
@@ -145,6 +147,7 @@ class Scene(Entity):
         objects_tiles = []
         tokens = []
         walls = []
+        expected_door_counts = {1: 0, 2: 0}
         lights = []
         drawings = []
         # Some graphics/paths/texts don't appear in the zorder (if drawn by other players?),
@@ -164,12 +167,21 @@ class Scene(Entity):
         ids_to_display.extend([i["id"] for i in self.filterItems("doors", None, ids_to_display)])
         ids_to_display.extend([i["id"] for i in self.filterItems("windows", None, ids_to_display)])
 
-        # Try to figure out what colors are the doors/secret doors
-        door_color =  self.getArgument("door_color", None)
-        secret_door_colors = [self.getArgument("secret_door_color", None)]
+        # Explicit colours always win. Otherwise only Roll20's demonstrated orange
+        # convention is inferred; frequency ranking inverted doors and walls on real maps.
+        explicit_door_color = self.getArgument("door_color", None)
+        explicit_secret_color = self.getArgument("secret_door_color", None)
+        door_color = self.normalizeWallStroke(explicit_door_color) if explicit_door_color else None
+        secret_door_colors = ([self.normalizeWallStroke(explicit_secret_color)]
+                              if explicit_secret_color else [])
         page_has_native_doors = len(page.get("doors", []) or []) > 0
         classify_by_colour = self.shouldClassifyDoorsByColour(page, door_color)
-        if self.getArgument("interactive", False) or classify_by_colour:
+        if self.getArgument("auto_doors", False) and not Scene._auto_doors_warning_emitted:
+            self.logWarning("--auto-doors is deprecated and no longer enables unsafe "
+                            "frequency-based inference; use --door-color for custom campaigns")
+            Scene._auto_doors_warning_emitted = True
+
+        if self.getArgument("interactive", False) or classify_by_colour or page_has_native_doors:
             wall_colors = {}
             for zid in ids_to_display:
                 path = self.findItemByID(page, zid, "paths")
@@ -178,13 +190,22 @@ class Scene(Entity):
                 # Don't check wall color for one way walls
                 if path.get("barrierType", "wall") != "wall": 
                     continue
-                wall_colors.setdefault(path["stroke"], 0)
+                stroke = self.normalizeWallStroke(path.get("stroke", ""))
+                wall_colors.setdefault(stroke, 0)
                 if path["path"] is not None:
-                    wall_colors[path["stroke"]] += len(path["path"]) - 1
+                    wall_colors[stroke] += len(path["path"]) - 1
                 else:
-                    wall_colors[path["stroke"]] += len(path["points"])
+                    wall_colors[stroke] += len(path["points"])
 
-            if len(wall_colors) > 1:
+            if page_has_native_doors:
+                residue = {color: count for color, count in wall_colors.items()
+                           if color != "#0000ff" and count > 0}
+                if residue:
+                    self.logWarning("Page '%s' has native doors plus unclassified wall-colour "
+                                    "residue %s; native doors are preserved and residue remains walls"
+                                    % (page.get("name", "Untitled"), residue))
+
+            if wall_colors and (self.getArgument("interactive", False) or classify_by_colour):
                 wall_colors_sorted = sorted(wall_colors.items(), key=lambda item: (-item[1], item[0]))
                 self.logInfo("In the page, walls are available in these colors : ")
                 for index, (color, count) in enumerate(wall_colors_sorted):
@@ -211,11 +232,17 @@ class Scene(Entity):
                         if choice > 0:
                             secret_door_colors = [wall_colors_sorted[choice-1][0]]
                 elif classify_by_colour:
-                    door_color = wall_colors_sorted[1][0]
-                    self.logInfo("Door color automatically chosen as : %s" % door_color)
-                    if len(wall_colors_sorted) > 2:
-                        secret_door_colors = [color for color, count in wall_colors_sorted[2:]]
-                        self.logInfo("Secret doors automatically chosen as these colors : %s" % secret_door_colors)
+                    inferred_door, inferred_secrets = self.inferDoorColors(page, wall_colors)
+                    if inferred_door:
+                        door_color = inferred_door
+                        secret_door_colors = inferred_secrets
+                        self.logInfo("Door color selected from Roll20's legacy convention: %s"
+                                     % door_color)
+                    elif len(wall_colors) > 1:
+                        self.logWarning("Page '%s' has no native doors and multiple wall colours %s, "
+                                        "but no canonical orange; no doors were inferred. "
+                                        "Pass --door-color to classify this custom palette."
+                                        % (page.get("name", "Untitled"), wall_colors))
 
         if self.getArgument("add_walls_around_map", False):
             positions = [
@@ -513,7 +540,8 @@ class Scene(Entity):
                                 angles.append(self.getPointsAngle(previous_point, old_point, next_point))
                             if min(angles) >= min_angle:
                                 continue
-                    door_type = 1 if path["stroke"] == door_color else (2 if path["stroke"] in secret_door_colors else 0)
+                    stroke = self.normalizeWallStroke(path.get("stroke", ""))
+                    door_type = 1 if stroke == door_color else (2 if stroke in secret_door_colors else 0)
                     if barrierType != "wall": 
                         # one way walls are set a different color
                         door_type = 0
@@ -545,6 +573,8 @@ class Scene(Entity):
                     wall_width = max(wall_a[0], wall_b[0]) - wall_x
                     wall_height = max(wall_a[1], wall_b[1]) - wall_y
                     if not self._needsCleanup(wall_x, wall_y, wall_width, wall_height, width, height):
+                        if door_type:
+                            expected_door_counts[door_type] += 1
                         walls.append(wall)
                     previous_point = point
                     previous_point_idx = point_idx
@@ -582,6 +612,8 @@ class Scene(Entity):
                 wall_width = max(wall_a[0], wall_b[0]) - wall_x
                 wall_height = max(wall_a[1], wall_b[1]) - wall_y
                 if not self._needsCleanup(wall_x, wall_y, wall_width, wall_height, width, height):
+                    if door_type:
+                        expected_door_counts[door_type] += 1
                     walls.append(wall)
 
             if tile_image:
@@ -665,6 +697,8 @@ class Scene(Entity):
                         tiles.append(tile)
                 
                     
+        self.assertDoorConservation(walls, expected_door_counts,
+                                    page.get("name", "Untitled"))
         if len(walls) != total_walls:
             self.logInfo("With a minimum wall length of %d pixels and a maximum angle between continuous walls of %d degrees, the total number of walls was decreased from %d to %d walls." % (self.getArgument("minimum_wall_length", 0), self.getArgument("maximum_wall_angle", 0), total_walls, len(walls)))
         tiles = map_tiles + objects_tiles
@@ -771,8 +805,16 @@ class Scene(Entity):
             return True
         return False
 
+    @staticmethod
+    def normalizeWallStroke(stroke):
+        """Return a canonical comparison token while preserving non-colour sentinels."""
+        if not isinstance(stroke, str):
+            return ""
+        token = stroke.strip().lower()
+        return Entity.color(token, default=token)
+
     def shouldClassifyDoorsByColour(self, page, door_color):
-        """Whether this page's doors must be inferred from wall stroke colour.
+        """Whether this page is eligible for conservative legacy-door inference.
 
         The page says which encoding it uses, so the caller does not have to. Roll20's
         legacy dynamic lighting had no door objects -- a door was a wall drawn in a
@@ -780,20 +822,42 @@ class Scene(Entity):
 
         This used to require ``--auto-doors``, which the GUI defaulted on and the CLI
         defaulted off, so the same campaign kept or lost its doors depending on which
-        one you ran (B058). Measured across the archived exports, 272 of 392 walled
-        pages use the colour encoding.
+        one you ran (B058). The official-module baseline has 155 legacy-colour pages
+        among 314 walled pages.
 
         Classifying a page that *already* has door objects is the other half of the
         problem: on *Dungeon of the Mad Mage*'s Crystal Labyrinth it would turn 39
         green and 1 black wall segments into secret doors. So a page with native doors
-        is left alone, and one campaign can legitimately mix both -- that module's
-        Twisted Caverns has no door objects and 12 orange segments that are doors.
+        is left alone and its residue is reported; one campaign can legitimately mix
+        both -- that module's Twisted Caverns has no door objects and 12 orange
+        segments that are doors.
         """
         if self.getArgument("no_auto_doors", False):
             return False
         if door_color is not None:
             return False
         return not (page.get("doors") or [])
+
+    def inferDoorColors(self, page, wall_colors):
+        """Return the conservative inferred ordinary and secret door colours."""
+        if not self.shouldClassifyDoorsByColour(page, None):
+            return (None, [])
+        normalized = {self.normalizeWallStroke(color) for color in wall_colors}
+        if self.LEGACY_DOOR_COLOR in normalized:
+            return (self.LEGACY_DOOR_COLOR, [])
+        return (None, [])
+
+    @staticmethod
+    def assertDoorConservation(walls, expected, page_name):
+        """Fail when classified post-cleanup doors differ from emitted doors."""
+        actual = {
+            1: sum(1 for wall in walls if wall.get("door") == 1),
+            2: sum(1 for wall in walls if wall.get("door") == 2),
+        }
+        if actual != expected:
+            raise ValueError("Door conservation failed on page '%s': expected %s, emitted %s"
+                             % (page_name, expected, actual))
+        return actual
 
     def wallMovementRestriction(self, page):
         """Return Foundry's ``move`` value for a barrier drawn on the walls layer.
