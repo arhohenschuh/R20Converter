@@ -781,13 +781,17 @@ class Entity(object):
     
     def copyZipFile(self, url, filename, destination, type=None, dedup=None):
         zipfile = None
-        extension = None
+        # Two different extensions, and conflating them is B056. R20Exporter names the
+        # zip member from the raw URL (its ADR-003), so the lookup must keep `.jfif` and
+        # any `&cb=` fragment; the file we write to disk must not, or Foundry will not
+        # draw it.
+        zip_extension = None
         if url:
-            splitext = os.path.splitext(url)
-            extension = splitext[1].split("?")[0]
-        if extension:
+            zip_extension = os.path.splitext(url)[1].split("?")[0]
+        dest_extension = self.assetExtension(url) if url else ""
+        if dest_extension:
             splitext = os.path.splitext(destination)
-            destination = splitext[0] + extension
+            destination = splitext[0] + dest_extension
         (dest_filename, config_path) = self.getDestinationPaths(destination, url, type, dedup)
         # getDestinationPaths should always return a unique new file, unless dedup is enabled
         # So if the file already exists, assume dedup is enabled and return the file directly
@@ -807,10 +811,10 @@ class Entity(object):
             if zipfile is None:
                 zipfile = self._database._converter.getZipFile(filename)
         except Exception as e:
-            if extension:
+            if zip_extension:
                 splitext = os.path.splitext(filename)
-                if extension != splitext[1]:
-                    filename = splitext[0] + extension
+                if zip_extension != splitext[1]:
+                    filename = splitext[0] + zip_extension
                     try:
                         zipfile = self._database._converter.getZipFile(filename)
                     except:

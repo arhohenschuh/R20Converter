@@ -528,7 +528,7 @@ class Scene(Entity):
                                 int(margin_left + wall_b[0] * grid_multiplier),
                                 int(margin_top + wall_b[1] * grid_multiplier),
                         ],
-                        "move": 20 if page["lightrestrictmove"] or self.getArgument("restrict_movement", False) else 0,
+                        "move": self.wallMovementRestriction(page),
                         "door": door_type,
                         "light": 0 if barrierType == "transparent" else 20,
                         "sight": 0 if barrierType == "transparent" else 20,
@@ -768,6 +768,31 @@ class Scene(Entity):
         if x + obj_width < 0 or x > width or y + obj_height < 0 or y > height:
             return True
         return False
+
+    def wallMovementRestriction(self, page):
+        """Return Foundry's ``move`` value for a barrier drawn on the walls layer.
+
+        A wall on the dynamic-lighting layer is a wall, so it blocks movement.
+
+        This used to read Roll20's page-level ``lightrestrictmove``, which is a
+        **legacy** field: measured across 24 archived exports it is ``true`` on 52
+        pages and ``null`` on 616, and is never once written as ``false``. An "off"
+        state that cannot be told apart from "never set" is not a boolean, and
+        Jumpgate stopped maintaining it -- the live setting is the per-barrier
+        ``barrierType``. Trusting it emitted ``move: 0`` for 136,884 of 248,169 wall
+        segments, which Foundry draws purple and walks straight through (B057).
+
+        ``--no-restrict-movement`` restores the old behaviour for a campaign that
+        really was played with movement unrestricted.
+        """
+        if self.getArgument("no_restrict_movement", False):
+            return 0
+        if self.getArgument("restrict_movement", False):
+            return 20
+        # Only a legacy campaign can express "off"; Jumpgate has no page-level flag.
+        if release != "jumpgate" and page.get("lightrestrictmove") is False:
+            return 0
+        return 20
 
     def isDrawing(self, graphic):
         if self.getArgument("images_as_drawings", False):

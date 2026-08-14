@@ -1,5 +1,45 @@
 # Changelog
 
+## v1.9.0
+
+**Walls restrict movement again.** A wall drawn on Roll20's dynamic-lighting layer
+now converts with `move: 20`, so Foundry draws it yellow and tokens stop at it.
+
+`move` used to come from the page-level `lightrestrictmove` flag. Measured across the
+24 archived exports, that field is `true` on **52** pages and `null` on **616** — and
+is **never once written as `false`**. An "off" state that cannot be distinguished from
+"never set" is not a boolean, and Jumpgate stopped maintaining the field entirely; the
+live setting there is the per-barrier `barrierType`, which is `wall` on 30,013 of the
+32,087 wall paths in those exports.
+
+Reading it as a boolean meant **136,884 of 248,169 wall segments (55%)** converted as
+non-blocking. On 358 of 409 walled pages *every* wall was purple. See
+[B057](docs/bugs/B057-walls-do-not-restrict-movement.md).
+
+A legacy (non-Jumpgate) campaign can still say no: an explicit `lightrestrictmove:
+false` is honoured. `--no-restrict-movement` forces the old behaviour for any campaign;
+`--restrict-movement` still works and is now the default.
+
+**Also in this release — B056 is finally complete.** 1.7.7 moved extension derivation
+into `Entity.assetExtension` and wired it into `downloadResource`, the path an asset
+takes when it is *missing* from the export. Assets that are *present* go through
+`copyZipFile`, which kept its own inline derivation, so the repair never reached the
+common case.
+
+Measured across the archived exports: **139 zip members** in five campaigns carry a
+name Foundry will not draw — *Dungeon of the Mad Mage* 74, *Storm over Savage
+Frontier* 48, *Lost Mine of Phandelver* 11, *Curse of Strahd* 4, *Wardens of the
+North* 2. The original bug record put the population at 54 across two campaigns; it
+was measured on the two worlds being repaired at the time, not on the fleet.
+
+The two extensions are not the same value and conflating them was the defect.
+R20Exporter names the zip member from the raw URL, so the **lookup** must keep
+`.jfif` and any `&cb=` fragment; the file **written to disk** must not. They are now
+separate variables. A negative control confirms the new tests fail against the old
+derivation.
+
+Suite: **758 → 772 tests**.
+
 ## v1.8.0
 
 Converted **modules** keep their folders. Until now they did not: four places

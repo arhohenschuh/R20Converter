@@ -72,3 +72,77 @@ class TestOrdinaryUrlsAreUnchanged(object):
 
     def test_no_extension_returns_empty(self, db):
         assert db.assetExtension("https://files.d20.io/images/1/original") == ""
+
+
+class FakeMember(object):
+    def __init__(self, content):
+        self._content = content
+
+    def read(self):
+        return self._content
+
+
+class FakeConverter(object):
+    """Serves zip members under the names R20Exporter actually writes."""
+
+    def __init__(self, members):
+        self._members = members
+        self.requested = []
+        self.misses = []
+
+    def getZipFile(self, filename):
+        self.requested.append(filename)
+        if filename not in self._members:
+            raise KeyError(filename)
+        return self._members[filename]
+
+    def getZipPathForUrl(self, url):
+        return None
+
+    def noteZipMiss(self, filename):
+        self.misses.append(filename)
+
+
+class TestAssetsCopiedOutOfTheZip(object):
+    """The first B056 fix only reached ``downloadResource``. Assets that *are* in
+    the export -- 139 of them across five archived campaigns -- come through
+    ``copyZipFile``, which kept deriving the stored name the old way.
+
+    The two extensions are not the same thing: R20Exporter names the zip member
+    from the raw URL (its ADR-003), so the lookup must keep the raw spelling while
+    the file written to disk must be renderable.
+    """
+
+    @pytest.mark.parametrize("url,member,stored", [
+        ("https://files.d20.io/images/1/original.svg&cb=5", "graphics/tok.svg&cb=5", ".svg"),
+        ("https://s3.amazonaws.com/files.d20.io/images/1/med.jfif?1728463534", "graphics/tok.jfif", ".jpg"),
+    ])
+    def test_stored_name_is_renderable_but_the_lookup_is_not_rewritten(
+            self, entity, url, member, stored):
+        converter = FakeConverter({member: FakeMember(b"IMG")})
+        entity._database._converter = converter
+        dest, config = entity.copyZipFile(url, member, "scenes/map.png")
+
+        assert open(dest, "rb").read() == b"IMG", "the asset must still be found in the zip"
+        assert converter.misses == []
+        assert os.path.splitext(dest)[1] == stored
+        assert os.path.splitext(config)[1] == stored
+        assert stored[1:] in base.Entity.RENDERABLE_EXTENSIONS
+        assert "&" not in dest
+
+    def test_the_lakeside_map(self, entity):
+        # Verbatim from the Wardens export, where the map converted and never drew.
+        url = "https://s3.amazonaws.com/files.d20.io/images/412761649/Za_klakV4u7Z2z3HSHC8hg/med.jfif?1728463534"
+        member = "pages/054 - Lakeside/thumbnail.jfif"
+        converter = FakeConverter({member: FakeMember(b"IMG")})
+        entity._database._converter = converter
+        dest, _ = entity.copyZipFile(url, member, "scenes/thumb.png")
+        assert dest.endswith(".jpg")
+
+    def test_an_ordinary_asset_is_untouched(self, entity):
+        url = "https://files.d20.io/images/1/original.webp"
+        converter = FakeConverter({"graphics/tok.webp": FakeMember(b"IMG")})
+        entity._database._converter = converter
+        dest, _ = entity.copyZipFile(url, "graphics/tok.webp", "scenes/map.png")
+        assert dest.endswith(".webp")
+

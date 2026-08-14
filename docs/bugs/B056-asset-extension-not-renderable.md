@@ -1,8 +1,8 @@
 # B056 — asset extension is taken from the URL, so Foundry will not render the file
 
-**Status:** fixed in v1.7.7
+**Status:** partially fixed in v1.7.7 (`downloadResource`); **completed in v1.8.1** (`copyZipFile`)
 **Severity:** high — the asset converts, is written to disk, and is silently never drawn
-**Component:** `src/entities/base.py` → `Entity.downloadResource`
+**Component:** `src/entities/base.py` → `Entity.downloadResource` **and** `Entity.copyZipFile`
 **Found:** 7 Aug 2026, chasing a map that "did not import" on *Wardens of the North*
 
 ## Symptom
@@ -47,6 +47,22 @@ Across the 11 archived exports:
 | `.svg&cb=5` | **52** | Storm over Savage Frontier (48), Curse of Strahd (4) |
 | `.jfif` | 2 | Wardens of the North |
 
+> ⚠ **Re-measured 14 Aug 2026, and this table was wrong.** It counted the two worlds
+> under repair at the time, not the fleet. Scanning every archived export ZIP for members
+> whose extension is outside `CONST.IMAGE_FILE_EXTENSIONS`, or that carries a `&` fragment:
+>
+> | campaign | affected zip members |
+> |---|---:|
+> | Dungeon of the Mad Mage | 74 |
+> | Storm over Savage Frontier | 48 |
+> | Lost Mine of Phandelver | 11 |
+> | Curse of Strahd | 4 |
+> | Wardens of the North | 2 |
+> | **total** | **139** |
+>
+> *Dungeon of the Mad Mage* and *Lost Mine of Phandelver* are both shipped modules and
+> appear in neither the original table nor the "only newly converted worlds benefit" note.
+
 The two `.jfif` files are the *Lakeside* map and its thumbnail, sitting in
 `worlds/wardens-of-the-north-season-3/assets/tiles/`.
 
@@ -87,3 +103,33 @@ that it displays.
 Only newly converted worlds benefit. Existing worlds need the files renamed by content and
 their documents rewritten; for Wardens that is 2 files, and Storm/Curse of Strahd carry none
 of the 52 `.svg&cb=5` (they never reached the converted worlds, which is a separate question).
+
+## The fix was half a fix (found 14 Aug 2026, shipped in v1.8.1)
+
+`assetExtension` was wired into `downloadResource` only. That is the path taken when an asset
+is **missing** from the export ZIP. Every asset that is **present** — the overwhelmingly common
+case, and the source of all 139 measured files — goes through `copyZipFile`, which carried its
+own copy of the original derivation:
+
+```python
+splitext = os.path.splitext(url)
+extension = splitext[1].split("?")[0]          # unchanged by the 1.7.7 repair
+```
+
+The reason it survived review is that one variable was doing two jobs. `extension` names the
+file **written to disk** *and* is the fallback used to find the member **inside the ZIP**.
+Those must not be the same value: R20Exporter deliberately names its zip members from the raw
+URL (its ADR-003, so that a canvas-re-encoded PNG is still findable), so the lookup has to keep
+`.jfif` and `&cb=5` while the stored file must not. Normalising both would have turned a
+silent non-render into a hard `Cannot find file … in Zip` miss.
+
+`copyZipFile` now keeps `zip_extension` (raw, for the lookup) and `dest_extension`
+(`assetExtension`, for disk) apart. Tests: `tests/test_asset_extension.py`,
+`TestAssetsCopiedOutOfTheZip` — proved able to fail against the pre-fix derivation before
+being trusted.
+
+**Gate debt this exposes, and which is still open.** Gate A's `qa-gate.mjs` lists `jfif` in its
+`ASSET_PATH` regex as an *accepted* asset extension, so it cannot catch this class even now.
+The renderability check this record asked for in August was never added. Until it is, the only
+instrument is the offline ZIP scan and the exporter's new `renderable` flag.
+
