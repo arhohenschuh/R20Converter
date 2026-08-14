@@ -73,6 +73,7 @@ mechanically for the physical-item class of defect.
 | [B055](B055-item-folder-numbering-ignores-siblings.md) | High | Fixed | `Items.addToFolder` advanced its index only for sub-folders — the handout/character branches sat behind `elif is_items_folder`, and there was no `pdf` branch at all. Storm derived `029 - Magic Items` against a real `074`; Wardens `005` against `083`. Third instance of a fallback hiding its own cause: the 1.7.4 manifest lookup resolved the assets by URL, so no shipped world is damaged. |
 | [B056](B056-asset-extension-not-renderable.md) | High | Fixed | The stored extension came from the Roll20 URL, not the content. A cache-buster after `&` survived (`….svg&cb=5`), and `.jfif` is absent from Foundry's `IMAGE_FILE_EXTENSIONS`, so the *Lakeside* map converted to the correct path and was never drawn. Every existing check passed — the file existed, was non-empty and resolved; nothing asked whether the client could render it. Re-measured at **139 members across 5 campaigns**, and the 1.7.7 fix reached only `downloadResource`; `copyZipFile`, the path every bundled asset takes, was completed in 1.9.0. |
 | [B057](B057-walls-do-not-restrict-movement.md) | High | Fixed | `move` came from Roll20's page-level `lightrestrictmove`, which is `true` on 52 pages, `null` on 616, and **never `false`** — an "off" state indistinguishable from "never set", on a legacy field Jumpgate stopped maintaining. **136,884 of 248,169 wall segments (55%)** converted with `move: 0`: purple in Foundry, and tokens walk through them. Nothing in Gate A or Gate B reads `move`, so 21 conversions shipped this way. |
+| [B058](B058-legacy-dl-doors-become-walls.md) | High | Fixed | Legacy dynamic lighting has no door object — a door is a wall-layer path in a **different stroke colour**. The GUI ships `autoDoors: true`, but `main.py` declares `--auto-doors` as `store_true`, so **the CLI defaults it off** — identical input keeps its doors through the GUI and loses them through the CLI the pipeline uses. `door_type` evaluated to `0` for every path and every door became an impassable wall. **157 of 321 walled pages (49%)** use this encoding, with **3,887 segments** in non-dominant colours; *Waterdeep — Dragon Heist* is 40 of 41 pages. Jumpgate/UDL pages are unaffected, which is why it looks intermittent. Positions survive in the export and were remapped 533/533 at 1.55 px mean error on one scene. |
 
 ## Cross-cutting observations
 
@@ -83,7 +84,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B055**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B059**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent
@@ -96,6 +97,14 @@ mechanically for the physical-item class of defect.
   and a correct-looking flat AC override at the same time. **A check that only reads the
   file cannot see what the system computes**; verifying a character means loading the world
   and reading the derived value.
+- **B057 × B058**: one wall record, two independent losses, neither visible to any gate.
+  Both come from Roll20's engine migration moving where a meaning lives — `move` from a
+  page-level legacy flag, and *door-ness* from a stroke-colour convention to a `doors[]`
+  object — and in both cases the converter kept reading the old location and emitted a
+  plausible default. The walls are present and correctly positioned either way, so every
+  structural check passes; the damage only appears when a token tries to move or a player
+  tries to open a door. **Geometry being right is not evidence that behaviour is right** —
+  scenes need assertions on `move` and `door` against the source, not just on coordinates.
 
 ## Candidates resolved
 

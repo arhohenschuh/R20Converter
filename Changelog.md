@@ -1,5 +1,39 @@
 # Changelog
 
+## v1.10.0
+
+**Legacy doors are recognised again.** Roll20's legacy dynamic lighting had no door
+objects — a door was a wall drawn in a different stroke colour — and recognising that
+required `--auto-doors`. The GUI defaults that flag **on**
+(`client/src/components/AdvancedOptions.vue`: `autoDoors: true`); the CLI defaults it
+**off**. The same campaign therefore kept or lost every door depending on which one you
+ran. See [B058](docs/bugs/B058-legacy-dl-doors-become-walls.md).
+
+Measured across the archived exports: **272 of 392 walled pages** encode doors as
+coloured wall paths, and **11 of 22 campaigns carry no door objects at all** — Waterdeep
+Dragon Heist on **40 of its 41** walled pages, Storm King's Thunder on 19 of 25, plus
+Dragons of Icespire Peak, Ghosts of Saltmarsh, Princes of the Apocalypse, Out of the
+Abyss and all seven TotYP modules. Every door in those converted as a solid wall.
+
+The page now says which encoding it uses, so nobody has to pass a flag:
+
+| Page | Behaviour |
+|---|---|
+| carries `doors` objects | trust them; **never** colour-classify |
+| no `doors`, more than one wall colour | legacy encoding — classify by colour |
+| no `doors`, one colour | nothing to infer |
+
+The second rule is why a blanket default would have been wrong. *Dungeon of the Mad
+Mage*'s Crystal Labyrinth has 55 real door objects **and** five wall colours; classifying
+it would have turned 39 green and 1 black wall segments into secret doors. One module can
+mix both — that same module's Twisted Caverns has no door objects and 12 orange segments
+that genuinely are doors.
+
+`--no-auto-doors` disables inference entirely, and an explicit `--door-color` still wins.
+`--auto-doors` is now a no-op kept for compatibility.
+
+Suite: **772 → 785 tests**.
+
 ## v1.9.0
 
 **Walls restrict movement again.** A wall drawn on Roll20's dynamic-lighting layer

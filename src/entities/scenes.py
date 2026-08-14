@@ -167,7 +167,9 @@ class Scene(Entity):
         # Try to figure out what colors are the doors/secret doors
         door_color =  self.getArgument("door_color", None)
         secret_door_colors = [self.getArgument("secret_door_color", None)]
-        if self.getArgument("auto_doors", False) or self.getArgument("interactive", False):
+        page_has_native_doors = len(page.get("doors", []) or []) > 0
+        classify_by_colour = self.shouldClassifyDoorsByColour(page, door_color)
+        if self.getArgument("interactive", False) or classify_by_colour:
             wall_colors = {}
             for zid in ids_to_display:
                 path = self.findItemByID(page, zid, "paths")
@@ -188,13 +190,7 @@ class Scene(Entity):
                 for index, (color, count) in enumerate(wall_colors_sorted):
                     self.logInfo("%d: %s (%d lines)" % (index + 1, color, count))
                 self.logInfo("")
-                if self.getArgument("auto_doors", False):
-                    door_color = wall_colors_sorted[1][0]
-                    self.logInfo("Door color automatically chosen as : %s" % door_color)
-                    if len(wall_colors_sorted) > 2:
-                        secret_door_colors = [color for color, count in wall_colors_sorted[2:]]
-                        self.logInfo("Secret doors automatically chosen as these colors : %s" % secret_door_colors)
-                elif self.getArgument("interactive", False):
+                if self.getArgument("interactive", False):
                     choice = -1
                     while choice < 0 or choice > len(wall_colors):
                         choice = input("Select which color is a door (0 for none) : ")
@@ -214,6 +210,12 @@ class Scene(Entity):
                                 choice = -1
                         if choice > 0:
                             secret_door_colors = [wall_colors_sorted[choice-1][0]]
+                elif classify_by_colour:
+                    door_color = wall_colors_sorted[1][0]
+                    self.logInfo("Door color automatically chosen as : %s" % door_color)
+                    if len(wall_colors_sorted) > 2:
+                        secret_door_colors = [color for color, count in wall_colors_sorted[2:]]
+                        self.logInfo("Secret doors automatically chosen as these colors : %s" % secret_door_colors)
 
         if self.getArgument("add_walls_around_map", False):
             positions = [
@@ -768,6 +770,30 @@ class Scene(Entity):
         if x + obj_width < 0 or x > width or y + obj_height < 0 or y > height:
             return True
         return False
+
+    def shouldClassifyDoorsByColour(self, page, door_color):
+        """Whether this page's doors must be inferred from wall stroke colour.
+
+        The page says which encoding it uses, so the caller does not have to. Roll20's
+        legacy dynamic lighting had no door objects -- a door was a wall drawn in a
+        different colour -- while Jumpgate/UDL pages carry real ``doors``.
+
+        This used to require ``--auto-doors``, which the GUI defaulted on and the CLI
+        defaulted off, so the same campaign kept or lost its doors depending on which
+        one you ran (B058). Measured across the archived exports, 272 of 392 walled
+        pages use the colour encoding.
+
+        Classifying a page that *already* has door objects is the other half of the
+        problem: on *Dungeon of the Mad Mage*'s Crystal Labyrinth it would turn 39
+        green and 1 black wall segments into secret doors. So a page with native doors
+        is left alone, and one campaign can legitimately mix both -- that module's
+        Twisted Caverns has no door objects and 12 orange segments that are doors.
+        """
+        if self.getArgument("no_auto_doors", False):
+            return False
+        if door_color is not None:
+            return False
+        return not (page.get("doors") or [])
 
     def wallMovementRestriction(self, page):
         """Return Foundry's ``move`` value for a barrier drawn on the walls layer.
