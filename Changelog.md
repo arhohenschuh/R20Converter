@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- Preserve GM-only chat visibility when R20Exporter emits a GM whisper as `type: hidden` with
+  `original_type: whisper`, or a private roll as `type: secretrollresult` with `secret: true`.
+  Hidden GM whispers now become Foundry whispers to every GM; secret roll results retain their
+  rendered message type and become GM-only. Ordinary hidden/general messages remain public. The
+  full suite passes 787 tests with 21 optional `plyvel` skips.
+- Normalize literal dots and leading dollar signs in nested world-document keys before NeDB
+  serialization, while preserving module-pack keys and aborting on normalization collisions. This
+  prevents copied compendium provenance keys such as `beyond5e-2.5.0` from blocking Foundry's
+  NeDB-to-LevelDB migration. The full suite now passes 790 tests with 21 optional `plyvel` skips.
+- Emit ChatMessage `rolls` as structured Foundry 14 Roll objects using evaluated `terms` rather
+  than JSON strings or the obsolete `parts` schema. Preserve historical formulas, totals, dropped
+  dice, evaluated modifier contributions, and grouped-roll formulas. Also clear Roll20 HP prose
+  that cannot satisfy dnd5e FormulaField validation and separate a lone damage type from a weapon
+  formula such as `1d6 + piercing`. The full suite passes 799 tests with 21 optional `plyvel` skips.
+- Persist `dnd5e.rulesVersion` as the JSON string `"legacy"` in converted worlds. dnd5e 5.3.3
+  defaults a missing setting to `modern`, which silently runs 2014 content under 2024 rules. The
+  full suite passes 799 tests with 21 optional `plyvel` skips.
+
 ## v1.10.1
 
 **Corrects the unsafe colour classifier shipped in 1.10.0.** The per-page native-door

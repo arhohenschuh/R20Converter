@@ -200,6 +200,13 @@ class TestDamageInvariant(object):
         system = makeWeapon(db, damage_type="bludgeoning ").entity["system"]
         assert system["damage"]["base"]["types"] == ["bludgeoning"]
 
+    def testDamageTypeEmbeddedInFormulaIsSeparated(self, db):
+        system = makeWeapon(db, formula="1d6 + piercing", damage_type="").entity["system"]
+        base = system["damage"]["base"]
+        assert base["number"] == 1 and base["denomination"] == 6
+        assert base["types"] == ["piercing"]
+        assert base["custom"] == {"enabled": False, "formula": ""}
+
     @pytest.mark.parametrize("formula", ["1d0", "1", "1d1"])
     def testDegenerateDamageSurvives(self, db, formula):
         # D5: nets roll 1d0, torches deal a flat 1, a gas spore's touch is 1d1.

@@ -38,9 +38,13 @@ class ChatMessage(Entity):
         sound = None
         roll = None
         inline = list(map(lambda r: Roll(r["expression"].encode('latin-1').decode(), r["results"]), message.get("inlinerolls", [])))
+        hidden_gm_whisper = message["type"] == "hidden" \
+            and message.get("original_type") == "whisper" \
+            and message.get("target") == "gm"
+        secret_roll_result = message["type"] == "secretrollresult" \
+            and message.get("secret") is True
 
-
-        if message["type"] == "whisper":
+        if message["type"] == "whisper" or hidden_gm_whisper:
             if message["target"] == "gm":
                 whispers = self.getGMWhispers()
             else:
@@ -56,6 +60,8 @@ class ChatMessage(Entity):
             roll = Roll(content, r20roll)
             if message["type"] == "gmrollresult":
                 whispers = self.getGMWhispers()
+        elif secret_roll_result:
+            whispers = self.getGMWhispers()
 
         if "rolltemplate" in message:
             content = RollTemplate(message["rolltemplate"], content, inline).toHTML()
@@ -78,7 +84,7 @@ class ChatMessage(Entity):
         if roll:
             # v10 replaced the single ChatMessage#roll string with a `rolls`
             # array; the migration was dropped in 12.316 (ADR-002).
-            self.entity["rolls"] = [json.dumps(roll.toJSON())]
+            self.entity["rolls"] = [roll.toJSON()]
 
     def getGMWhispers(self):
         whispers = []
@@ -109,6 +115,7 @@ class Roll:
             if roll["type"] == "R":
                 dice = {
                     'class': 'Die',
+                    'number': roll["dice"],
                     'faces': roll["sides"],
                     "formula": "{}d{}".format(roll["dice"], roll["sides"]),
                     "options": {},
@@ -125,6 +132,7 @@ class Roll:
                 # FIXME: Ignoring the 'rolls' attribute which contains the actual rolls.
                 dice = {
                     'class': 'Die',
+                    'number': len(roll.get("results", [])),
                     'faces': 0,
                     "formula": "0d0",
                     "options": {},
@@ -179,9 +187,56 @@ class Roll:
                         self.getTooltip().replace("\'", '&apos;'), self.total)
 
     def toJSON(self):
+        terms = []
+        terms_total = 0
+        for part in self.parts:
+            if not isinstance(part, dict):
+                continue
+            active_results = [result for result in part["rolls"] if not result.get("discarded", False)]
+            part_total = sum(result["roll"] for result in active_results)
+            terms_total += part_total
+            if part["faces"] == 0:
+                terms.append({
+                    'class': 'StringTerm',
+                    'options': {},
+                    'evaluated': True,
+                    'term': self.formula,
+                })
+                continue
+            terms.append({
+                'class': 'Die',
+                'options': part["options"],
+                'evaluated': True,
+                'number': part["number"],
+                'faces': part["faces"],
+                'modifiers': [],
+                'results': [{
+                    'result': result["roll"],
+                    'active': not result.get("discarded", False),
+                } for result in part["rolls"]],
+            })
+        remainder = self.total - terms_total
+        if remainder:
+            if terms:
+                terms.append({
+                    'class': 'OperatorTerm',
+                    'options': {},
+                    'evaluated': True,
+                    'operator': '+' if remainder > 0 else '-',
+                })
+                remainder = abs(remainder)
+            terms.append({
+                'class': 'NumericTerm',
+                'options': {},
+                'evaluated': True,
+                'number': remainder,
+            })
         return {
             'class': 'Roll',
+            'options': {},
+            'dice': [],
             'formula': self.formula,
-            'parts': self.parts,
-            'total': self.total
+            'terms': terms,
+            'total': self.total,
+            'evaluated': True,
         }

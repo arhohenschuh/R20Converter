@@ -139,6 +139,10 @@ def _buildActivities(item_type, item_name, attack, ability_mods=None, ranged=Non
     for index, part in enumerate(parts):
         formula, damage_type = (list(part) + [None])[:2]
         number, denomination, bonus, remainder = dnd5e.parseDamageFormula(formula)
+        embedded_type = dnd5e.normalizeDamageType(remainder)
+        if not damage_type and embedded_type and remainder.strip().lower() == embedded_type:
+            damage_type = embedded_type
+            remainder = ""
         symbolic_match = dnd5e.ABILITY_MOD_RE.search(str(formula or ""))
         symbolic = symbolic_match.group(1).lower() if symbolic_match else None
         if symbolic:

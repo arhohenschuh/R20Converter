@@ -844,7 +844,39 @@ class Entity(object):
         return (dest_filename, config_path)
 
     def __str__(self):
-        return json.dumps(self.entity)
+        if self.getArgument("export_as_module", False):
+            return json.dumps(self.entity)
+        return json.dumps(self.nedbSafeData(self.entity))
+
+    @staticmethod
+    def nedbSafeData(value, location="$"):
+        """Return a NeDB-serializable copy with safe object field names.
+
+        NeDB rejects every literal ``.`` and leading ``$`` in an object key.
+        Compendium provenance flags can legitimately carry version labels such
+        as ``beyond5e-2.5.0``; copying those labels into a world makes Foundry's
+        one-time NeDB-to-LevelDB migration abort before the world launches.
+        Module packs stay byte-faithful because LevelDB does not use this path.
+        """
+        if isinstance(value, list):
+            return [Entity.nedbSafeData(item, "%s[%d]" % (location, index))
+                    for index, item in enumerate(value)]
+        if not isinstance(value, dict):
+            return value
+        normalized = {}
+        sources = {}
+        for key, item in value.items():
+            safe_key = str(key).replace(".", "_")
+            if safe_key.startswith("$"):
+                safe_key = "_" + safe_key[1:]
+            if safe_key in normalized and sources[safe_key] != key:
+                raise ValueError(
+                    "NeDB key collision at %s: %r and %r normalize to %r"
+                    % (location, sources[safe_key], key, safe_key))
+            sources[safe_key] = key
+            child = "%s.%s" % (location, safe_key)
+            normalized[safe_key] = Entity.nedbSafeData(item, child)
+        return normalized
 
 class EmptyDB(DatabaseFile):
     def __init__(self, converter, name):

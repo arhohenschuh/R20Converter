@@ -171,6 +171,31 @@ DAMAGE_TYPES = (
 _DICE_RE = re.compile(r"(\d+)\s*d\s*(\d+)", re.IGNORECASE)
 _ADDEND_RE = re.compile(r"([+-])\s*(\d+)\b(?!\s*d\s*\d)", re.IGNORECASE)
 ABILITY_MOD_RE = re.compile(r"@abilities\.(str|dex|con|int|wis|cha)\.mod", re.IGNORECASE)
+_FORMULA_DICE_RE = re.compile(
+    r"\d+\s*d\s*\d+(?:r[oe]?[<>]=?\d+|kh\d*|kl\d*|min\d+|max\d+)*",
+    re.IGNORECASE)
+_FORMULA_DIE_SUFFIX_RE = re.compile(r"\bd\s*\d+\b", re.IGNORECASE)
+_FORMULA_REFERENCE_RE = re.compile(r"@[A-Za-z0-9_.-]+")
+_FORMULA_FUNCTION_RE = re.compile(
+    r"\b(?:floor|ceil|round|trunc|abs|min|max)\s*(?=\()", re.IGNORECASE)
+
+
+def isRollFormula(formula):
+    """Return whether a string is a plausible Foundry roll formula.
+
+    Roll20 sometimes stores explanatory prose in fields that dnd5e models as a
+    FormulaField. Preserve dynamic dice and ``@`` references, but reject bare
+    words that make Foundry drop the containing document during initialization.
+    """
+    text = str(formula or "").strip()
+    if not text:
+        return True
+    text = _FORMULA_DICE_RE.sub(" ", text)
+    text = _FORMULA_DIE_SUFFIX_RE.sub(" ", text)
+    text = _FORMULA_REFERENCE_RE.sub(" ", text)
+    text = _FORMULA_FUNCTION_RE.sub(" ", text)
+    return re.search(r"[A-Za-z]", text) is None \
+        and re.search(r"[^\d\s+\-*/%().,\[\]{}#|:'\"<>=]", text) is None
 
 
 def normalizeDamageType(damage_type):

@@ -965,6 +965,8 @@ class Actor(Entity):
                 value = hp[1]
                 max = hp[1]
             formula = self.getAttribute("npc_hpformula", "")[0]
+            if not dnd5e.isRollFormula(formula):
+                formula = ""
         else:
             value = hp[0]
             max = hp[1]
