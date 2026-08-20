@@ -300,6 +300,33 @@ def _class_document():
     }
 
 
+def _spell_document():
+    return {
+        "_id": "compendiumid00001",
+        "name": "Disguise Self",
+        "type": "spell",
+        "img": "icons/spell.webp",
+        "system": {
+            "method": "spell",
+            "prepared": 0,
+            "uses": {"spent": 0, "max": "", "recovery": []},
+            "description": {"value": "<p>Compendium description.</p>"},
+        },
+        "_stats": {},
+    }
+
+
+def _multi_activity_spell_document():
+    document = _spell_document()
+    document["system"]["activities"] = {
+        "mark": {"_id": "mark", "type": "utility",
+                 "consumption": {"spellSlot": True, "targets": []}},
+        "move": {"_id": "move", "type": "forward",
+                 "consumption": {"spellSlot": True, "targets": []}},
+    }
+    return document
+
+
 class TestCompendiumKeepsCharacterState(object):
     """B050 -- ``--no-compendium-overwrite`` protects template data, but must not
     discard state that describes one character."""
@@ -341,6 +368,68 @@ class TestCompendiumKeepsCharacterState(object):
         entity._database._arguments = {"no_compendium_overwrite": True}
         item = self._build(entity._database, {"levels": 10, "spellcasting": {"progression": "full"}})
         assert "spellcasting" not in item.entity["system"]
+
+    @pytest.mark.parametrize("method,prepared,uses", [
+        ("innate", 1, {"spent": 0, "max": "1", "recovery": [{"period": "day", "type": "recoverAll"}]}),
+        ("atwill", 1, {"spent": 0, "max": "", "recovery": []}),
+        ("ritual", 1, {"spent": 0, "max": "", "recovery": []}),
+        ("spell", 1, {"spent": 0, "max": "", "recovery": []}),
+    ])
+    def test_spell_casting_state_survives(self, entity, method, prepared, uses):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        custom = {
+            "method": method,
+            "prepared": prepared,
+            "uses": uses,
+            "description": {"value": "<p>Imported from Roll20</p>"},
+        }
+        item = self._build(entity._database, custom, _spell_document())
+        assert item.entity["system"]["method"] == method
+        assert item.entity["system"]["prepared"] == prepared
+        assert item.entity["system"]["uses"] == uses
+        assert item.entity["system"]["description"]["value"] == "<p>Compendium description.</p>"
+
+    def test_limited_innate_use_merges_into_matching_compendium_activity(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        target = {"type": "itemUses", "target": "", "value": "1",
+                  "scaling": {"mode": "", "formula": ""}}
+        custom = {
+            "method": "innate",
+            "prepared": 1,
+            "uses": {"spent": 0, "max": "1", "recovery": []},
+            "activities": {
+                "source": {"type": "utility", "consumption": {"targets": [target]}},
+            },
+        }
+        item = self._build(entity._database, custom, _multi_activity_spell_document())
+        activities = item.entity["system"]["activities"]
+        assert activities["mark"]["consumption"] == {"spellSlot": True, "targets": [target]}
+        assert activities["move"]["consumption"] == {"spellSlot": False, "targets": []}
+
+    @pytest.mark.parametrize("method", ["atwill", "ritual"])
+    def test_unlimited_non_slot_method_disables_slot_consumption(self, entity, method):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        custom = {
+            "method": method,
+            "prepared": 1,
+            "uses": {"spent": 0, "max": "", "recovery": []},
+            "activities": {},
+        }
+        item = self._build(entity._database, custom, _multi_activity_spell_document())
+        assert all(activity["consumption"]["spellSlot"] is False
+                   for activity in item.entity["system"]["activities"].values())
+
+    def test_slot_spell_keeps_compendium_consumption(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        custom = {
+            "method": "spell",
+            "prepared": 1,
+            "uses": {"spent": 0, "max": "", "recovery": []},
+            "activities": {},
+        }
+        item = self._build(entity._database, custom, _multi_activity_spell_document())
+        assert all(activity["consumption"]["spellSlot"] is True
+                   for activity in item.entity["system"]["activities"].values())
 
 
 class TestPropertiesAlwaysEmitAnArray(object):

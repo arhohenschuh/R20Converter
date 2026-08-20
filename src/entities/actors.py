@@ -204,10 +204,10 @@ class Token(Entity):
         else:
             self.display_bars = self.DISPLAY_NONE
 
-        if show_name:
-            self.display_name = self.DISPLAY_ALWAYS if all_see_name else self.DISPLAY_OWNER
-        else:
-            self.display_name = self.DISPLAY_NONE
+        # Converted modules use one predictable privacy baseline: owners can
+        # always identify their tokens, while other players do not see names.
+        # Both Actor prototypes and placed Scene tokens serialize this value.
+        self.display_name = self.DISPLAY_OWNER
 
     def setupLighting(self, light_radius, light_dimradius, scale=5, scale_units="ft", grid_size=70):
         # We don't check for light_hassight because R20 has to set it for NPC tokens to False
@@ -2632,6 +2632,12 @@ class Actor(Entity):
                         activation.uses.per = period
                     if "at will" in innate.lower():
                         preparation.mode = ItemSpellPreparation.ALWAYS_AVAILABLE
+                elif ritual and "ritual only" in name.lower():
+                    # A ritual-only NPC spell is not an ordinary prepared slot
+                    # spell. Preserve its source ownership through compendium
+                    # matching so the richer donor activity stays castable (B062).
+                    preparation.mode = "ritual"
+                    preparation.prepared = True
 
                 # Convert spell school
                 school = self._parseSpellSchool(school)

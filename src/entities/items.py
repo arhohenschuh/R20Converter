@@ -96,6 +96,44 @@ def _mergeRecharge(data, recharge):
     return data
 
 
+def _mergeSpellConsumption(system, custom_data):
+    """Keep source casting resources while retaining compendium activities (B062)."""
+    method = custom_data.get("method", "spell")
+    activities = system.get("activities") or {}
+    if method == "spell" or not activities:
+        return
+
+    source_consumers = []
+    for source in (custom_data.get("activities") or {}).values():
+        targets = source.get("consumption", {}).get("targets", [])
+        self_targets = [target for target in targets
+                        if target.get("type") == dnd5e.CONSUMPTION_ITEM_USES
+                        and not target.get("target")]
+        if self_targets:
+            source_consumers.append((source.get("type"), self_targets))
+
+    primary = set()
+    for source_type, targets in source_consumers:
+        candidates = [(activity_id, activity) for activity_id, activity in activities.items()
+                      if activity_id not in primary and activity.get("type") == source_type]
+        if not candidates and len(activities) == 1:
+            candidates = list(activities.items())
+        if not candidates:
+            continue
+        activity_id, activity = candidates[0]
+        primary.add(activity_id)
+        consumption = activity.setdefault("consumption", {})
+        existing = [target for target in consumption.get("targets", [])
+                    if target.get("type") != dnd5e.CONSUMPTION_ITEM_USES
+                    or target.get("target")]
+        consumption["targets"] = existing + copy.deepcopy(targets)
+
+    limited = bool(custom_data.get("uses", {}).get("max"))
+    for activity_id, activity in activities.items():
+        consumption = activity.setdefault("consumption", {})
+        consumption["spellSlot"] = limited and activity_id in primary
+
+
 def _buildActivities(item_type, item_name, attack, ability_mods=None, ranged=None,
                      activation=None, scaling=None, level=None):
     """Turn a legacy :class:`ItemAttack` into ``system.activities`` (ADR-008).
@@ -326,7 +364,7 @@ class Items(DatabaseFile):
 class Item(Entity):
     #: Per-character state, by item type. A compendium document is a template and
     #: cannot know any of this, so these keys survive `--no-compendium-overwrite`
-    #: while everything else still yields to the compendium (B050).
+    #: while everything else still yields to the compendium (B050, B062).
     CHARACTER_STATE_KEYS = {
         "class": ("levels", "hitDiceUsed"),
         "weapon": ("proficient", "equipped", "quantity", "attuned", "attunement"),
@@ -334,7 +372,7 @@ class Item(Entity):
         "consumable": ("quantity", "uses"),
         "tool": ("proficient", "equipped", "quantity"),
         "container": ("equipped", "quantity"),
-        "spell": ("preparation",),
+        "spell": ("method", "prepared", "uses"),
     }
 
     def __init__(self, database, item_id, name, item_type="loot", img=None, data={}):
@@ -472,6 +510,8 @@ class Item(Entity):
                 for key in Item.CHARACTER_STATE_KEYS.get(item.entity["type"], ()):
                     if key in custom_data:
                         item.entity["system"][key] = custom_data[key]
+                if item.entity["type"] == "spell":
+                    _mergeSpellConsumption(item.entity["system"], custom_data)
         # The compendium copy carries whatever `_stats` its pack was built with.
         # If that is older than the version we claim, dnd5e migrates the item —
         # the exact outcome this port exists to avoid.
@@ -953,7 +993,7 @@ class ItemSpellPreparation:
     NONE = ""
     PREPARED_SPELL = "prepared"
     INNATE_SPELLCASTING = "innate"
-    ALWAYS_AVAILABLE = "always"
+    ALWAYS_AVAILABLE = "atwill"
     PACT_MAGIC = "pact"
 
     def __init__(self, mode=PREPARED_SPELL, prepared=False):

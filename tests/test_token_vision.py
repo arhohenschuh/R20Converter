@@ -83,3 +83,19 @@ class TestTokenDefaults(object):
         t.rotation = 90
         t.sight_angle = 60
         assert t.getDict()["rotation"] == 270
+
+    def test_hidden_roll20_name_becomes_always_for_owner(self):
+        token = Token("id", "Somebody", {
+            "showname": False,
+            "showplayers_name": False,
+        })
+
+        assert token.getDict()["displayName"] == Token.DISPLAY_OWNER
+
+    def test_public_roll20_name_becomes_always_for_owner(self):
+        token = Token("id", "Somebody", {
+            "showname": True,
+            "showplayers_name": True,
+        })
+
+        assert token.getDict()["displayName"] == Token.DISPLAY_OWNER

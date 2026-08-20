@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.11.2
+
+- Standardize Actor prototype and placed Scene Token names on Foundry's **Always for Owner**
+  mode. Roll20's per-token visibility flags no longer randomly hide names from owners or expose
+  them to every player (B061).
+- Preserve dnd5e 5.x spell `method`, `prepared`, `uses`, and source use consumption when
+  `--no-compendium-overwrite` overlays richer compendium activities. At-will and ritual-only
+  spells use their native non-slot casting methods; limited innate spells retain one bounded
+  primary `itemUses` consumer without charging secondary activities (B062).
+
+Suite: **836 passed** in the shipping Python 3.8 environment.
+
 ## v1.11.1
 
 **Fixes B060: converted Scenes now retain working Token Vision and fog exploration.**
@@ -10,6 +22,8 @@
 - Default every Scene to Individual exploration (`fog.mode: 1`).
 - Keep `--disable-fog` as a world-export-only escape hatch; module exports cannot use it to
   recreate the defect.
+
+Suite: **823 passed** in the shipping Python 3.8 environment.
 
 ## v1.11.0
 

@@ -17,7 +17,7 @@ from entities.base import Entity
 from entities.actors import Actor
 from entities.items import (Item, ItemActivation, ItemBackpack, ItemEquipment,
                             ItemInventoryAttributes, ItemObject, ItemUses,
-                            ItemWeapon)
+                            ItemSpellPreparation, ItemWeapon)
 
 from conftest import FakeDatabase
 
@@ -392,6 +392,20 @@ class TestInnateUses(object):
 
     def test_at_will_has_no_count(self):
         assert Actor.parseInnateUses("at will") == (None, "")
+
+
+class TestRitualOnlyPreparation(object):
+    def test_at_will_uses_native_casting_method(self):
+        preparation = ItemSpellPreparation(ItemSpellPreparation.ALWAYS_AVAILABLE, True).getDict()
+        assert preparation == {"method": "atwill", "prepared": 1}
+
+    def test_explicit_ritual_only_uses_ritual_method(self):
+        preparation = ItemSpellPreparation("ritual", True).getDict()
+        assert preparation == {"method": "ritual", "prepared": 1}
+
+    def test_ritual_capable_class_spell_keeps_slot_method(self):
+        preparation = ItemSpellPreparation(ItemSpellPreparation.PREPARED_SPELL, True).getDict()
+        assert preparation == {"method": "spell", "prepared": 1}
 
 
 class TestRecoveryPeriods(object):
