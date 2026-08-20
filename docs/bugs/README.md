@@ -75,6 +75,7 @@ mechanically for the physical-item class of defect.
 | [B057](B057-walls-do-not-restrict-movement.md) | High | Fixed | `move` came from Roll20's page-level `lightrestrictmove`, which is `true` on 52 pages, `null` on 616, and **never `false`** — an "off" state indistinguishable from "never set", on a legacy field Jumpgate stopped maintaining. **136,884 of 248,169 wall segments (55%)** converted with `move: 0`: purple in Foundry, and tokens walk through them. Nothing in Gate A or Gate B reads `move`, so 21 conversions shipped this way. |
 | [B058](B058-legacy-dl-doors-become-walls.md) | High | Fixed (v1.10.1; v1.10.0 superseded) | Legacy DL doors are wall-layer paths distinguished by colour. The GUI enabled detection while the CLI disabled it, so doors became walls. The first fix then ranked colours by frequency and swept rank 3+ into secret doors; immutable controls proved it could invert blue walls/orange doors and turn `transparent` into secrets. The hash-pinned official baseline is **155 of 314 walled pages** and 3,929 minority segments. v1.10.1 normalizes colours, infers only canonical orange ordinary doors on non-native pages, never infers secrets, reports native-page residue, refuses unknown palettes, and asserts post-cleanup conservation. Existing world repair remains separate. |
 | [B059](B059-quadratic-paths-use-control-point-as-vertex.md) | Minor | Open documented limitation | Quadratic Bézier control points are emitted as wall vertices rather than used to flatten the curve, so one `Q` attempts two straight Walls through an off-curve point and source/converter segment units diverge. |
+| [B060](B060-scenes-migrate-with-exploration-disabled.md) | High | Fixed (v1.11.1) | Scenes emitted removed `fog.exploration`, which Foundry 14 migrated to `fog.mode: 0` (None); Token Vision was also conditional on legacy lighting flags. Current output defaults every Scene to Token Vision plus Individual exploration. |
 
 ## Cross-cutting observations
 
@@ -85,7 +86,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B060**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B061**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent

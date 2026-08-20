@@ -715,17 +715,18 @@ class Scene(Entity):
             (folder, sort) = assignment
 
         if release == "jumpgate":
-            tokenVision = page.get("dynamic_lighting_enabled", True)
-            fogExploration = not self.getArgument("disable_fog", False) and (self.getArgument("enable_fog", False) or page["showdarkness"])
             globalLight = page.get("daylight_mode_enabled", False)
         else:
-            tokenVision = page.get("showlighting", True) and page.get("lightenforcelos", False)
-            fogExploration = not self.getArgument("disable_fog", False) and (self.getArgument("enable_fog", False) or page["adv_fow_enabled"])
             globalLight = page.get("lightglobalillum", False)
-        # A scene with tokenVision off ignores every token's sight setting, so
-        # the two have to be forced together to be worth forcing at all.
-        if self.getArgument("enable_token_vision", False):
-            tokenVision = True
+        # A converted map is expected to be ready for token-based play. Foundry
+        # ignores every token's sight settings when Scene token vision is off.
+        tokenVision = True
+        # Foundry 14 stores fog exploration as an enum: 0=None, 1=Individual,
+        # 2=Shared. The removed `fog.exploration` boolean migrates to 0, which
+        # silently disables exploration even when Roll20 Advanced Fog was on.
+        disableFog = (self.getArgument("disable_fog", False)
+                      and not self.getArgument("export_as_module", False))
+        fogMode = 0 if disableFog else 1
         self.entity = {"_id": self._id,
                        "name": name or "Unnamed Scene",
                        "navName": name,
@@ -759,13 +760,15 @@ class Scene(Entity):
                            "units": page["scale_units"] if float(page["scale_number"]) >= 1 else ("(" + str(page["scale_number"]) + " " + page["scale_units"] + ")"),
                        },
                        "tokenVision": tokenVision,
-                       # v12 grouped the fog and lighting settings. These two are
-                       # still auto-migrated, but writing the current names keeps
-                       # the output free of deprecation warnings.
+                       # v12 grouped the fog and lighting settings. Emit the
+                       # current Foundry 14 shape directly.
                        "fog": {
-                           "exploration": fogExploration,
                            "reset": int(time.time() * 1000),
-                           "overlay": None,
+                           "mode": fogMode,
+                           "colors": {
+                               "explored": None,
+                               "unexplored": None,
+                           },
                        },
                        "environment": {
                            "darknessLevel": 0,

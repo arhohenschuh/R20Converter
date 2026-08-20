@@ -58,16 +58,16 @@ parser.add_argument("--force-hp-for-token-bar1", action="store_true", help="Forc
 parser.add_argument("--force-hp-for-token-bar2", action="store_true", help="Forces the use of HP attribute for all tokens' second bar")
 parser.add_argument("--add-walls-around-map", action="store_true", help="Add 4 walls to enclose the map and cut off view/movement to the side table")
 parser.add_argument("--enable-token-vision", action="store_true",
-                    help="Switch sight on for every token and enable token vision on every "
-                         "scene. Roll20 only records sight for tokens whose lighting was "
+                help="Switch sight on for every token. Scene token vision is enabled by "
+                    "default. Roll20 only records sight for tokens whose lighting was "
                          "configured; a vision module such as vision-5e derives the range from "
                          "the actor's senses, but only for tokens whose sight is on")
 # --enable-fog and --disable-fog are direct opposites; passing both used to be
 # accepted silently with undefined precedence. argparse now rejects the
 # combination for us.
 fog_group = parser.add_mutually_exclusive_group()
-fog_group.add_argument("--enable-fog", action="store_true", help="Enable Fog Exploration on all Scenes with Dynamic Lighting regardless of Advanced Fog of War setting")
-fog_group.add_argument("--disable-fog", action="store_true", help="Disable Fog Exploration on all Scenes with Dynamic Lighting regardless of Advanced Fog of War setting")
+fog_group.add_argument("--enable-fog", action="store_true", help="Compatibility flag; Individual Fog Exploration is enabled on every Scene by default")
+fog_group.add_argument("--disable-fog", action="store_true", help="For world exports only, explicitly set Scene Fog Exploration to None instead of the default Individual mode")
 parser.add_argument("--cleanup-scenes", action="store_true", help="Remove any tiles, tokens or walls that are outside of a scene's boundary")
 parser.add_argument("--interactive", action="store_true", help="Ask questions about decisions to be made during the conversion process.")
 parser.add_argument("--auto-doors", action="store_true", help="Deprecated compatibility flag; unsafe frequency inference was removed. Use --door-color for custom palettes.")

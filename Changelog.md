@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.11.1
+
+**Fixes B060: converted Scenes now retain working Token Vision and fog exploration.**
+
+- Enable Scene Token Vision by default so token sight settings are effective on every map.
+- Emit Foundry 14's native `fog.mode` and `fog.colors` shape instead of the removed
+  `fog.exploration` and `fog.overlay` fields.
+- Default every Scene to Individual exploration (`fog.mode: 1`).
+- Keep `--disable-fog` as a world-export-only escape hatch; module exports cannot use it to
+  recreate the defect.
+
 ## v1.11.0
 
 **Preserves Foundry 14 world data that previously loaded incorrectly or failed migration.**
