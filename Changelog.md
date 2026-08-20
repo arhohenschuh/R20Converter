@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.11.0
+
+**Preserves Foundry 14 world data that previously loaded incorrectly or failed migration.**
 
 - Preserve GM-only chat visibility when R20Exporter emits a GM whisper as `type: hidden` with
   `original_type: whisper`, or a private roll as `type: secretrollresult` with `secret: true`.
@@ -19,6 +21,8 @@
 - Persist `dnd5e.rulesVersion` as the JSON string `"legacy"` in converted worlds. dnd5e 5.3.3
   defaults a missing setting to `modern`, which silently runs 2014 content under 2024 rules. The
   full suite passes 799 tests with 21 optional `plyvel` skips.
+
+Suite: **820 passed** in the shipping Python 3.8 environment with native LevelDB coverage.
 
 ## v1.10.1
 

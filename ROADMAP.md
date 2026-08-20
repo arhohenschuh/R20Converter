@@ -5,6 +5,29 @@ with **zero migration**.
 
 Decision record: [ADR-008](docs/adr/ADR-008-emit-dnd5e-5x-natively.md).
 
+## Next invariant: no downstream structural repair
+
+**Proposed direction after v1.11.0:** a successful conversion must not require an external
+tool to normalize storage, activity consumption, spell ownership, or schema migrations.
+Campaign-specific content policy may remain downstream; generic document correctness belongs
+in R20Converter.
+
+Adopt this incrementally rather than rewriting the converter:
+
+1. Inventory every current downstream structural repair and add a failing converter fixture
+  plus a real-export negative control for each accepted class.
+2. Make the recursive LevelDB writer preserve all embedded-document relationships, including
+  ActorDelta and ActiveEffect children, with bidirectional parent/child conservation checks.
+3. Add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+  several real exports prove canonical document, activity, folder, Scene, token, and runtime
+  parity with Foundry's own migration.
+4. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+  clean Adventure import, and independent migration-parity review.
+
+World LevelDB output remains out of scope for this stage: worlds retain the established NeDB
+migration path until module parity is demonstrated and the operational value justifies the
+additional native-storage surface.
+
 ## Conventions
 
 | Prefix | Meaning |
