@@ -26,6 +26,20 @@ DOWNLOAD_RETRIES = 3
 #: Exponential backoff factor between retries (0.5 -> 0.5s, 1s, 2s).
 DOWNLOAD_BACKOFF = 0.5
 
+# Roll20's image proxy returns this fixed body with HTTP 200 for dead images.
+# A non-empty response is not evidence that art exists (B080).
+ROLL20_PLACEHOLDER_BYTES = 10750
+ROLL20_PLACEHOLDER_SHA1 = "f5c88ae6ead6d209ddf0fdd2a21a755aa6688f5a"
+
+
+class Roll20PlaceholderError(ValueError):
+    """A source returned Roll20's known dead-image placeholder."""
+
+
+def isRoll20Placeholder(content):
+    return (len(content or b"") == ROLL20_PLACEHOLDER_BYTES
+            and hashlib.sha1(content).hexdigest() == ROLL20_PLACEHOLDER_SHA1)
+
 _session = None
 
 
@@ -777,6 +791,7 @@ class Entity(object):
                     break
                 candidates.append(nextUrl)
 
+        placeholder_seen = False
         for candidate in candidates:
             for spelling in Entity.hostCandidates(candidate):
                 try:
@@ -791,11 +806,19 @@ class Entity(object):
                     continue
                 if response.status_code == 200:
                     if response.content:
+                        if isRoll20Placeholder(response.content):
+                            placeholder_seen = True
+                            self.logWarning(
+                                "Rejected Roll20 dead-image placeholder from '%s'" % spelling)
+                            continue
                         return response.content
                     self.logWarning("Error downloading '%s': HTTP 200 with empty body"
                                     % spelling)
                     continue
                 self.logWarning("Error downloading '%s': HTTP %d" % (spelling, response.status_code))
+        if placeholder_seen:
+            raise Roll20PlaceholderError(
+                "Roll20 placeholder returned for every usable candidate: %s" % originalUrl)
         return None
 
     @staticmethod
@@ -864,6 +887,12 @@ class Entity(object):
             if url:
                 return self.downloadResource(url, destination, type, dedup)
             return (None, "")
+        if isRoll20Placeholder(content):
+            self.logWarning("Rejected Roll20 dead-image placeholder in Zip file '%s'" % filename)
+            if url:
+                return self.downloadResource(url, destination, type, dedup)
+            raise Roll20PlaceholderError(
+                "Roll20 placeholder in Zip file without a fallback URL: %s" % filename)
         with open(dest_filename, "wb") as f:
             f.write(content)
         return (dest_filename, config_path)

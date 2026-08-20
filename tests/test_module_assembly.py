@@ -200,6 +200,76 @@ class TestExecutableReferences(object):
         assert converter.journal.entities[0].entity["pages"][0]["text"]["content"] == \
             "@UUID[Compendium.test-module.items.Item.%s]{Wand}" % identifier
 
+    def test_usable_system_actor_target_stays_external(self, tmp_path):
+        converter = Converter(tmp_path)
+        source_uuid = "Compendium.dnd5e.monsters.Actor.systemactor00001"
+        converter.items.entities = [Document({
+            "_id": "spell00000000001", "name": "Summon", "type": "spell",
+            "img": "icons/summon.webp", "system": {"activities": {"summon": {
+                "profiles": [{"uuid": source_uuid}],
+            }}},
+        })]
+        donor = Document({
+            "_id": "systemactor00001", "name": "Spirit", "type": "npc",
+            "img": "icons/spirit.webp",
+            "prototypeToken": {"texture": {"src": "icons/spirit-token.webp"}},
+            "items": [], "effects": [],
+        }, package="dnd5e", pack="monsters")
+        converter.packs = {"monsters": Database([donor])}
+        ModuleAssembler(converter).localizeExecutableReferences()
+        profile = converter.items.entities[0].entity["system"]["activities"]["summon"]["profiles"][0]
+        assert profile["uuid"] == source_uuid
+        assert converter.actors.entities == []
+
+    def test_null_art_system_actor_is_cloned_once_and_rewritten_everywhere(self, tmp_path):
+        converter = Converter(tmp_path)
+        source_uuid = "Compendium.dnd5e.monsters.Actor.zwT2WjWo7cTm2631"
+        for index in range(2):
+            converter.items.entities.append(Document({
+                "_id": "spell000000000%02d" % index, "name": "Mage Hand",
+                "type": "spell", "img": "icons/magic/hand.webp",
+                "system": {"activities": {"summon": {
+                    "profiles": [{"_id": "profile000000%03d" % index,
+                                  "uuid": source_uuid}],
+                }}},
+            }))
+        donor = Document({
+            "_id": "zwT2WjWo7cTm2631", "name": "Mage Hand", "type": "npc",
+            "img": None, "prototypeToken": {"texture": {"src": None}},
+            "items": [], "effects": [],
+        }, package="dnd5e", pack="monsters")
+        converter.packs = {"monsters": Database([donor])}
+
+        ModuleAssembler(converter).localizeExecutableReferences()
+
+        assert len(converter.actors.entities) == 1
+        clone = converter.actors.entities[0].entity
+        assert clone["_id"] == "zwT2WjWo7cTm2631"
+        assert clone["img"] == "icons/magic/hand.webp"
+        assert clone["prototypeToken"]["texture"]["src"] == "icons/magic/hand.webp"
+        assert clone["prototypeToken"]["displayName"] == 40
+        expected = "Compendium.test-module.actors.Actor.zwT2WjWo7cTm2631"
+        assert all(item.entity["system"]["activities"]["summon"]["profiles"][0]["uuid"] == expected
+                   for item in converter.items.entities)
+
+    def test_null_art_system_actor_without_item_icon_fails_with_uuid(self, tmp_path):
+        converter = Converter(tmp_path)
+        source_uuid = "Compendium.dnd5e.monsters.Actor.zwT2WjWo7cTm2631"
+        converter.items.entities = [Document({
+            "_id": "spell00000000001", "name": "Mage Hand", "type": "spell",
+            "img": None, "system": {"activities": {"summon": {
+                "profiles": [{"uuid": source_uuid}],
+            }}},
+        })]
+        donor = Document({
+            "_id": "zwT2WjWo7cTm2631", "name": "Mage Hand", "type": "npc",
+            "img": None, "prototypeToken": {"texture": {"src": None}},
+            "items": [], "effects": [],
+        }, package="dnd5e", pack="monsters")
+        converter.packs = {"monsters": Database([donor])}
+        with pytest.raises(ValueError, match="zwT2WjWo7cTm2631"):
+            ModuleAssembler(converter).localizeExecutableReferences()
+
     def test_source_journal_hierarchy_is_projected(self, tmp_path):
         converter = Converter(tmp_path)
         source_id = "-source-handout"
@@ -251,4 +321,38 @@ class TestEmbeddedHtmlArt(object):
         assembler = ModuleAssembler(converter)
         assembler._copyExternalAsset = lambda url: ""
         with pytest.raises(ValueError, match="could not internalize"):
+            assembler.internalizeAssets()
+
+    def test_placeholder_removes_the_complete_html_image_tag(self, tmp_path):
+        converter = Converter(tmp_path)
+        document = Document({
+            "_id": "journal000000001", "name": "Portrait", "type": "journal",
+            "pages": [{"text": {"content":
+                '<p>Before</p><img class="dead" src="https://imgsrv.roll20.net/dead.png"><p>After</p>'}}],
+        })
+        converter.journal.entities = [document]
+        assembler = ModuleAssembler(converter)
+
+        def placeholder(url):
+            raise __import__("entities.base", fromlist=["Roll20PlaceholderError"]).Roll20PlaceholderError(url)
+
+        assembler._copyExternalAsset = placeholder
+        assembler.internalizeAssets()
+        content = document.entity["pages"][0]["text"]["content"]
+        assert content == "<p>Before</p><p>After</p>"
+        assert assembler.placeholder_urls == {"https://imgsrv.roll20.net/dead.png"}
+        assert assembler.placeholder_references == 1
+        assert assembler.placeholder_tags_stripped == 1
+        assert not (tmp_path / "assets").exists()
+
+    def test_placeholder_in_structural_image_field_fails_closed(self, tmp_path):
+        converter = Converter(tmp_path)
+        converter.actors.entities = [Document({
+            "_id": "actor00000000001", "name": "Portrait", "type": "npc",
+            "img": "https://imgsrv.roll20.net/dead.png", "items": [], "effects": [],
+        })]
+        assembler = ModuleAssembler(converter)
+        error = __import__("entities.base", fromlist=["Roll20PlaceholderError"]).Roll20PlaceholderError
+        assembler._copyExternalAsset = lambda url: (_ for _ in ()).throw(error(url))
+        with pytest.raises(error, match="dead.png"):
             assembler.internalizeAssets()

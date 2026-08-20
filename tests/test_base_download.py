@@ -69,6 +69,37 @@ RENAMED_THUMB = "https://files.d20.io/images/1/thumb.png"
 
 
 class TestDownloadResource(object):
+    def test_placeholder_signature_requires_exact_size_and_sha1(self, monkeypatch):
+        body = b"x" * base.ROLL20_PLACEHOLDER_BYTES
+        assert base.ROLL20_PLACEHOLDER_BYTES == 10750
+        assert base.ROLL20_PLACEHOLDER_SHA1 == \
+            "f5c88ae6ead6d209ddf0fdd2a21a755aa6688f5a"
+        assert base.isRoll20Placeholder(body) is False
+
+        class Digest(object):
+            def hexdigest(self):
+                return base.ROLL20_PLACEHOLDER_SHA1
+
+        monkeypatch.setattr(base.hashlib, "sha1", lambda content: Digest())
+        assert base.isRoll20Placeholder(body) is True
+        assert base.isRoll20Placeholder(body + b"x") is False
+
+    @pytest.mark.parametrize("url", [
+        SOURCE,
+        "https://imgsrv.roll20.net/?src=https://files.d20.io/images/dead.png",
+    ])
+    def test_proxy_or_direct_placeholder_response_is_rejected(
+            self, entity, stub_session, monkeypatch, url):
+        fixed = entity.fixImageUrl(url)
+        first = entity.hostCandidates(fixed)[0]
+        stub_session({first: StubResponse(200, b"DEAD")})
+        monkeypatch.setattr(base, "isRoll20Placeholder",
+                            lambda content: content == b"DEAD")
+        with pytest.raises(base.Roll20PlaceholderError, match="placeholder"):
+            entity.downloadResource(url, "scenes/dead.png")
+        assert not list(os.scandir(entity._database._path)) or not any(
+            entry.is_file() for entry in os.scandir(entity._database._path))
+
     def test_successful_download_writes_the_file(self, entity, stub_session):
         stub_session({ORIGINAL: StubResponse(200, b"PNG")})
         dest, config = entity.downloadResource(SOURCE, "scenes/map.png")
@@ -107,6 +138,18 @@ class TestDownloadResource(object):
         assert open(dest, "rb").read() == b"PNG"
         assert any("HTTP 200 with empty body" in warning
                    for warning in entity._database.warnings)
+
+    def test_placeholder_success_falls_back_to_non_placeholder_body(
+            self, entity, stub_session, monkeypatch):
+        session = stub_session({
+            RENAMED_ORIGINAL: StubResponse(200, b"DEAD"),
+            ORIGINAL: StubResponse(200, b"PNG"),
+        })
+        monkeypatch.setattr(base, "isRoll20Placeholder",
+                            lambda content: content == b"DEAD")
+        dest, _ = entity.downloadResource(SOURCE, "scenes/map.png")
+        assert session.requested == [RENAMED_ORIGINAL, ORIGINAL]
+        assert open(dest, "rb").read() == b"PNG"
 
     def test_gives_up_after_the_smallest_resolution(self, entity, stub_session):
         session = stub_session({})

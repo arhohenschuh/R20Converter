@@ -157,3 +157,16 @@ class TestAssetsCopiedOutOfTheZip(object):
         assert result == ("downloaded.jpg", "modules/test/assets/downloaded.jpg")
         assert calls and calls[0][0] == url
 
+    def test_placeholder_zip_member_falls_back_to_download(self, entity, monkeypatch):
+        url = "https://files.d20.io/images/1/original.jpg"
+        converter = FakeConverter({"graphics/map.jpg": FakeMember(b"DEAD")})
+        entity._database._converter = converter
+        monkeypatch.setattr(base, "isRoll20Placeholder",
+                            lambda content: content == b"DEAD")
+        calls = []
+        entity.downloadResource = lambda *args, **kwargs: calls.append(args) or \
+            ("downloaded.jpg", "modules/test/assets/downloaded.jpg")
+        result = entity.copyZipFile(url, "graphics/map.jpg", "scenes/map.jpg")
+        assert result == ("downloaded.jpg", "modules/test/assets/downloaded.jpg")
+        assert calls and calls[0][0] == url
+

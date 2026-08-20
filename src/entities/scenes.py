@@ -511,15 +511,16 @@ class Scene(Entity):
                 top = (top - (drawing_height / 2))
                 barrierType = path.get("barrierType", "wall")
                 oneWayReversed = path.get("oneWayReversed", False)
-                if path_type == PATH_TYPE.CIRCLE:
-                    self.logInfo("Circle in the dynamic layer! Not supported!")
-                    continue
                 previous_point = None
                 previous_point_idx = 0
                 total_walls += len(polygon) - 1
                 for point_idx, point in enumerate(polygon):
                     # Convert x/y positions according to the scaling factor
-                    point = (point[0] * path["scaleX"], point[1] * path["scaleY"])
+                    if path_type == PATH_TYPE.CIRCLE:
+                        point = self.transformPathPoint(
+                            point, path, drawing_width, drawing_height)
+                    else:
+                        point = (point[0] * path["scaleX"], point[1] * path["scaleY"])
                     if previous_point is None:
                         previous_point = point
                         previous_point_idx = point_idx
@@ -528,7 +529,8 @@ class Scene(Entity):
                     wall_length = math.sqrt(math.pow(point[0] - previous_point[0], 2) + math.pow(point[1] - previous_point[1], 2))
                     min_angle = 180.0 - self.getArgument("maximum_wall_angle")
                     #self.logInfo("Wall length : %.2f" % wall_length)
-                    if wall_length < self.getArgument("minimum_wall_length", 0):
+                    if (path_type != PATH_TYPE.CIRCLE
+                            and wall_length < self.getArgument("minimum_wall_length", 0)):
                         #self.logInfo("Wall is too small, skipping.")
                         next_idx = point_idx + 1
                         # Don't skip if it's the last point of the polygon
@@ -549,23 +551,9 @@ class Scene(Entity):
                                 top + previous_point[1]]
                     wall_b = [left + point[0],
                                 top + point[1]]
-                    wall = {
-                        "_id": self.genID(),
-                        "flags": {},
-                        "c": [
-                                int(margin_left + wall_a[0] * grid_multiplier),
-                                int(margin_top + wall_a[1] * grid_multiplier),
-                                int(margin_left + wall_b[0] * grid_multiplier),
-                                int(margin_top + wall_b[1] * grid_multiplier),
-                        ],
-                        "move": self.wallMovementRestriction(page),
-                        "door": door_type,
-                        "light": 0 if barrierType == "transparent" else 20,
-                        "sight": 0 if barrierType == "transparent" else 20,
-                        "sound": 0 if barrierType == "transparent" else 20,
-                        "ds": 0,
-                        "dir": 0 if barrierType == "wall" else (2 if oneWayReversed else 1)
-                    }
+                    wall = self.createPathWall(
+                        path, page, path_type, point_idx - 1, wall_a, wall_b,
+                        margin_left, margin_top, grid_multiplier, door_type)
                     if door_type != 0:
                         wall["ds"] = 0
                     wall_x = min(wall_a[0], wall_b[0])
@@ -887,6 +875,71 @@ class Scene(Entity):
             return 0
         return 20
 
+    @staticmethod
+    def transformPathPoint(point, path, width, height):
+        """Scale and rotate a path-local point around the path center."""
+        x = point[0] * path.get("scaleX", 1)
+        y = point[1] * path.get("scaleY", 1)
+        rotation = float(path.get("rotation", 0) or 0)
+        if not all(math.isfinite(value) for value in (x, y, rotation, width, height)):
+            raise ValueError("Path '%s' contains non-finite geometry" %
+                             path.get("id", "unknown"))
+        if not rotation:
+            return (x, y)
+        center_x = width / 2.0
+        center_y = height / 2.0
+        radians = math.radians(rotation)
+        delta_x = x - center_x
+        delta_y = y - center_y
+        return (
+            center_x + delta_x * math.cos(radians) - delta_y * math.sin(radians),
+            center_y + delta_x * math.sin(radians) + delta_y * math.cos(radians),
+        )
+
+    def createPathWall(self, path, page, path_type, segment_ordinal,
+                       wall_a, wall_b, margin_left, margin_top,
+                       grid_multiplier, door_type):
+        """Build one Wall from a source path segment."""
+        barrier_type = path.get("barrierType", "wall")
+        if path_type == PATH_TYPE.CIRCLE:
+            identifier = Entity.strToID("%s:circle-wall:%d" %
+                                        (path.get("id"), segment_ordinal))
+            movement = self.circleMovementRestriction(page)
+        else:
+            identifier = self.genID()
+            movement = self.wallMovementRestriction(page)
+        return {
+            "_id": identifier,
+            "flags": {},
+            "c": [
+                int(margin_left + wall_a[0] * grid_multiplier),
+                int(margin_top + wall_a[1] * grid_multiplier),
+                int(margin_left + wall_b[0] * grid_multiplier),
+                int(margin_top + wall_b[1] * grid_multiplier),
+            ],
+            "move": movement,
+            "door": door_type,
+            "light": 0 if barrier_type == "transparent" else 20,
+            "sight": 0 if barrier_type == "transparent" else 20,
+            "sound": 0 if barrier_type == "transparent" else 20,
+            "ds": 0,
+            "dir": 0 if barrier_type == "wall" else (
+                2 if path.get("oneWayReversed", False) else 1),
+        }
+
+    def circleMovementRestriction(self, page):
+        """Movement policy for source circles, with CLI overrides first.
+
+        Roll20's circle source uses a missing ``lightrestrictmove`` value as a
+        vision-only barrier. Preserve that measured meaning while honoring the
+        same explicit converter overrides as ordinary Walls.
+        """
+        if self.getArgument("no_restrict_movement", False):
+            return 0
+        if self.getArgument("restrict_movement", False):
+            return 20
+        return 20 if page.get("lightrestrictmove") is True else 0
+
     def isDrawing(self, graphic):
         if self.getArgument("images_as_drawings", False):
             return True
@@ -956,13 +1009,16 @@ class Scene(Entity):
         polygon = []
         (w, h) = (width, height)
         def add_point(x, y, w, h):
+            if not math.isfinite(x) or not math.isfinite(y):
+                raise ValueError("Path '%s' contains non-finite geometry" %
+                                 path.get("id", "unknown"))
             w = w if w > x else math.ceil(x)
             h = h if h > y else math.ceil(y)
             polygon.append((x, y))
             return (int(w), int(h))
         if path["path"] is None:
             # Jumpgate uses path.points instead of path.path
-            points = path["points"]
+            points = path.get("points") or []
             SHAPE_TO_PATH_TYPE = {
                 "pol": PATH_TYPE.POLYGON,
                 "eli": PATH_TYPE.CIRCLE,
@@ -970,6 +1026,16 @@ class Scene(Entity):
                 "free": PATH_TYPE.FREEHAND,
             }
             path_type = SHAPE_TO_PATH_TYPE.get(path["shape"], PATH_TYPE.POLYGON)
+            if path_type == PATH_TYPE.CIRCLE and len(points) < 2:
+                if not all(math.isfinite(value) and value > 0 for value in (w, h)):
+                    raise ValueError("Path '%s' is a degenerate ellipse" %
+                                     path.get("id", "unknown"))
+                center_x, center_y = w / 2.0, h / 2.0
+                points = [
+                    (center_x + center_x * math.cos(math.pi + step * math.pi / 8.0),
+                     center_y + center_y * math.sin(math.pi + step * math.pi / 8.0))
+                    for step in range(17)
+                ]
             #for point in points:
             #    (w, h) = add_point(point[0], point[1], w, h)
             min_x = min([x for (x, _) in path["points"]])
@@ -985,13 +1051,16 @@ class Scene(Entity):
         else:
             points = path["path"]
             path_type = PATH_TYPE.POLYGON
+            current = None
             for point in points:
                 if point[0] == "M": # First Point
                     if point[1] is not None and point[2] is not None:
                         (w, h) = add_point(point[1], point[2], w, h)
+                        current = (point[1], point[2])
                 elif point[0] == "L": # A line
                     if point[1] is not None and point[2] is not None:
                         (w, h) = add_point(point[1], point[2], w, h)
+                        current = (point[1], point[2])
                 elif point[0] == "Q": # Freehand
                     if point[1] is not None and point[2] is not None and \
                         point[3] is not None and point[4] is not None:
@@ -999,6 +1068,29 @@ class Scene(Entity):
                         (w, h) = add_point(point[3], point[4], w, h)
                         path_type = PATH_TYPE.FREEHAND
                 elif point[0] == "C": # Circle
+                    if current is None or len(point) < 7 or any(
+                            value is None for value in point[1:7]):
+                        raise ValueError("Path '%s' has an incomplete cubic curve" %
+                                         path.get("id", "unknown"))
+                    controls = [float(value) for value in point[1:7]]
+                    if not all(math.isfinite(value) for value in controls):
+                        raise ValueError("Path '%s' contains non-finite geometry" %
+                                         path.get("id", "unknown"))
+                    x0, y0 = current
+                    x1, y1, x2, y2, x3, y3 = controls
+                    for step in range(1, 5):
+                        t = step / 4.0
+                        inverse = 1.0 - t
+                        x = (inverse ** 3 * x0
+                             + 3 * inverse ** 2 * t * x1
+                             + 3 * inverse * t ** 2 * x2
+                             + t ** 3 * x3)
+                        y = (inverse ** 3 * y0
+                             + 3 * inverse ** 2 * t * y1
+                             + 3 * inverse * t ** 2 * y2
+                             + t ** 3 * y3)
+                        (w, h) = add_point(x, y, w, h)
+                    current = (x3, y3)
                     path_type = PATH_TYPE.CIRCLE
                 elif point[0] == "Z": # End drawing (empty)
                     pass
@@ -1011,6 +1103,18 @@ class Scene(Entity):
                 points[3][1] == 0 and points[3][2] == height and \
                 points[4][1] == 0 and points[4][2] == 0:
                 path_type = PATH_TYPE.RECTANGLE
+        if path_type == PATH_TYPE.CIRCLE:
+            if polygon and polygon[0] != polygon[-1]:
+                polygon.append(polygon[0])
+            unique = set(polygon[:-1]) if len(polygon) > 1 else set()
+            if len(polygon) < 4 or len(unique) < 3:
+                raise ValueError("Path '%s' is a degenerate circle" %
+                                 path.get("id", "unknown"))
+            span_x = max(point[0] for point in polygon) - min(point[0] for point in polygon)
+            span_y = max(point[1] for point in polygon) - min(point[1] for point in polygon)
+            if span_x <= 0 or span_y <= 0:
+                raise ValueError("Path '%s' is a degenerate circle" %
+                                 path.get("id", "unknown"))
         return (polygon, path_type, w, h)
 
     # Get angle between points P1, P2, P3 with the angle at P2 being returned in degrees

@@ -3,6 +3,7 @@ from .journal import Handout
 from .items import *
 from collections import OrderedDict
 import dnd5e
+import json
 import re
 import os
 import copy
@@ -2501,7 +2502,115 @@ class Actor(Entity):
             return int(match.group(1)), ""
         return None, ""
 
+    @staticmethod
+    def normalizeSpellName(name):
+        """Comparable spell name for source cadence reconciliation."""
+        text = str(name or "").lower().replace("’", "'")
+        text = re.sub(r"\s*\([^)]*\)", "", text)
+        return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+    @staticmethod
+    def normalizeCadence(value):
+        text = str(value or "").lower().replace("-", " ").strip()
+        if re.search(r"\bat\s+will\b", text):
+            return "at will"
+        match = re.search(r"(\d+)\s*/\s*day", text)
+        return "%d/day" % int(match.group(1)) if match else ""
+
+    def inferInnateCadence(self):
+        """Infer unambiguous NPC cadence from structured data or trait prose (B078)."""
+        rows = {}
+        for level in range(10):
+            key = "spell-%s" % (level if level else "cantrip")
+            for spell in self.getRepeatingAttributes(key).values():
+                if not spell:
+                    continue
+                name = self.normalizeSpellName(
+                    self.getAttribute("spellname", "", from_dict=spell)[0])
+                if name:
+                    rows.setdefault(name, []).append((level, spell))
+
+        inferred = {}
+        sources = {}
+
+        def assign(name, cadence, source):
+            normalized_name = self.normalizeSpellName(name)
+            normalized_cadence = self.normalizeCadence(cadence)
+            matches = rows.get(normalized_name, [])
+            if not matches:
+                return
+            if len(matches) != 1:
+                raise ValueError("Cadence for '%s' matches %d emitted rows" %
+                                 (name, len(matches)))
+            key = (normalized_name, matches[0][0])
+            existing = inferred.get(key)
+            if existing and existing != normalized_cadence:
+                raise ValueError("Spell '%s' has contradictory cadence: %s vs %s" %
+                                 (name, existing, normalized_cadence))
+            if normalized_cadence:
+                inferred[key] = normalized_cadence
+                sources.setdefault(key, source)
+
+        drop_data = self.getAttribute("kingdom_drop_data", "")[0]
+        if drop_data:
+            try:
+                structured = json.loads(drop_data)
+            except (TypeError, ValueError):
+                structured = {}
+            spell_data = structured.get("data-Spells") if isinstance(structured, dict) else None
+            if spell_data:
+                try:
+                    spell_data = json.loads(spell_data) if isinstance(spell_data, str) else spell_data
+                except (TypeError, ValueError) as error:
+                    raise ValueError("kingdom_drop_data.data-Spells is invalid JSON: %s" % error)
+                buckets = spell_data.get("spells", {}) if isinstance(spell_data, dict) else {}
+                if not isinstance(buckets, dict):
+                    raise ValueError("kingdom_drop_data.data-Spells.spells is not an object")
+                for cadence, names in buckets.items():
+                    if not isinstance(names, list):
+                        raise ValueError("Structured cadence '%s' is not an array" % cadence)
+                    for name in names:
+                        assign(name, cadence, "structured data-Spells")
+
+        for trait in self.getRepeatingAttributes("npctrait").values():
+            if not trait:
+                continue
+            description = (self.getAttribute("description", "", from_dict=trait)[0]
+                           or self.getAttribute("desc", "", from_dict=trait)[0])
+            text = str(description or "").replace("’", "'")
+            if not text:
+                continue
+            for match in re.finditer(
+                    r"(?:^|\n)\s*(at\s+will|\d+\s*/\s*day(?:\s+each)?)\s*:\s*([^\n]+)",
+                    text, re.IGNORECASE):
+                cadence = match.group(1)
+                for name in re.split(r"\s*,\s*|\s+and\s+", match.group(2)):
+                    assign(name, cadence, "trait cadence list")
+
+            for name in rows:
+                phrase = re.escape(name).replace(r"\ ", r"\s+")
+                if re.search(r"innately\s+cast\s+%s\s+at\s+will\b" % phrase,
+                             self.normalizeSpellName(text), re.IGNORECASE):
+                    assign(name, "at will", "innately cast trait")
+
+            if re.search(r"can't\s+be\s+used.*until\s+the\s+next\s+dawn", text,
+                         re.IGNORECASE | re.DOTALL):
+                named = []
+                normalized_text = self.normalizeSpellName(text)
+                for name in rows:
+                    phrase = re.escape(name).replace(r"\ ", r"\s+")
+                    if re.search(r"\bcast\s+(?:the\s+)?%s\s+spell\b" % phrase,
+                                 normalized_text, re.IGNORECASE):
+                        named.append(name)
+                if len(named) > 1:
+                    raise ValueError("Next-dawn trait names multiple emitted spells: %s" %
+                                     ", ".join(named))
+                if named:
+                    assign(named[0], "1/day", "next-dawn trait")
+        return inferred
+
     def addSpells(self, items):
+        inferred_cadence = self.inferInnateCadence() if self.isNPC() else {}
         for level in range(10):
             spells = self.getRepeatingAttributes("spell-{}".format(level if level > 0 else "cantrip"))
             for spell in spells.values():
@@ -2631,6 +2740,14 @@ class Actor(Entity):
                     preparation.mode = ItemSpellPreparation.PREPARED_SPELL
                     preparation.prepared = prepared
                 innate = innate if innate != "" else spell_innate
+                inferred = inferred_cadence.get((self.normalizeSpellName(name), level), "")
+                if innate and inferred:
+                    explicit = self.normalizeCadence(innate)
+                    if explicit and explicit != inferred:
+                        raise ValueError("Spell '%s' has contradictory cadence: %s vs %s" %
+                                         (name, explicit, inferred))
+                if not innate:
+                    innate = inferred
                 if innate != "":
                     preparation.mode = ItemSpellPreparation.INNATE_SPELLCASTING
                     preparation.prepared = True

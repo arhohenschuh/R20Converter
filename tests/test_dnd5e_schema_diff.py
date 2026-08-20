@@ -10,6 +10,8 @@ something outside it. Adding a type here is cheap; the point is that the check
 is mechanical rather than a reviewer noticing.
 """
 
+import json
+
 import pytest
 
 import dnd5e
@@ -423,6 +425,106 @@ class TestInnateUses(object):
 
     def test_at_will_has_no_count(self):
         assert Actor.parseInnateUses("at will") == (None, "")
+
+
+class CadenceActor(Actor):
+    def __init__(self, drop_data="", spells=None, traits=None):
+        self._shaped = False
+        self._attributes = {"kingdom_drop_data": (drop_data, "", "drop")}
+        self._repeating = {
+            "spell-1": spells or {},
+            "spell-2": {},
+            "spell-3": {},
+            "spell-4": {},
+            "spell-cantrip": {},
+            "npctrait": traits or {},
+        }
+
+
+def cadence_spell(name, identifier="spell-row"):
+    return {"spellname": (name, "", identifier)}
+
+
+def cadence_trait(name, description, identifier="trait-row"):
+    return {"name": (name, "", identifier),
+            "description": (description, "", identifier + "-description")}
+
+
+class TestSourceInnateCadence(object):
+    def test_structured_data_spells_is_authoritative(self):
+        drop_data = json.dumps({"data-Spells": json.dumps({
+            "spells": {"at-will": ["mage hand"], "2/day": ["darkness"]},
+        })})
+        actor = CadenceActor(drop_data, {
+            "mage": cadence_spell("Mage Hand", "mage"),
+            "dark": cadence_spell("Darkness", "dark"),
+        })
+        actor._repeating["spell-cantrip"] = {"mage": actor._repeating["spell-1"].pop("mage")}
+        actor._repeating["spell-2"] = {"dark": actor._repeating["spell-1"].pop("dark")}
+        assert actor.inferInnateCadence() == {
+            ("mage hand", 0): "at will",
+            ("darkness", 2): "2/day",
+        }
+
+    def test_trait_list_and_innately_cast_clause_are_parsed(self):
+        actor = CadenceActor(spells={
+            "animal": cadence_spell("Animal Friendship", "animal"),
+            "suggest": cadence_spell("Suggestion", "suggest"),
+            "misty": cadence_spell("Misty Step", "misty"),
+        }, traits={
+            "list": cadence_trait("Innate Spellcasting",
+                "At will: animal friendship (snakes only)\n3/day: suggestion"),
+            "single": cadence_trait("Innate Spellcasting",
+                "The king can innately cast misty step at will, requiring no components."),
+        })
+        actor._repeating["spell-2"] = {
+            "suggest": actor._repeating["spell-1"].pop("suggest"),
+            "misty": actor._repeating["spell-1"].pop("misty"),
+        }
+        assert actor.inferInnateCadence() == {
+            ("animal friendship", 1): "at will",
+            ("suggestion", 2): "3/day",
+            ("misty step", 2): "at will",
+        }
+
+    def test_named_item_trait_with_next_dawn_is_one_per_day(self):
+        actor = CadenceActor(spells={
+            "ray": cadence_spell("Scorching Ray", "ray"),
+        }, traits={
+            "circlet": cadence_trait("Circlet of Blasting",
+                "The king can use an action to cast the scorching ray spell with it. "
+                "The circlet can't be used this way again until the next dawn."),
+        })
+        actor._repeating["spell-2"] = actor._repeating.pop("spell-1")
+        assert actor.inferInnateCadence() == {
+            ("scorching ray", 2): "1/day",
+        }
+
+    def test_duplicate_emitted_spell_rows_make_cadence_ambiguous(self):
+        actor = CadenceActor(spells={
+            "first": cadence_spell("Suggestion", "first"),
+            "second": cadence_spell("Suggestion", "second"),
+        }, traits={
+            "list": cadence_trait("Innate Spellcasting", "3/day: suggestion"),
+        })
+        with pytest.raises(ValueError, match="matches 2 emitted rows"):
+            actor.inferInnateCadence()
+
+    def test_structured_and_trait_cadence_contradiction_is_rejected(self):
+        drop_data = json.dumps({"data-Spells": json.dumps({
+            "spells": {"2/day": ["darkness"]},
+        })})
+        actor = CadenceActor(drop_data, {
+            "dark": cadence_spell("Darkness", "dark"),
+        }, {
+            "list": cadence_trait("Innate Spellcasting", "3/day: darkness"),
+        })
+        with pytest.raises(ValueError, match="contradictory cadence"):
+            actor.inferInnateCadence()
+
+    def test_ordinary_prepared_spell_has_no_inferred_cadence(self):
+        actor = CadenceActor(spells={"shield": cadence_spell("Shield", "shield")})
+        assert actor.inferInnateCadence() == {}
 
 
 class TestRitualOnlyPreparation(object):

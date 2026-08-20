@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.15.0
+
+**Closes all five systemic defects found during Tomb of Annihilation v1.14.0 qualification.**
+
+- Flatten dynamic-layer circle/ellipse cubics into four deterministic segments per curve, preserving
+  scale, rotation, translation, one-way direction, sight/sound/light behavior, source movement
+  policy, and stable Wall IDs. Immutable ToA source verifies **224 circles -> 3,584 Walls** across
+  27 Scenes: 197 one-way and 27 ordinary, all vision-only (B076).
+- Preserve limited innate consumption when a utility-shaped source is merged into a richer
+  multi-activity donor. A unique same-type activity wins; otherwise the canonical
+  `dnd5eactivity000`, then a sole donor activity. Ambiguous donors fail closed, and every limited
+  innate spell must have exactly one positive self-use consumer (B077).
+- Infer NPC cadence from structured `kingdom_drop_data.data-Spells`, exact trait cadence lists,
+  `innately cast ... at will` clauses, and unambiguous named next-dawn item traits. Contradictory or
+  duplicate matches abort rather than guess. All nine ToA cadence rows reproduce from immutable
+  source (B078).
+- Qualify executable game-system Actor art before exempting it from localization. Usable system
+  summons stay external; null-art Actors are cloned once, receive the invoking Item icon for Actor
+  and prototype-token art, keep their source ID/profile IDs, and use Always for Owner. Missing
+  fallback art fails with the exact UUID (B079).
+- Reject Roll20's exact 10,750-byte/SHA-1 `f5c88ae...` placeholder after ZIP, HTTP, and external
+  module reads. Complete dead HTML image tags are removed and counted; structural image fields fail
+  closed. Same-size non-placeholder content remains valid (B080).
+
+Suite: **899 passed** in the shipping Python 3.8 environment. Immutable-source verification passes
+224/224 circles, 3,584/3,584 Wall IDs, all nine cadence contracts, the null-art Mage Hand donor,
+and the exact retained Roll20 placeholder body.
+
+Final frozen-binary qualification against immutable *Lost Mine of Phandelver* passes production
+Gate A **37 / 0 / 0 / 3**. Source packs and Adventure exactly conserve 40 Actors, 119 Items,
+10 Scenes, 87 Journals, 13 Tables, 22 folders, and 206/206 Token actor links, with zero external
+HTML images, zero zero-byte assets, and zero known Roll20 placeholder files.
+
 ## v1.14.0
 
 **Module exports are self-contained, one-click Adventure packages (B065).**

@@ -22,10 +22,13 @@ Adopt this incrementally rather than rewriting the converter:
   item-use pools, and activity consumption must agree without downstream repair.
 4. **Done in v1.14.0:** assemble self-contained modules, internalizing executable compendium
   dependencies and embedded HTML artwork while preserving campaign-authored policy downstream.
-5. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+5. **Done in v1.15.0:** close ToA's systemic follow-ups: circular Wall geometry, donor consumer
+  reconciliation, source cadence inference, quality-aware system summon localization, and known
+  Roll20 placeholder rejection.
+6. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-6. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+7. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 World LevelDB output remains out of scope for this stage: worlds retain the established NeDB

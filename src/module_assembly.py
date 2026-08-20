@@ -10,7 +10,8 @@ import shutil
 import dnd5e
 import foundry
 import leveldb_pack
-from entities.base import Entity
+from entities.base import (Entity, Roll20PlaceholderError,
+                           isRoll20Placeholder)
 
 
 COMPENDIUM_UUID_RE = re.compile(
@@ -20,6 +21,7 @@ COMPENDIUM_UUID_INLINE_RE = re.compile(
 COMPENDIUM_PACKAGE_RE = re.compile(r"Compendium\.([^.\]\s]+)\.")
 IMG_SRC_RE = re.compile(
     r"(<img\b[^>]*?\bsrc\s*=\s*)([\"'])(.*?)(\2)", re.IGNORECASE)
+IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 ACTOR_TYPES = frozenset(("character", "npc", "vehicle", "group"))
 EXECUTABLE_UUID_KEYS = frozenset(("uuid", "documentUuid", "targetUuid"))
 PROVENANCE_UUID_KEYS = frozenset(("compendiumSource", "sourceId"))
@@ -38,6 +40,9 @@ class ModuleAssembler(object):
         self.converter = converter
         self.recommendations = set()
         self._asset_helper = None
+        self.placeholder_urls = set()
+        self.placeholder_references = 0
+        self.placeholder_tags_stripped = 0
 
     def _databases(self):
         for _, attribute in self.DATABASES:
@@ -74,6 +79,24 @@ class ModuleAssembler(object):
                     yield result
 
     @staticmethod
+    def _walkWithItemImage(value, item_image=None):
+        """Walk JSON values while carrying the nearest owning Item image."""
+        if isinstance(value, dict):
+            context_image = item_image
+            if ("system" in value and "type" in value
+                    and value.get("type") not in ACTOR_TYPES):
+                context_image = value.get("img") or None
+            for key, child in list(value.items()):
+                yield value, key, child, context_image
+                for result in ModuleAssembler._walkWithItemImage(child, context_image):
+                    yield result
+        elif isinstance(value, list):
+            for index, child in enumerate(list(value)):
+                yield value, index, child, item_image
+                for result in ModuleAssembler._walkWithItemImage(child, item_image):
+                    yield result
+
+    @staticmethod
     def _documentType(document):
         return "Actor" if document.get("type") in ACTOR_TYPES else "Item"
 
@@ -97,11 +120,34 @@ class ModuleAssembler(object):
     def _localDatabase(self, document_type):
         return self.converter.actors if document_type == "Actor" else self.converter.items
 
-    def _cloneExecutableTarget(self, donor, document_type):
+    @staticmethod
+    def _actorArtIsUsable(document):
+        return bool(str(document.get("img") or "").strip()
+                    and str(document.get("prototypeToken", {})
+                            .get("texture", {}).get("src") or "").strip())
+
+    def _cloneExecutableTarget(self, donor, document_type, fallback_image=None,
+                               require_usable_art=False, source_uuid=None):
         target = self._localDatabase(document_type)
         source = copy.deepcopy(donor.entity)
         source["folder"] = None
         if document_type == "Actor":
+            if require_usable_art and not self._actorArtIsUsable(source):
+                fallback = (str(fallback_image or "").strip()
+                            or str(source.get("img") or "").strip()
+                            or str(source.get("prototypeToken", {})
+                                   .get("texture", {}).get("src") or "").strip())
+                if not fallback:
+                    raise ValueError(
+                        "Executable Actor %s has unusable art and no invoking Item icon"
+                        % (source_uuid or source.get("_id")))
+                source["img"] = source.get("img") or fallback
+                token = source.setdefault("prototypeToken", {})
+                token.setdefault("texture", {})["src"] = (
+                    token.get("texture", {}).get("src") or fallback)
+                if not self._actorArtIsUsable(source):
+                    raise ValueError("Executable Actor %s still has unusable art" %
+                                     (source_uuid or source.get("_id")))
             source.setdefault("prototypeToken", {})["displayName"] = 40
         identifier = source.get("_id")
         if not identifier:
@@ -129,7 +175,7 @@ class ModuleAssembler(object):
         while True:
             changed = False
             for document in list(self._documents()):
-                for owner, key, value in self._walk(document):
+                for owner, key, value, item_image in self._walkWithItemImage(document):
                     if not isinstance(value, str) or key in PROVENANCE_UUID_KEYS:
                         continue
                     direct = COMPENDIUM_UUID_RE.match(value) if key in EXECUTABLE_UUID_KEYS else None
@@ -141,9 +187,25 @@ class ModuleAssembler(object):
                     def replace(match):
                         nonlocal changed
                         package, _, document_type, identifier = match.groups()
-                        if package in (self.converter.name, self.converter.game_system):
+                        if package == self.converter.name:
                             return match.group(0)
                         donor = donors.get(match.group(0))
+                        if package == self.converter.game_system:
+                            if document_type != "Actor":
+                                return match.group(0)
+                            if donor is None:
+                                if direct is not None:
+                                    raise ValueError(
+                                        "unresolvable executable compendium reference %s" % value)
+                                return match.group(0)
+                            if self._actorArtIsUsable(donor.entity):
+                                return match.group(0)
+                            self._cloneExecutableTarget(
+                                donor, document_type, fallback_image=item_image,
+                                require_usable_art=True, source_uuid=match.group(0))
+                            changed = True
+                            return "Compendium.%s.actors.Actor.%s" % (
+                                self.converter.name, identifier)
                         if donor is None:
                             if direct is not None:
                                 raise ValueError(
@@ -221,6 +283,11 @@ class ModuleAssembler(object):
             path = os.path.join(root or "", "Data", "modules", *parts[1:])
             if not root or not os.path.isfile(path):
                 return ""
+            with open(path, "rb") as handle:
+                content = handle.read()
+            if isRoll20Placeholder(content):
+                raise Roll20PlaceholderError(
+                    "Roll20 placeholder in external module asset: %s" % source)
             destination = os.path.join("assets", "external", parts[-1])
             dest_filename, config_path = helper.getDestinationPaths(
                 destination, source, type="external", dedup=True)
@@ -236,17 +303,29 @@ class ModuleAssembler(object):
         return config_path
 
     def _internalizeString(self, value):
-        def replace(match):
+        def replace_tag(tag_match):
+            tag = tag_match.group(0)
+            match = IMG_SRC_RE.search(tag)
+            if not match:
+                return tag
             source = match.group(3)
             external = self._externalAsset(source)
             if not external:
-                return match.group(0)
-            local = self._copyExternalAsset(external)
+                return tag
+            try:
+                local = self._copyExternalAsset(external)
+            except Roll20PlaceholderError:
+                self.placeholder_urls.add(external)
+                self.placeholder_references += 1
+                self.placeholder_tags_stripped += 1
+                return ""
             if not local:
                 raise ValueError("could not internalize embedded image %s" % external)
-            return "%s%s%s%s" % (match.group(1), match.group(2), local, match.group(4))
+            replacement = "%s%s%s%s" % (
+                match.group(1), match.group(2), local, match.group(4))
+            return tag[:match.start()] + replacement + tag[match.end():]
 
-        updated = IMG_SRC_RE.sub(replace, value) if "<img" in value.lower() else value
+        updated = IMG_TAG_RE.sub(replace_tag, value) if "<img" in value.lower() else value
         external = self._externalAsset(updated)
         if external and re.search(r"\.[A-Za-z0-9]{2,5}(?:[?&].*)?$", external):
             local = self._copyExternalAsset(external)
@@ -261,6 +340,12 @@ class ModuleAssembler(object):
             for owner, key, value in self._walk(document):
                 if isinstance(value, str):
                     owner[key] = self._internalizeString(value)
+        if self.placeholder_tags_stripped and hasattr(self.converter, "logInfo"):
+            self.converter.logInfo(
+                "Roll20 placeholder art: %d URLs, %d references, %d stripped HTML tags, "
+                "0 stored files" % (
+                    len(self.placeholder_urls), self.placeholder_references,
+                    self.placeholder_tags_stripped))
 
     def collectRecommendations(self):
         self.recommendations = set()

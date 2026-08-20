@@ -383,7 +383,15 @@ class TestCompendiumKeepsCharacterState(object):
             "uses": uses,
             "description": {"value": "<p>Imported from Roll20</p>"},
         }
-        item = self._build(entity._database, custom, _spell_document())
+        document = _spell_document()
+        if method == "innate" and uses.get("max"):
+            target = {"type": "itemUses", "target": "", "value": "1",
+                      "scaling": {"mode": "", "formula": ""}}
+            custom["activities"] = {
+                "source": {"type": "utility", "consumption": {"targets": [target]}},
+            }
+            document = _multi_activity_spell_document()
+        item = self._build(entity._database, custom, document)
         assert item.entity["system"]["method"] == method
         assert item.entity["system"]["prepared"] == prepared
         assert item.entity["system"]["uses"] == uses
@@ -405,6 +413,45 @@ class TestCompendiumKeepsCharacterState(object):
         activities = item.entity["system"]["activities"]
         assert activities["mark"]["consumption"] == {"spellSlot": True, "targets": [target]}
         assert activities["move"]["consumption"] == {"spellSlot": False, "targets": []}
+
+    def test_limited_innate_uses_canonical_primary_when_donor_types_differ(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        target = {"type": "itemUses", "target": "", "value": "1",
+                  "scaling": {"mode": "", "formula": ""}}
+        custom = {
+            "method": "innate",
+            "prepared": 1,
+            "uses": {"spent": 0, "max": "2", "recovery": []},
+            "activities": {
+                "source": {"type": "utility", "consumption": {"targets": [target]}},
+            },
+        }
+        donor = _spell_document()
+        donor["system"]["activities"] = {
+            "dnd5eactivity000": {
+                "_id": "dnd5eactivity000", "type": "attack",
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+            "dnd5eactivity100": {
+                "_id": "dnd5eactivity100", "type": "save",
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+        }
+        item = self._build(entity._database, custom, donor)
+        activities = item.entity["system"]["activities"]
+        assert activities["dnd5eactivity000"]["consumption"] == {
+            "spellSlot": True, "targets": [target]}
+        assert activities["dnd5eactivity100"]["consumption"] == {
+            "spellSlot": False, "targets": []}
+
+    def test_limited_innate_without_a_positive_consumer_is_rejected(self, entity):
+        donor = _multi_activity_spell_document()
+        donor["system"].update({
+            "method": "innate",
+            "uses": {"spent": 0, "max": "1", "recovery": []},
+        })
+        with pytest.raises(ValueError, match="limited innate spell has no positive item-use consumer"):
+            self._build(entity._database, {}, donor)
 
     @pytest.mark.parametrize("method", ["atwill", "ritual"])
     def test_unlimited_non_slot_method_disables_slot_consumption(self, entity, method):

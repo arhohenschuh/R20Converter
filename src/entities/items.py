@@ -116,10 +116,21 @@ def _mergeSpellConsumption(system, custom_data):
     for source_type, targets in source_consumers:
         candidates = [(activity_id, activity) for activity_id, activity in activities.items()
                       if activity_id not in primary and activity.get("type") == source_type]
-        if not candidates and len(activities) == 1:
-            candidates = list(activities.items())
+        if len(candidates) > 1:
+            canonical = [candidate for candidate in candidates
+                         if candidate[0] == "dnd5eactivity000"]
+            candidates = canonical
         if not candidates:
-            continue
+            canonical = [(activity_id, activity)
+                         for activity_id, activity in activities.items()
+                         if activity_id not in primary
+                         and activity_id == "dnd5eactivity000"]
+            if canonical:
+                candidates = canonical
+            elif len(activities) == 1:
+                candidates = list(activities.items())
+        if not candidates:
+            raise ValueError("Cannot select one primary donor activity for limited innate spell")
         activity_id, activity = candidates[0]
         primary.add(activity_id)
         consumption = activity.setdefault("consumption", {})
@@ -140,6 +151,7 @@ def _validateResourceContract(item_type, item_name, system):
         return
     uses_max = (system.get("uses") or {}).get("max")
     method = system.get("method", "spell")
+    positive_self_consumers = 0
     for activity_id, activity in (system.get("activities") or {}).items():
         consumption = activity.get("consumption") or {}
         self_targets = [target for target in consumption.get("targets", [])
@@ -156,10 +168,28 @@ def _validateResourceContract(item_type, item_name, system):
                 positive = positive or float(target.get("value", 1)) > 0
             except (TypeError, ValueError):
                 positive = True
+        if positive:
+            positive_self_consumers += sum(
+                1 for target in self_targets
+                if _positiveConsumptionTarget(target))
         if (item_type == "spell" and method == "spell" and positive
                 and consumption.get("spellSlot") is not False):
             raise ValueError("%s / %s consumes item uses and a standard spell slot" %
                              (item_name, activity_id))
+    if method == "innate" and uses_max not in (None, "", 0, "0"):
+        if positive_self_consumers == 0:
+            raise ValueError("%s: limited innate spell has no positive item-use consumer" %
+                             item_name)
+        if positive_self_consumers > 1:
+            raise ValueError("%s: limited innate spell has multiple positive item-use consumers" %
+                             item_name)
+
+
+def _positiveConsumptionTarget(target):
+    try:
+        return float(target.get("value", 1)) > 0
+    except (TypeError, ValueError):
+        return True
 
 
 def _buildActivities(item_type, item_name, attack, ability_mods=None, ranged=None,

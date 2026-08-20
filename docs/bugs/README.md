@@ -91,6 +91,11 @@ mechanically for the physical-item class of defect.
 | [B073](B073-adventure-journal-hierarchy-not-source-backed.md) | High | Fixed (v1.14.0) | Adventure assembly copied whatever Journal folders happened to be in the pack instead of fail-closed projection from the immutable Roll20 `journalfolder` tree. |
 | [B074](B074-cloned-donor-token-name-visibility-drifts.md) | Minor | Fixed (v1.14.0) | Actors cloned to close executable dependencies retained donor prototype Token name visibility instead of the module-wide Always-for-Owner policy. |
 | [B075](B075-missing-compendium-link-becomes-invalid-item-uuid.md) | Minor | Fixed (v1.14.0) | An unresolved Roll20 compendium link became `@UUID[Item.<visible name>]`, manufacturing a dangling world Item UUID instead of preserving readable text. |
+| [B076](B076-dynamic-layer-circles-are-skipped.md) | High | Fixed (v1.15.0) | Dynamic-layer circles are flattened into deterministic, transformed, closed Walls; immutable ToA verifies 224 paths / 3,584 segments across 27 Scenes. |
+| [B077](B077-donor-activity-mismatch-drops-innate-consumer.md) | High | Fixed (v1.15.0) | Mismatched multi-activity donors receive exactly one bounded consumer on a deterministic primary; limited innate spells cannot pass with zero or multiple consumers. |
+| [B078](B078-structured-innate-cadence-is-ignored.md) | High | Fixed (v1.15.0) | Structured `data-Spells` and unambiguous trait clauses now drive native cadence; all nine measured ToA rows infer from immutable source. |
+| [B079](B079-system-summon-with-empty-texture-is-not-localized.md) | High | Fixed (v1.15.0) | System Actor summons are art-qualified; null-art donors localize once using the invoking Item icon or fail with the exact UUID. |
+| [B080](B080-roll20-placeholder-is-stored-as-art.md) | High | Fixed (v1.15.0) | The exact Roll20 placeholder body is rejected across acquisition paths; complete HTML tags are stripped and structural image fields fail closed. |
 
 ## Cross-cutting observations
 
@@ -101,7 +106,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B076**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B081**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent
