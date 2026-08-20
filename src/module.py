@@ -2,6 +2,7 @@ import json
 import os
 
 import foundry
+from module_assembly import ModuleAssembler
 from version import version
 
 #: Default visibility for generated compendium packs. Replaces the pre-v10
@@ -25,6 +26,14 @@ class Module(object):
             self._title = converter.campaign["campaign_title"]
         self._description = converter.getArgument("description")
         self._packs = []
+        self._recommendations = set()
+
+        assembler = None
+        adventure = None
+        if hasattr(converter, "folders"):
+            assembler = ModuleAssembler(converter)
+            adventure = assembler.prepare()
+            self._recommendations = assembler.recommendations
         
         if len(converter.journal.entities) > 0:
             converter.journal.save()
@@ -50,9 +59,15 @@ class Module(object):
         if len(converter.cards.entities) > 0:
             converter.cards.save()
             self._packs.append(self._newPack("cards", "Deck Cards", "Item", "cards.db"))
+        if adventure is not None:
+            assembler.writeAdventure(adventure)
+            self._packs.insert(0, self._newPack(
+                "adventure", "Complete Adventure", "Adventure", "adventure.db",
+                ownership={"PLAYER": "NONE", "TRUSTED": "NONE",
+                           "ASSISTANT": "OWNER", "GAMEMASTER": "OWNER"}))
 
 
-    def _newPack(self, name, label, entity, filename):
+    def _newPack(self, name, label, entity, filename, ownership=None):
         """Build one v13 compendium pack definition (ADR-002).
 
         ``entity`` was renamed to ``type`` in v10 and removed in v13, and
@@ -67,11 +82,20 @@ class Module(object):
                 "path": path.replace(os.path.sep, "/"),
                 "type": entity,
                 "system": self._converter.game_system,
-                "ownership": DEFAULT_PACK_OWNERSHIP
+                "ownership": ownership or DEFAULT_PACK_OWNERSHIP
             }
 
     def toDict(self):
         """Build the ``module.json`` manifest in the Foundry v13 schema (ADR-002)."""
+        relationships = {
+            "systems": [foundry.systemRelationship(self._converter.game_system,
+                                                     self._converter.game_system_version)]
+        }
+        if self._recommendations:
+            relationships["recommends"] = [
+                {"id": module_id, "type": "module"}
+                for module_id in sorted(self._recommendations)
+            ]
         return {"id": self._name,
                 "type": foundry.PACKAGE_TYPE_MODULE,
                 "title": self._title,
@@ -79,10 +103,7 @@ class Module(object):
                 "version": self._converter.getArgument("package_version", None) or version,
                 "authors": [{"name": foundry.PACKAGE_AUTHOR}],
                 "compatibility": foundry.compatibility(),
-                "relationships": {
-                    "systems": [foundry.systemRelationship(self._converter.game_system,
-                                                           self._converter.game_system_version)]
-                },
+                "relationships": relationships,
                 "packs": self._packs
             } 
 

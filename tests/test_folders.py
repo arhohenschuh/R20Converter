@@ -213,8 +213,10 @@ class TestSceneFolderManifest(object):
 class TestPackFolderTypes(object):
     def testEveryPackDeclaresAFolderType(self):
         # A pack without one silently ships flat, which is the defect ADR-010
-        # exists to remove.
-        assert set(leveldb_pack.PACK_FOLDER_TYPES) == set(leveldb_pack.PACK_COLLECTIONS)
+        # exists to remove. Adventure is the one exception: its schema owns a
+        # heterogeneous inline `folders` array rather than `!folders!` records.
+        assert set(leveldb_pack.PACK_FOLDER_TYPES) == \
+            set(leveldb_pack.PACK_COLLECTIONS) - {"adventure"}
 
     def testUnknownPackHasNoFolderType(self):
         assert leveldb_pack.folderTypeFor("spells24") is None

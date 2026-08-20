@@ -171,6 +171,23 @@ class TestModuleManifest(object):
         written = json.loads((tmp_path / "module.json").read_text())
         assert written["id"] == "my-campaign"
 
+    def test_assembly_registers_the_adventure_pack(self, converter):
+        converter.folders = FakeDB()
+        manifest = Module(converter).toDict()
+        adventure, = [pack for pack in manifest["packs"]
+                      if pack["name"] == "adventure"]
+        assert adventure["type"] == "Adventure"
+        assert adventure["path"] == "packs/adventure"
+        assert adventure["ownership"]["PLAYER"] == "NONE"
+
+    def test_recommended_modules_are_declared_in_stable_order(self, converter):
+        module = Module(converter)
+        module._recommendations = {"zeta-library", "alpha-library"}
+        assert module.toDict()["relationships"]["recommends"] == [
+            {"id": "alpha-library", "type": "module"},
+            {"id": "zeta-library", "type": "module"},
+        ]
+
 
 class TestFoundryConstants(object):
     def test_compatibility_defaults_to_the_target_generation(self):

@@ -29,6 +29,18 @@ def actorDocument(identifier="actor1", items=2):
     }
 
 
+def sceneDocument(identifier="scene1"):
+    return {
+        "_id": identifier,
+        "name": "Cave",
+        "tokens": [{
+            "_id": "token1",
+            "name": "Goblin",
+            "delta": {"system": {"attributes": {"hp": {"value": 5, "max": 7}}}},
+        }],
+    }
+
+
 class TestKeyEncoding(object):
     """`!collection!id` and `!collection.embedded!parent.child`."""
 
@@ -63,13 +75,24 @@ class TestEmbeddedSplit(object):
         parent = json.loads(readRaw(path, "!actors!actor1").decode("utf-8"))
         assert parent["items"] == ["item0", "item1"]
 
-    def test_child_keeps_its_own_embedded_documents_inline(self, tmp_path):
-        # Only the top level is split: an item's effects stay inside the item,
-        # which is what the reference module does.
+    def test_nested_effect_becomes_its_own_entry(self, tmp_path):
         path = str(tmp_path / "actors")
         leveldb_pack.writePack(path, [actorDocument()], "actors")
         child = json.loads(readRaw(path, "!actors.items!actor1.item0").decode("utf-8"))
-        assert child["effects"][0]["_id"] == "eff0"
+        assert child["effects"] == ["eff0"]
+        effect = json.loads(
+            readRaw(path, "!actors.items.effects!actor1.item0.eff0").decode("utf-8"))
+        assert effect["name"] == "Inline effect"
+
+    def test_singleton_delta_uses_token_id_when_missing(self, tmp_path):
+        path = str(tmp_path / "scenes")
+        leveldb_pack.writePack(path, [sceneDocument()], "scenes")
+        token = json.loads(readRaw(path, "!scenes.tokens!scene1.token1").decode("utf-8"))
+        assert token["delta"] == "token1"
+        delta = json.loads(
+            readRaw(path, "!scenes.tokens.delta!scene1.token1.token1").decode("utf-8"))
+        assert delta["_id"] == "token1"
+        assert delta["system"]["attributes"]["hp"]["value"] == 5
 
     def test_empty_collection_produces_no_children(self, tmp_path):
         path = str(tmp_path / "actors")
@@ -109,6 +132,16 @@ class TestRoundTrip(object):
         assert len(restored) == 1
         assert restored[0]["name"] == original["name"]
         assert [i["_id"] for i in restored[0]["items"]] == ["item0", "item1", "item2"]
+        assert restored[0]["items"][0]["effects"][0]["_id"] == "eff0"
+
+    def test_singleton_delta_survives_a_write_and_read(self, tmp_path):
+        path = str(tmp_path / "scenes")
+        original = sceneDocument()
+        leveldb_pack.writePack(path, [original], "scenes")
+        restored = leveldb_pack.readPack(path, "scenes")
+        assert restored[0]["tokens"][0]["delta"]["_id"] == "token1"
+        assert restored[0]["tokens"][0]["delta"]["system"] == \
+            original["tokens"][0]["delta"]["system"]
 
     def test_embedded_order_is_the_parents_not_the_key_order(self, tmp_path):
         path = str(tmp_path / "tables")
@@ -129,8 +162,7 @@ class TestRoundTrip(object):
         assert restored[0]["name"] == "Goblin"
         assert [i["_id"] for i in restored[0]["items"]] == ["item0", "item1"]
 
-    def test_a_parent_that_does_not_list_its_children_still_gets_them(self, tmp_path):
-        # Packs we did not write are not obliged to keep the id array.
+    def test_a_parent_that_does_not_list_its_children_is_rejected(self, tmp_path):
         path = str(tmp_path / "actors")
         leveldb_pack.writePack(path, [actorDocument(items=2)], "actors")
         import plyvel
@@ -141,8 +173,34 @@ class TestRoundTrip(object):
             db.put(b"!actors!actor1", json.dumps(document).encode("utf-8"))
         finally:
             db.close()
-        restored = leveldb_pack.readPack(path)[0]
-        assert len(restored["items"]) == 2
+        with pytest.raises(ValueError, match="orphan ids item0, item1"):
+            leveldb_pack.readPack(path)
+
+    def test_permissive_input_reader_recovers_unlisted_children(self, tmp_path):
+        path = str(tmp_path / "actors")
+        leveldb_pack.writePack(path, [actorDocument(items=2)], "actors")
+        import plyvel
+        db = plyvel.DB(path)
+        try:
+            document = json.loads(db.get(b"!actors!actor1").decode("utf-8"))
+            document["items"] = []
+            db.put(b"!actors!actor1", json.dumps(document).encode("utf-8"))
+        finally:
+            db.close()
+        restored = leveldb_pack.readPack(path, strict=False)[0]
+        assert [item["_id"] for item in restored["items"]] == ["item0", "item1"]
+
+    def test_an_embedded_document_without_its_parent_is_rejected(self, tmp_path):
+        path = str(tmp_path / "actors")
+        leveldb_pack.writePack(path, [actorDocument(items=1)], "actors")
+        import plyvel
+        db = plyvel.DB(path)
+        try:
+            db.delete(b"!actors!actor1")
+        finally:
+            db.close()
+        with pytest.raises(ValueError, match="actor1.items has no parent document"):
+            leveldb_pack.readPack(path)
 
 
 class TestFolders(object):
@@ -203,19 +261,18 @@ class TestPackMapping(object):
 
     def test_every_module_pack_maps_to_a_collection(self):
         import inspect
+        import re
         import module
         source = inspect.getsource(module.Module.__init__)
-        names = set()
-        for line in source.splitlines():
-            if "_newPack(" in line:
-                names.add(line.split('_newPack("')[1].split('"')[0])
+        names = set(re.findall(r'_newPack\(\s*"([^"]+)"', source))
         assert names, "could not read the pack list out of module.py"
         unmapped = sorted(n for n in names if leveldb_pack.collectionFor(n) is None)
         assert not unmapped, "packs with no LevelDB collection mapping: %s" % unmapped
 
     def test_collections_that_split_are_known_foundry_ones(self):
         assert set(leveldb_pack.PACK_COLLECTIONS.values()) <= {
-            "journal", "actors", "items", "scenes", "playlists", "tables", "cards"}
+            "adventures", "journal", "actors", "items", "scenes", "playlists",
+            "tables", "cards"}
 
 
 def readKeys(path):

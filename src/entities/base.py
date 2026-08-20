@@ -233,7 +233,8 @@ class DatabaseFile(object):
             # A system pack is named for its content, not its document type, so
             # the collection is read off the keys rather than assumed.
             collection = leveldb_pack.collectionFor(name)
-            for data in leveldb_pack.readPack(full_path, collection):
+            for data in leveldb_pack.readPack(
+                    full_path, collection, strict=self._package is None):
                 self.entities.append(Entity.createFromData(self, data))
             return
         with open(full_path, "r", encoding='utf-8') as f:
@@ -436,7 +437,9 @@ class Entity(object):
                 if compendium_item:
                     return "@UUID[%s]{%s}" % (
                         Entity.compendiumUuid(compendium_item.getFullID(), "Item"), name)
-                return "@UUID[Item.%s]" % name
+                self.logWarning("Could not find compendium item of type '%s' and name '%s'"
+                                % (compendium, name))
+                return text
             elif compendium_item:
                 converter.folders.ensureFolder(folder_id, folder, "Item")
                 item = converter.items.createItemFromCompendium(None, compendium_item)
@@ -456,6 +459,18 @@ class Entity(object):
         after_href = match.group(4)
         text = match.group(5)
         if journal in ["handout", "character", "item"]:
+            target = None
+            if journal == "item":
+                converter = getattr(self, "_converter", None)
+                items = getattr(converter, "items", None)
+                if items is not None:
+                    target = items.getById(Entity.normalizeID(id))
+            if target is None:
+                target = self.findID(id, journal)
+            if target is None:
+                self.logWarning("Roll20 %s link '%s' targets a document absent from the export"
+                                % (journal, text))
+                return text
             #icon = {"handout": "fa-book-open", "character": "fa-user", "item": "fa-suitcase"}[journal]
             #return '<a class="entity-link" data-entity=%s data-id=%s %s%s><i class="fas %s"></i>%s</a>' % (entity, self.normalizeID(id), before_href, after_href, icon, text)
             label = re.sub("[<>}{]", "_", text)
@@ -775,7 +790,11 @@ class Entity(object):
                     self.logWarning("Error downloading '%s': %s" % (spelling, e))
                     continue
                 if response.status_code == 200:
-                    return response.content
+                    if response.content:
+                        return response.content
+                    self.logWarning("Error downloading '%s': HTTP 200 with empty body"
+                                    % spelling)
+                    continue
                 self.logWarning("Error downloading '%s': HTTP %d" % (spelling, response.status_code))
         return None
 
@@ -839,8 +858,14 @@ class Entity(object):
                 return self.downloadResource(url, destination, type, dedup)
             self.logWarning("Cannot find file '%s' in Zip" % filename)
             return (None, "")
+        content = zipfile.read()
+        if not content:
+            self.logWarning("File '%s' in Zip is empty, downloading instead" % filename)
+            if url:
+                return self.downloadResource(url, destination, type, dedup)
+            return (None, "")
         with open(dest_filename, "wb") as f:
-            f.write(zipfile.read())
+            f.write(content)
         return (dest_filename, config_path)
 
     def __str__(self):

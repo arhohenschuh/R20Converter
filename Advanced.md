@@ -26,6 +26,20 @@ Here's another example with a bit more options given to it in order to fine tune
 
 In the above example, the script (which is run on linux) will convert the "Curse of Strahd.zip" campaign (from the C:\Downloads directory) into the directory "CoS" (in the FVTT worlds directory) and will automatically replace all walls from the dynamic lighting layer which are red (RGB color #ff0000) into doors, will enable Exploration Fog on all maps, make all walls restrict movement (even if the page settings in Roll20 did not have the "restrict movement" option enabled) and will set the GM and player passwords to the values provided.
 
+To create a distributable module instead of a world:
+
+```powershell
+R20Converter-cli.exe "C:\FoundryData\Data\modules\sunless-citadel" `
+  "C:\Exports\Sunless Citadel.zip" --export-as-module --package-version 1.0.0
+```
+
+The module contains native LevelDB packs plus a **Complete Adventure** pack. Import the Adventure
+inside Foundry to preserve document IDs, folders, and placed Token links. Module exports always
+internalize external image references; `--use-original-image-urls` therefore does not leave module
+art on Roll20. Executable Actor/Item references from `--custom-compendium` are copied locally when
+they resolve; unresolved executable references abort conversion rather than producing a broken
+module. Non-executable prose links remain recommendations in `module.json`.
+
 Finally, here's a more complex command which uses many of the available options
 
 ```
@@ -36,7 +50,11 @@ In this last example, we convert the "Stranger Things.zip" file into the STSS di
 
 ## Full options
 
-If you run the application with the `--help` option, you will get the full list of available options to you. For convenience, here is the usage of the program : 
+Run `R20Converter-cli.exe --help` (or `python src/main.py --help`) for the authoritative option
+list and defaults of the installed version. The historical copied output below is retained in the
+source for comparison but hidden because it drifted from the executable.
+
+<!-- Historical v1.6.1 help snapshot.
 ```
 usage: R20Converter.py [-h] [--json] [--export-as-module]
                        [--campaign-title CAMPAIGN_TITLE]
@@ -224,6 +242,7 @@ options:
 
 Convert Roll20 campaigns into Foundry VTT worlds or modules.
 ```
+-->
 
 
 # Build instructions

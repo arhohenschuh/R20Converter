@@ -97,6 +97,17 @@ class TestDownloadResource(object):
                                      RENAMED_MED, MED]
         assert open(dest, "rb").read() == b"PNG"
 
+    def test_empty_success_falls_back_to_a_non_empty_candidate(self, entity, stub_session):
+        session = stub_session({
+            RENAMED_ORIGINAL: StubResponse(200, b""),
+            ORIGINAL: StubResponse(200, b"PNG"),
+        })
+        dest, _ = entity.downloadResource(SOURCE, "scenes/map.png")
+        assert session.requested == [RENAMED_ORIGINAL, ORIGINAL]
+        assert open(dest, "rb").read() == b"PNG"
+        assert any("HTTP 200 with empty body" in warning
+                   for warning in entity._database.warnings)
+
     def test_gives_up_after_the_smallest_resolution(self, entity, stub_session):
         session = stub_session({})
         dest, config = entity.downloadResource(SOURCE, "scenes/map.png")

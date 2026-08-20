@@ -431,6 +431,46 @@ class TestCompendiumKeepsCharacterState(object):
         assert all(activity["consumption"]["spellSlot"] is True
                    for activity in item.entity["system"]["activities"].values())
 
+    def test_self_use_without_a_pool_is_rejected(self, entity):
+        document = _multi_activity_spell_document()
+        document["system"]["activities"]["mark"]["consumption"]["targets"] = [{
+            "type": "itemUses", "target": "", "value": "1",
+            "scaling": {"mode": "", "formula": ""},
+        }]
+        with pytest.raises(ValueError, match="consumes item uses without a usable pool"):
+            self._build(entity._database, {}, document)
+
+    def test_standard_spell_cannot_spend_an_item_use_and_slot(self, entity):
+        document = _multi_activity_spell_document()
+        document["system"]["uses"]["max"] = "1"
+        document["system"]["activities"]["mark"]["consumption"]["targets"] = [{
+            "type": "itemUses", "target": "", "value": "1",
+            "scaling": {"mode": "", "formula": ""},
+        }]
+        with pytest.raises(ValueError, match="consumes item uses and a standard spell slot"):
+            self._build(entity._database, {}, document)
+
+    def test_negative_item_use_target_can_generate_charges(self, entity):
+        document = _multi_activity_spell_document()
+        document["system"]["uses"]["max"] = "12"
+        document["system"]["activities"]["mark"]["consumption"]["targets"] = [{
+            "type": "itemUses", "target": "", "value": "-12",
+            "scaling": {"mode": "", "formula": ""},
+        }]
+        item = self._build(entity._database, {}, document)
+        assert item.entity["system"]["activities"]["mark"]["consumption"]["spellSlot"] is True
+
+    def test_non_spell_donor_consumption_is_left_to_donor_qa(self, entity):
+        document = _multi_activity_spell_document()
+        document["type"] = "loot"
+        document["system"].pop("method")
+        document["system"]["activities"]["mark"]["consumption"]["targets"] = [{
+            "type": "itemUses", "target": "", "value": "1",
+            "scaling": {"mode": "", "formula": ""},
+        }]
+        item = self._build(entity._database, {}, document)
+        assert item.entity["type"] == "loot"
+
 
 class TestPropertiesAlwaysEmitAnArray(object):
     """B051 -- dnd5e 3.0+ calls Array#findSplice on the raw source, so a boolean

@@ -188,11 +188,12 @@ class TestDocumentLinks(object):
         assert Entity.compendiumUuid("r20-module.actors.abc", "Actor") == \
             "Compendium.r20-module.actors.Actor.abc"
 
-    def makeLinker(self, tmp_path, compendium=False, package="r20-module"):
+    def makeLinker(self, tmp_path, compendium=False, package="r20-module", exists=True):
         # Entity.isCompendiumEntity is derived from the database package, which
         # is None for a world export and set for a module export.
         linker = makeEntity(Entity, tmp_path)
         linker._database._package = package if compendium else None
+        linker.findID = lambda identifier, kind=None: object() if exists else None
         return linker
 
     @pytest.mark.parametrize("kind,document", [
@@ -223,6 +224,26 @@ class TestDocumentLinks(object):
         linker = self.makeLinker(tmp_path)
         html = '<a href="http://journal.roll20.net/deck/-ABC">Deck</a>'
         assert linker.replaceEntityLinks(html) == html
+
+    def testMissingTargetKeepsTheReadableLabel(self, tmp_path):
+        linker = self.makeLinker(tmp_path, compendium=True, exists=False)
+        html = '<a href="http://journal.roll20.net/handout/-ABC">Missing Note</a>'
+        assert linker.replaceEntityLinks(html) == "Missing Note"
+        assert linker._database.warnings == [
+            "Roll20 handout link 'Missing Note' targets a document absent from the export"]
+
+    def testMissingModuleCompendiumTargetKeepsTheReadableLabel(self, tmp_path):
+        linker = self.makeLinker(tmp_path, compendium=True)
+        linker._database._arguments["export_as_module"] = True
+        linker._converter = type("Converter", (), {
+            "items": type("Items", (), {"getByName": lambda self, name: None})(),
+        })()
+        linker.findCompendiumItem = lambda compendium, name: None
+        html = ('<a href="https://roll20.net/compendium/dnd5e/'
+                'Rules:Ability%20Scores">Ability Scores</a>')
+        assert linker.replaceCompendiumLinks(html) == "Ability Scores"
+        assert linker._database.warnings == [
+            "Could not find compendium item of type 'Rules' and name 'Ability Scores'"]
 
     def testBracesInLabelAreEscaped(self, tmp_path):
         # Unescaped braces would terminate the @UUID label early.

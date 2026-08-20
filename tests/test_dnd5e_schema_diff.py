@@ -270,11 +270,12 @@ class TestActorToolShape(object):
 class SlotActor(Actor):
     """An actor driven by canned slot attributes and NPC traits."""
 
-    def __init__(self, npc=True, attributes=None, traits=None):
+    def __init__(self, npc=True, attributes=None, traits=None, export_as_module=False):
         self._shaped = False
         self._npc = npc
         self._attributes = attributes or {}
         self._traits = traits or {}
+        self._export_as_module = export_as_module
         self.warnings = []
 
     def isNPC(self):
@@ -282,6 +283,11 @@ class SlotActor(Actor):
 
     def logWarning(self, msg):
         self.warnings.append(msg)
+
+    def getArgument(self, name, default=None):
+        if name == "export_as_module":
+            return self._export_as_module
+        return default
 
     def getRepeatingAttributes(self, name):
         return self._traits if name == "npctrait" else {}
@@ -322,6 +328,30 @@ class TestSpellSlotShape(object):
         spells = SlotActor(attributes=_slots(l3=(4, 2))).createActorSpells()
         assert spells["spell3"]["override"] == 4
         assert spells["spell3"]["value"] == 2
+
+    def test_module_npc_slots_start_at_full_capacity(self):
+        spells = SlotActor(attributes=_slots(l3=(4, 2)),
+                           export_as_module=True).createActorSpells()
+        assert spells["spell3"] == {"value": 4, "override": 4}
+
+    def test_world_npc_slots_preserve_current_availability(self):
+        spells = SlotActor(attributes=_slots(l3=(4, 2)),
+                           export_as_module=False).createActorSpells()
+        assert spells["spell3"] == {"value": 2, "override": 4}
+
+    def test_module_npc_without_printed_slots_uses_caster_progression(self):
+        traits = {"t1": {"name": "Spellcasting",
+                          "description": "The mage is a 5th-level spellcaster."}}
+        spells = SlotActor(traits=traits, export_as_module=True).createActorSpells()
+        assert [spells["spell%d" % level]["value"] for level in range(1, 4)] == [4, 3, 2]
+        assert all(spells["spell%d" % level]["override"] is None
+                   for level in range(1, 4))
+
+    def test_remaining_above_capacity_is_clamped_and_reported(self):
+        actor = SlotActor(attributes=_slots(l3=(2, 4)))
+        spells = actor.createActorSpells()
+        assert spells["spell3"] == {"value": 2, "override": 2}
+        assert actor.warnings == ["Level 3 spell slots report 4 remaining from capacity 2; clamped"]
 
     def test_slots_are_numbers_not_sheet_strings(self):
         # Both are NumberFields. Foundry would cast "4", but leaning on that is
@@ -364,6 +394,7 @@ class TestNPCCasterLevel(object):
         ("is a 2nd-level spellcaster", 2),
         ("is a 3rd-level spellcaster", 3),
         ("is a 9th level spellcaster", 9),
+        ("is a 4-level spellcaster", 4),
     ])
     def test_every_ordinal_form_parses(self, text, expected):
         assert self._actor(text).getNPCCasterLevel() == expected

@@ -114,7 +114,11 @@ class TestPrintedTotalsAreReproduced(object):
         base = item.entity["system"]["damage"]["base"]
         activity = next(iter(item.entity["system"]["activities"].values()))
         chosen = activity["attack"]["ability"]
-        rolled = int(base["bonus"] or 0) + mods.get(chosen, 0)
+        if activity["damage"]["includeBase"]:
+            rolled = int(base["bonus"] or 0) + mods.get(chosen, 0)
+        else:
+            rolled = sum(int(part["bonus"] or 0)
+                         for part in activity["damage"]["parts"])
         assert rolled == printed, "%s: printed %+d, dnd5e rolls %+d" % (
             label, printed, rolled)
 

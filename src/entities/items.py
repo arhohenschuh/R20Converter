@@ -134,6 +134,34 @@ def _mergeSpellConsumption(system, custom_data):
         consumption["spellSlot"] = limited and activity_id in primary
 
 
+def _validateResourceContract(item_type, item_name, system):
+    """Reject activity dependencies that cannot be satisfied (G29)."""
+    if item_type != "spell":
+        return
+    uses_max = (system.get("uses") or {}).get("max")
+    method = system.get("method", "spell")
+    for activity_id, activity in (system.get("activities") or {}).items():
+        consumption = activity.get("consumption") or {}
+        self_targets = [target for target in consumption.get("targets", [])
+                        if target.get("type") == dnd5e.CONSUMPTION_ITEM_USES
+                        and not target.get("target")]
+        if not self_targets:
+            continue
+        if uses_max in (None, "", 0, "0"):
+            raise ValueError("%s / %s consumes item uses without a usable pool" %
+                             (item_name, activity_id))
+        positive = False
+        for target in self_targets:
+            try:
+                positive = positive or float(target.get("value", 1)) > 0
+            except (TypeError, ValueError):
+                positive = True
+        if (item_type == "spell" and method == "spell" and positive
+                and consumption.get("spellSlot") is not False):
+            raise ValueError("%s / %s consumes item uses and a standard spell slot" %
+                             (item_name, activity_id))
+
+
 def _buildActivities(item_type, item_name, attack, ability_mods=None, ranged=None,
                      activation=None, scaling=None, level=None):
     """Turn a legacy :class:`ItemAttack` into ``system.activities`` (ADR-008).
@@ -173,6 +201,7 @@ def _buildActivities(item_type, item_name, attack, ability_mods=None, ranged=Non
     system = {}
     activity_parts = []
     base_written = False
+    weapon_base_decided = False
 
     for index, part in enumerate(parts):
         formula, damage_type = (list(part) + [None])[:2]
@@ -220,10 +249,24 @@ def _buildActivities(item_type, item_name, attack, ability_mods=None, ranged=Non
             scaling_number=scale_number,
             scaling_formula=scale_formula)
 
-        if is_weapon and not base_written:
-            system["damage"] = {"base": damage,
-                                "versatile": _versatileDamage(attack, damage_type)}
-            base_written = True
+        selected_modifier = mods.get(ability or extraction.ability, 0)
+        explicit_weapon_damage = (is_weapon and index == 0 and has_dice
+                                  and bonus == 0 and not symbolic
+                                  and not extraction.remainder
+                                  and selected_modifier != 0)
+        if is_weapon and not weapon_base_decided:
+            weapon_base_decided = True
+            if explicit_weapon_damage:
+                # The source printed dice with no ability modifier. Putting a
+                # negative residual in damage.base is numerically equivalent,
+                # but dnd5e then re-adds @mod and G30 correctly rejects that
+                # fragile representation. Carry the exact dice on the activity.
+                damage["bonus"] = ""
+                activity_parts.append(damage)
+            else:
+                system["damage"] = {"base": damage,
+                                    "versatile": _versatileDamage(attack, damage_type)}
+                base_written = True
         else:
             activity_parts.append(damage)
 
@@ -250,7 +293,7 @@ def _buildActivities(item_type, item_name, attack, ability_mods=None, ranged=Non
                                         bonus=attack.bonus or "",
                                         critical_threshold=attack.critical)
         activity["damage"]["parts"] = activity_parts
-        activity["damage"]["includeBase"] = is_weapon
+        activity["damage"]["includeBase"] = is_weapon and base_written
     elif action == ItemAttack.HEALING:
         # The healing amount lives in the same damage list as everything else;
         # dropping it leaves Cure Wounds healing nothing.
@@ -392,6 +435,7 @@ class Item(Entity):
                 "effects": [],
                 "_stats": self.documentStats()
                 }
+        _validateResourceContract(item_type, self.entity["name"], data)
 
     def getName(self):
         return self.entity["name"]
@@ -512,6 +556,8 @@ class Item(Entity):
                         item.entity["system"][key] = custom_data[key]
                 if item.entity["type"] == "spell":
                     _mergeSpellConsumption(item.entity["system"], custom_data)
+        _validateResourceContract(item.entity["type"], item.entity["name"],
+                                  item.entity["system"])
         # The compendium copy carries whatever `_stats` its pack was built with.
         # If that is older than the version we claim, dnd5e migrates the item —
         # the exact outcome this port exists to avoid.

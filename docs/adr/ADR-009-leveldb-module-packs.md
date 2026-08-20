@@ -35,14 +35,19 @@ still holds, and is what limits the scope below.
 | aspect | finding |
 | --- | --- |
 | primary key | `!<collection>!<docId>` |
-| embedded key | `!<collection>.<embedded>!<parentId>.<childId>` |
+| embedded key | `!<collection>.<embedded>...!<parentId>.<childId>...` |
 | value | plain UTF-8 JSON, uncompressed |
-| parent document | embedded collections are replaced by **arrays of child ids** |
-| collections split | `actors.items`, `journal.pages`, `tables.results`, `scenes.{walls,tokens,tiles,lights,drawings}` |
+| parent document | embedded collections become ordered id arrays; singleton fields become one id |
+| collections split | includes `actors.items.effects`, `scenes.tokens.delta`, and ActorDelta items/effects |
 
 This is a restructuring, not a file-format swap: one scene in the reference
 holds 1,382 wall *ids* while 1,382 separate `!scenes.walls!…` entries hold the
 wall documents.
+
+The original v1.3.0 implementation split only one level. v1.12.0 extends the
+measured format recursively: an Item ActiveEffect uses
+`!actors.items.effects!<actor>.<item>.<effect>`, and a singleton Token ActorDelta
+uses `!scenes.tokens.delta!<scene>.<token>.<delta>`. Readers fold deepest-first.
 
 ### What the user actually needs
 
@@ -91,6 +96,11 @@ Keep `coreVersion: 13`.**
   be dumped when a conversion needs debugging.
 - The embedded-document split is the correctness risk, not the encoding: an
   orphaned child or an id present in a parent array with no matching entry is
-  silently missing content. Tests assert both directions of that relationship.
+  silently missing content. The writer and reader reject missing, duplicate,
+  conflicting, inline, and orphaned relationships in both directions.
+- That strictness governs packs R20Converter emits and validates. Third-party
+  compendiums are read in an explicit permissive mode: unlisted child records
+  are reattached after declared children instead of making the whole donor pack
+  unavailable. This never relaxes module output validation (B067).
 - If a future Foundry changes the layout, this ADR is the place to revisit; the
   reference module makes the change detectable.

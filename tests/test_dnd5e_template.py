@@ -243,10 +243,11 @@ class TestDamageScaling(object):
 # ---------------------------------------------------------------------------
 
 def _spell(db, name, attack=None, activation=None, scaling=None, **kwargs):
+    preparation = kwargs.pop("preparation", ItemSpellPreparation("prepared", True))
     return Item.createItemSpell(
         db, "spell-%s" % name, name, "", activation, attack,
         kwargs.pop("level", 1), "evo", None,
-        ItemSpellPreparation("prepared", True), scaling, **kwargs)
+        preparation, scaling, **kwargs)
 
 
 class TestUtilityActivity(object):
@@ -327,7 +328,8 @@ class TestNoLegacyFields(object):
     def test_spell_uses_has_no_per_key(self, db):
         item = _spell(db, "Bless",
                       activation=ItemActivation(ItemActivation.ACTION, 1,
-                                                uses=ItemUses(1, 1, "day")))
+                                                uses=ItemUses(1, 1, "day")),
+                      preparation=ItemSpellPreparation("innate", True))
         assert "per" not in item.entity["system"]["uses"]
         assert "value" not in item.entity["system"]["uses"]
 

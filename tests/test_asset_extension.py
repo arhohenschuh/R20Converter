@@ -146,3 +146,14 @@ class TestAssetsCopiedOutOfTheZip(object):
         dest, _ = entity.copyZipFile(url, "graphics/tok.webp", "scenes/map.png")
         assert dest.endswith(".webp")
 
+    def test_zero_byte_zip_member_falls_back_to_download(self, entity):
+        url = "https://files.d20.io/images/1/original.jpg"
+        converter = FakeConverter({"graphics/map.jpg": FakeMember(b"")})
+        entity._database._converter = converter
+        calls = []
+        entity.downloadResource = lambda *args, **kwargs: calls.append(args) or \
+            ("downloaded.jpg", "modules/test/assets/downloaded.jpg")
+        result = entity.copyZipFile(url, "graphics/map.jpg", "scenes/map.jpg")
+        assert result == ("downloaded.jpg", "modules/test/assets/downloaded.jpg")
+        assert calls and calls[0][0] == url
+

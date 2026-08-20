@@ -27,8 +27,16 @@ World data is written as NeDB `.db` files, which Foundry converts to its LevelDB
 storage format the first time the world is launched. The one-off "migrating world
 data" step you see on that first launch is expected, not an error.
 
+Module exports are written as native LevelDB packs and include a **Complete Adventure**
+compendium. Import that Adventure for one-click installation with stable document IDs,
+folders, placed Token links, and module-owned artwork. Individual packs remain available
+for browsing or selective import.
+
 The rationale for these choices, and the remaining work to finish the v13
 document schema port, is recorded in [`docs/adr/`](docs/adr/).
+
+Contributor write coordination and release validation are documented in
+[`docs/REPOSITORY.md`](docs/REPOSITORY.md).
 
 ## How to use
 Follow the instructions from the demo video to see it in action and how to use it : 

@@ -1724,7 +1724,7 @@ class Actor(Entity):
                 continue
             desc = self.getAttribute("desc", "", from_dict=trait)[0]
             text = self.getAttribute("description", "", from_dict=trait)[0] or desc
-            match = re.search(r"(\d+)(?:st|nd|rd|th)[- ]level spellcaster",
+            match = re.search(r"(\d+)(?:st|nd|rd|th)?[- ]level spellcaster",
                               str(text), re.IGNORECASE)
             if match:
                 return int(match.group(1))
@@ -1750,11 +1750,22 @@ class Actor(Entity):
         """
         spells = OrderedDict()
         npc = self.isNPC()
+        module_source = self.getArgument("export_as_module", False)
+        derived = dnd5e.spellSlots(self.getNPCCasterLevel()) \
+            if npc and module_source else {}
         for level in range(1, 10):
             # Both are NumberFields; the sheet stores them as strings, and
             # relying on Foundry to cast them is the habit ADR-008 exists to break.
-            remaining = self.getAttributeInt("lvl%d_slots_expended" % level, 0)
-            total = self.getAttributeInt("lvl%d_slots_total" % level, remaining)
+            remaining = max(0, self.getAttributeInt("lvl%d_slots_expended" % level, 0))
+            total = max(0, self.getAttributeInt("lvl%d_slots_total" % level, remaining))
+            capacity = total or derived.get(level, 0)
+            if capacity and remaining > capacity:
+                self.logWarning(
+                    "Level %d spell slots report %d remaining from capacity %d; clamped"
+                    % (level, remaining, capacity))
+                remaining = capacity
+            if module_source and capacity and (npc or total):
+                remaining = capacity
             spells["spell%d" % level] = {
                 "value": remaining,
                 "override": total if (npc and total) else None,

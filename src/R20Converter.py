@@ -276,13 +276,16 @@ class R20Converter(object):
                 "Data/modules or as a path, so it is ignored." % name)
             return
 
+        package_id = self.customCompendiumId(packs_dir, name)
+
         buckets = {}
         total = 0
         for entry in sorted(os.listdir(packs_dir)):
             path = os.path.join(packs_dir, entry)
-            if not os.path.isdir(path):
+            if (not os.path.isdir(path)
+                    or not os.path.isfile(os.path.join(path, "CURRENT"))):
                 continue
-            db = DatabaseFile(self, "%s.db" % entry, name, entry)
+            db = DatabaseFile(self, "%s.db" % entry, package_id, entry)
             try:
                 db.load(path)
             except Exception as e:
@@ -303,7 +306,7 @@ class R20Converter(object):
         precedence = (self.getArgument("custom_compendium_precedence", None)
                       or foundry.DEFAULT_CUSTOM_PRECEDENCE)
         for role, entities in buckets.items():
-            merged = DatabaseFile(self, "%s.db" % role, name, role)
+            merged = DatabaseFile(self, "%s.db" % role, package_id, role)
             existing = self.packs.get(role)
             if mode == "replace" or existing is None:
                 merged.entities = list(entities)
@@ -314,8 +317,23 @@ class R20Converter(object):
                 merged.entities = list(existing.entities) + list(entities)
             self.packs[role] = merged
         self.logInfo("Loaded %d documents from custom compendium '%s' (%s, %s precedence): %s."
-                     % (total, name, mode, precedence, ", ".join(sorted(buckets))))
-        self.warnAboutCompendiumAssets(name, buckets)
+                     % (total, package_id, mode, precedence, ", ".join(sorted(buckets))))
+        self.warnAboutCompendiumAssets(package_id, buckets)
+
+    @staticmethod
+    def customCompendiumId(packs_dir, fallback):
+        """Package id for a custom compendium passed by id or filesystem path."""
+        manifest_path = os.path.join(os.path.dirname(packs_dir), "module.json")
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as handle:
+                package_id = json.load(handle).get("id")
+            if package_id:
+                return package_id
+        except (OSError, ValueError):
+            pass
+        if fallback and not os.path.isabs(str(fallback)):
+            return str(fallback)
+        return os.path.basename(os.path.dirname(packs_dir))
 
     def warnAboutCompendiumAssets(self, name, buckets):
         """Name the modules a custom compendium's artwork lives in.

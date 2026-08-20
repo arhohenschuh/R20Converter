@@ -1098,16 +1098,25 @@ class Scene(Entity):
         return (drawing, width, height)
 
     def createThumbnail(self, filename):
-        im = Image.open(filename)
-        ratio = im.width / im.height
-        if ratio > 3:
-            thumb_size = (int(100 * ratio), 100)
-            left = int((thumb_size[0] - 300) / 2)
-            crop_region = (left, 0, left + 300, 100)
-        else:
-            thumb_size = (300, int(300 / ratio))
-            top = int((thumb_size[1] - 100) / 2)
-            crop_region = (0, top, 300, top + 100)
-        im = im.resize(thumb_size)
-        im = im.crop(crop_region)
-        im.save(filename)
+        temporary = filename + ".thumbnail"
+        try:
+            with Image.open(filename) as source:
+                ratio = source.width / source.height
+                if ratio > 3:
+                    thumb_size = (int(100 * ratio), 100)
+                    left = int((thumb_size[0] - 300) / 2)
+                    crop_region = (left, 0, left + 300, 100)
+                else:
+                    thumb_size = (300, int(300 / ratio))
+                    top = int((thumb_size[1] - 100) / 2)
+                    crop_region = (0, top, 300, top + 100)
+                thumbnail = source.resize(thumb_size).crop(crop_region)
+                extension = os.path.splitext(filename)[1].lower()
+                image_format = Image.registered_extensions().get(extension) or source.format
+                if image_format == "JPEG" and thumbnail.mode not in ("RGB", "L"):
+                    thumbnail = thumbnail.convert("RGB")
+                thumbnail.save(temporary, format=image_format)
+            os.replace(temporary, filename)
+        finally:
+            if os.path.exists(temporary):
+                os.remove(temporary)

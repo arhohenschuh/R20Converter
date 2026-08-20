@@ -1,5 +1,95 @@
 # Changelog
 
+## v1.14.0
+
+**Module exports are self-contained, one-click Adventure packages (B065).**
+
+- Emit and register a native `Adventure` pack that preserves source document IDs, recursive
+  embedded documents, pack folder trees, and placed Token-to-Actor links.
+- Internalize external document art and every embedded HTML `<img>` through the existing
+  export-manifest/CDN/extension/deduplication pipeline. Module exports own their art even when
+  `--use-original-image-urls` was requested.
+- Clone resolvable external executable Actor/Item targets into local packs and rewrite their UUIDs.
+  Invalid or unresolved executable references abort conversion; remaining prose and advancement
+  links declare their source package as a recommendation.
+- Roll20 links to documents absent from the export now remain readable labels instead of becoming
+  broken same-module UUIDs.
+- Item-typed deck cards join `Adventure.items`; `Adventure.cards` is reserved for real Card
+  documents.
+- Keep emitted and round-tripped packs fail-closed while reading third-party system/custom
+  compendiums permissively enough to recover child records omitted from parent indexes. Stale
+  non-LevelDB directories beside real packs are ignored (B067).
+- Scope G29 resource validation to spells. Known non-spell donor defects such as Beyond5e 1.1.11's
+  Torch no longer abort an otherwise valid conversion; donor content QA remains donor-owned (B068).
+- Read a path-based custom compendium's package ID from its `module.json`. Donor UUIDs now use the
+  real package identity instead of embedding the local filesystem path, so executable targets such
+  as Beyond5e Mage Hand can be localized (B069).
+- Treat a zero-byte ZIP asset or empty HTTP 200 response as a failed copy and continue through the
+  existing CDN/resolution fallback instead of writing a local file that exists but cannot render
+  (B070). Scene thumbnails are rewritten atomically, and RGBA sources stored under `.jpg` are
+  converted to real RGB JPEGs instead of truncating the destination on Pillow failure.
+- Localize resolvable external Actor/Item UUIDs embedded in descriptions as well as direct activity
+  fields. Provenance UUIDs remain provenance, and unresolved prose links remain recommendations
+  rather than hard dependencies (B071).
+- Parse Roll20's observed `4-level spellcaster` NPC prose in addition to ordinal forms, so derived
+  module slot capacity is initialized for those casters (B072).
+- Project the immutable Roll20 `journalfolder` tree into the source Journal pack and Adventure,
+  rejecting duplicate, malformed, missing, or incompletely covered source references (B073).
+- Normalize cloned donor Actor prototype Token names to Always for Owner, matching native converted
+  Actors and preventing imported summons from exposing or hiding names inconsistently (B074).
+- Preserve the visible label of unresolved Roll20 compendium links instead of manufacturing
+  name-based `Item.<label>` UUIDs that cannot resolve in Foundry (B075).
+
+**Also fixes B066:** dice-only weapon damage now uses an explicit activity damage part with
+`includeBase: false`, instead of a negative `damage.base.bonus` that cancels the selected ability
+modifier and trips Gate G30.
+
+Suite: **872 passed** in the shipping Python 3.8 environment. A full disposable Sunless Citadel
+module passed production Gate A **32 / 0 / 0 / 7**. Its Adventure exactly conserves 30 Actors,
+212 Items, 4 Scenes, 54 Journals, 2 Tables, 20 folders, and 146/146 Token actor links, with zero
+external HTML images.
+
+Final frozen-binary qualification against the immutable *Lost Mine of Phandelver* export passed
+production Gate A **36 / 0 / 0 / 3**. Source packs and Adventure exactly conserve 40 Actors,
+119 Items, 10 Scenes, 87 Journals, 13 Tables, 22 folders, and 206/206 Token actor links, with zero
+external HTML images and zero zero-byte assets. Compared by document ID with published 1.5.3, all
+40 raw Actor IDs remain present across its Actors/Summons packs; its five additional Actors are
+campaign-specific release repairs, while raw v1.14.0 adds 62 local Item targets to close external
+references. The published 1.5.3 release remains authoritative and unchanged.
+
+## v1.13.0
+
+**Actor spell resources now form a satisfiable capacity, availability, and consumption contract
+(B064).**
+
+- Fresh module Actors initialize printed spell-slot pools at full capacity instead of carrying
+  Roll20's partially spent play state. World conversions continue to preserve current availability.
+- Module NPCs with a parsed caster level but no printed slot totals initialize from dnd5e 5.3.3's
+  full-caster progression table; derived pools retain `override: null` so dnd5e remains authoritative.
+- Impossible source rows with more remaining slots than capacity are clamped and reported.
+- Spell construction and compendium merging now reject positive self `itemUses` consumers without
+  a root pool, and standard spells that would spend both an item use and a spell slot. Negative
+  charge-generation targets remain valid.
+
+Suite: **846 passed** in the shipping Python 3.8 environment. A disposable real Sunless Citadel
+module passed production Gate G29 with 2 satisfiable item-use consumers and G31 with 5 spellcasters
+and 6 full slot pools.
+
+## v1.12.0
+
+**Module LevelDB packs now preserve recursive embedded-document relationships (B063).**
+
+- Split nested collections into Foundry's measured path format, including
+  `actors.items.effects`, `scenes.tokens.delta`, and ActorDelta items/effects.
+- Preserve array and singleton cardinality: collection parents store ordered id arrays, while a
+  Token stores one ActorDelta id. Missing ActorDelta ids are derived deterministically from the
+  owning Token id.
+- Reconstruct packs deepest-first and reject inline, missing, duplicate, conflicting, or orphaned
+  embedded records instead of silently hiding relationship loss.
+- Validate the complete record graph before replacing an existing pack.
+
+Suite: **839 passed** in the shipping Python 3.8 environment.
+
 ## v1.11.2
 
 - Standardize Actor prototype and placed Scene Token names on Foundry's **Always for Owner**

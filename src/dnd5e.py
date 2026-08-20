@@ -69,6 +69,33 @@ ARMOR_BASE_ITEMS = (
 #: an arbitrary "first match wins" over a dict would vary with insertion order.
 ABILITIES = ("str", "dex", "con", "int", "wis", "cha")
 
+#: ``CONFIG.DND5E.SPELL_SLOT_TABLE``. Each row is one full-caster level and
+#: each value is the capacity of slot levels 1 through 9. NPCs with a caster
+#: level but no printed Roll20 pool need these values to initialize a fresh
+#: module; worlds retain their current play state.
+SPELL_SLOT_TABLE = (
+    (2,), (3,), (4, 2), (4, 3), (4, 3, 2), (4, 3, 3),
+    (4, 3, 3, 1), (4, 3, 3, 2), (4, 3, 3, 3, 1),
+    (4, 3, 3, 3, 2), (4, 3, 3, 3, 2, 1),
+    (4, 3, 3, 3, 2, 1), (4, 3, 3, 3, 2, 1, 1),
+    (4, 3, 3, 3, 2, 1, 1), (4, 3, 3, 3, 2, 1, 1, 1),
+    (4, 3, 3, 3, 2, 1, 1, 1), (4, 3, 3, 3, 2, 1, 1, 1, 1),
+    (4, 3, 3, 3, 3, 1, 1, 1, 1), (4, 3, 3, 3, 3, 2, 1, 1, 1),
+    (4, 3, 3, 3, 3, 2, 2, 1, 1),
+)
+
+
+def spellSlots(caster_level):
+    """Full-caster slot capacity for ``caster_level`` as ``{level: count}``."""
+    try:
+        level = int(caster_level)
+    except (TypeError, ValueError):
+        return {}
+    if level <= 0:
+        return {}
+    row = SPELL_SLOT_TABLE[min(level, len(SPELL_SLOT_TABLE)) - 1]
+    return {slot_level: count for slot_level, count in enumerate(row, 1)}
+
 
 # --- baseItem resolution ---------------------------------------------------
 

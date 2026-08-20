@@ -202,17 +202,23 @@ class TestDamageInvariant(object):
 
     def testDamageTypeEmbeddedInFormulaIsSeparated(self, db):
         system = makeWeapon(db, formula="1d6 + piercing", damage_type="").entity["system"]
-        base = system["damage"]["base"]
-        assert base["number"] == 1 and base["denomination"] == 6
-        assert base["types"] == ["piercing"]
-        assert base["custom"] == {"enabled": False, "formula": ""}
+        activity = next(iter(system["activities"].values()))
+        damage = activity["damage"]["parts"][0]
+        assert activity["damage"]["includeBase"] is False
+        assert damage["number"] == 1 and damage["denomination"] == 6
+        assert damage["types"] == ["piercing"]
+        assert damage["custom"] == {"enabled": False, "formula": ""}
 
     @pytest.mark.parametrize("formula", ["1d0", "1", "1d1"])
     def testDegenerateDamageSurvives(self, db, formula):
         # D5: nets roll 1d0, torches deal a flat 1, a gas spore's touch is 1d1.
         system = makeWeapon(db, formula=formula).entity["system"]
         base = system["damage"]["base"]
-        assert base["number"] is not None or base["bonus"] != "", \
+        activity = next(iter(system["activities"].values()))
+        damages = [base] if activity["damage"]["includeBase"] \
+            else activity["damage"]["parts"]
+        assert any(damage["number"] is not None or damage["bonus"] != ""
+                   for damage in damages), \
             "damage vanished for %r" % formula
         assert system["activities"], "no activity for %r" % formula
 
@@ -263,6 +269,16 @@ class TestMultipleDamageParts(object):
         system = makeWeapon(db).entity["system"]
         activity = list(system["activities"].values())[0]
         assert activity["damage"]["includeBase"] is True
+
+    def testDiceOnlyWeaponUsesAnExplicitActivityPart(self, db):
+        system = makeWeapon(db, name="Shovel", formula="1d6",
+                            mods={"str": 2, "dex": 1}).entity["system"]
+        activity = list(system["activities"].values())[0]
+        assert activity["damage"]["includeBase"] is False
+        assert activity["damage"]["parts"][0]["number"] == 1
+        assert activity["damage"]["parts"][0]["denomination"] == 6
+        assert activity["damage"]["parts"][0]["bonus"] == ""
+        assert system["damage"]["base"]["number"] is None
 
 
 class TestSpellsAndFeats(object):

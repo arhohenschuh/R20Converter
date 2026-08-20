@@ -78,6 +78,19 @@ mechanically for the physical-item class of defect.
 | [B060](B060-scenes-migrate-with-exploration-disabled.md) | High | Fixed (v1.11.1) | Scenes emitted removed `fog.exploration`, which Foundry 14 migrated to `fog.mode: 0` (None); Token Vision was also conditional on legacy lighting flags. Current output defaults every Scene to Token Vision plus Individual exploration. |
 | [B061](B061-token-name-display-varies-by-roll20-flags.md) | Minor | Fixed (v1.11.2) | Actor prototype and placed Token names inherited inconsistent Roll20 visibility flags. Both now serialize Foundry's Always for Owner mode (`displayName: 40`). |
 | [B062](B062-compendium-overwrite-discards-spell-state.md) | High | Fixed (v1.11.2) | `--no-compendium-overwrite` replaced source spell method, preparation, uses, and consumption with compendium defaults, making innate/at-will/ritual spells demand slots or lose availability. |
+| [B063](B063-leveldb-writer-stops-at-one-embedded-level.md) | High | Fixed (v1.12.0) | Module LevelDB serialization stopped after one embedded level and kept Token ActorDelta and Item ActiveEffect documents inline, so Foundry could not resolve their standalone pack relationships. |
+| [B064](B064-actor-resource-contracts-incomplete.md) | High | Fixed (v1.13.0) | Module NPCs could ship partially spent or empty spell-slot pools, and no emitter gate rejected spell activities whose item-use or double-consumption dependencies were unsatisfiable. |
+| [B065](B065-module-output-not-self-contained.md) | High | Fixed (v1.14.0) | Module exports had no Adventure pack, retained external HTML art and executable compendium targets, and could manufacture broken self UUIDs for source links whose target was absent. |
+| [B066](B066-dice-only-weapons-cancel-ability-modifier.md) | Minor | Fixed (v1.14.0) | Dice-only weapon damage was stored as a negative base bonus plus `@mod`; totals matched, but the representation was structurally fragile and failed G30. |
+| [B067](B067-strict-reader-rejects-third-party-pack-drift.md) | High | Fixed (v1.14.0) | Applying emitted-pack relationship strictness to third-party compendium inputs made one malformed donor pack disappear from enrichment instead of recovering its unlisted children. |
+| [B068](B068-spell-resource-gate-blocks-non-spell-donors.md) | High | Fixed (v1.14.0) | The G29 spell-resource validator ran on every Item and aborted LMoP on Beyond5e's known Torch no-pool defect, even though non-spell donor QA is outside the Actor spell-resource contract. |
+| [B069](B069-path-custom-compendium-uses-filesystem-as-package-id.md) | High | Fixed (v1.14.0) | A custom compendium supplied by path used that path as its package ID, so valid executable UUIDs could not match donors loaded from the same module. |
+| [B070](B070-zero-byte-zip-asset-is-accepted.md) | High | Fixed (v1.14.0) | Asset copy accepted zero-byte ZIP members as successful local files, preventing CDN fallback and leaving references that resolved to content Foundry could not render. |
+| [B071](B071-prose-compendium-targets-remain-external.md) | High | Fixed (v1.14.0) | External Actor/Item UUIDs embedded in prose were only recommended even when their donor existed, so imported content could still depend on an optional module at runtime. |
+| [B072](B072-nonordinal-caster-level-is-ignored.md) | High | Fixed (v1.14.0) | Roll20's observed `4-level spellcaster` prose did not match the ordinal-only caster parser, leaving ordinary NPC spells with no initialized module slot capacity. |
+| [B073](B073-adventure-journal-hierarchy-not-source-backed.md) | High | Fixed (v1.14.0) | Adventure assembly copied whatever Journal folders happened to be in the pack instead of fail-closed projection from the immutable Roll20 `journalfolder` tree. |
+| [B074](B074-cloned-donor-token-name-visibility-drifts.md) | Minor | Fixed (v1.14.0) | Actors cloned to close executable dependencies retained donor prototype Token name visibility instead of the module-wide Always-for-Owner policy. |
+| [B075](B075-missing-compendium-link-becomes-invalid-item-uuid.md) | Minor | Fixed (v1.14.0) | An unresolved Roll20 compendium link became `@UUID[Item.<visible name>]`, manufacturing a dangling world Item UUID instead of preserving readable text. |
 
 ## Cross-cutting observations
 
@@ -88,7 +101,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B063**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B076**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent
