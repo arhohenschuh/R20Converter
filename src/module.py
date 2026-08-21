@@ -59,6 +59,10 @@ class Module(object):
         if len(converter.cards.entities) > 0:
             converter.cards.save()
             self._packs.append(self._newPack("cards", "Deck Cards", "Item", "cards.db"))
+        macros = getattr(converter, "macros", None)
+        if macros is not None and len(macros.entities) > 0:
+            macros.save()
+            self._packs.append(self._newPack("macros", "Macros", "Macro", "macros.db"))
         if adventure is not None:
             assembler.writeAdventure(adventure)
             self._packs.insert(0, self._newPack(

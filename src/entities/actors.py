@@ -2580,12 +2580,16 @@ class Actor(Entity):
             text = str(description or "").replace("’", "'")
             if not text:
                 continue
-            for match in re.finditer(
-                    r"(?:^|\n)\s*(at\s+will|\d+\s*/\s*day(?:\s+each)?)\s*:\s*([^\n]+)",
-                    text, re.IGNORECASE):
-                cadence = match.group(1)
-                for name in re.split(r"\s*,\s*|\s+and\s+", match.group(2)):
-                    assign(name, cadence, "trait cadence list")
+            cadence_pattern = re.compile(
+                r"(at\s+will|\d+\s*/\s*day(?:\s+each)?)\s*:", re.IGNORECASE)
+            for line in text.splitlines():
+                matches = list(cadence_pattern.finditer(line))
+                if not matches or line[:matches[0].start()].strip():
+                    continue
+                for index, match in enumerate(matches):
+                    end = matches[index + 1].start() if index + 1 < len(matches) else len(line)
+                    for name in re.split(r"\s*,\s*|\s+and\s+", line[match.end():end]):
+                        assign(name, match.group(1), "trait cadence list")
 
             for name in rows:
                 phrase = re.escape(name).replace(r"\ ", r"\s+")

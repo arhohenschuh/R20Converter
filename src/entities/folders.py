@@ -200,5 +200,6 @@ class Folder(Entity):
                        # Foundry defaults Folder#sorting to "a", which re-sorts a
                        # correctly restored tree alphabetically (ADR-010).
                        "sorting": "m",
-                       "sort": Folder.SORT_INCREMENT * (1 if index is None else index + 1)
+                       "sort": Folder.SORT_INCREMENT * (1 if index is None else index + 1),
+                       "_stats": self.documentStats(),
                        }

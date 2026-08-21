@@ -15,9 +15,9 @@ from entities.base import (Entity, Roll20PlaceholderError,
 
 
 COMPENDIUM_UUID_RE = re.compile(
-    r"^Compendium\.([^.]+)\.([^.]+)\.(Actor|Item)\.([A-Za-z0-9]{16})$")
+    r"^Compendium\.([^.]+)\.([^.]+)\.(Actor|Item|RollTable)\.([A-Za-z0-9]{16})$")
 COMPENDIUM_UUID_INLINE_RE = re.compile(
-    r"Compendium\.([^.\]\s]+)\.([^.\]\s]+)\.(Actor|Item)\.([A-Za-z0-9]{16})")
+    r"Compendium\.([^.\]\s]+)\.([^.\]\s]+)\.(Actor|Item|RollTable)\.([A-Za-z0-9]{16})")
 COMPENDIUM_PACKAGE_RE = re.compile(r"Compendium\.([^.\]\s]+)\.")
 IMG_SRC_RE = re.compile(
     r"(<img\b[^>]*?\bsrc\s*=\s*)([\"'])(.*?)(\2)", re.IGNORECASE)
@@ -34,6 +34,7 @@ class ModuleAssembler(object):
         ("journal", "journal"), ("actors", "actors"), ("items", "items"),
         ("scenes", "scenes"), ("playlists", "playlists"),
         ("tables", "tables"), ("decks", "decks"), ("cards", "cards"),
+        ("macros", "macros"),
     )
 
     def __init__(self, converter):
@@ -43,6 +44,8 @@ class ModuleAssembler(object):
         self.placeholder_urls = set()
         self.placeholder_references = 0
         self.placeholder_tags_stripped = 0
+        self.missing_relative_assets = set()
+        self.missing_relative_tags_stripped = 0
 
     def _databases(self):
         for _, attribute in self.DATABASES:
@@ -109,7 +112,8 @@ class ModuleAssembler(object):
                     continue
                 seen.add(id(entity))
                 document = getattr(entity, "entity", {})
-                document_type = self._documentType(document)
+                document_type = (getattr(entity._database, "_document_type", None)
+                                 or self._documentType(document))
                 try:
                     uuid = Entity.compendiumUuid(entity.getFullID(), document_type)
                 except (AttributeError, TypeError, ValueError):
@@ -118,7 +122,14 @@ class ModuleAssembler(object):
         return index
 
     def _localDatabase(self, document_type):
-        return self.converter.actors if document_type == "Actor" else self.converter.items
+        databases = {
+            "Actor": self.converter.actors,
+            "Item": self.converter.items,
+            "RollTable": self.converter.tables,
+        }
+        if document_type not in databases:
+            raise ValueError("unsupported executable document type %s" % document_type)
+        return databases[document_type]
 
     @staticmethod
     def _actorArtIsUsable(document):
@@ -215,7 +226,8 @@ class ModuleAssembler(object):
                         changed = True
                         return "Compendium.%s.%s.%s.%s" % (
                             self.converter.name,
-                            "actors" if document_type == "Actor" else "items",
+                            {"Actor": "actors", "Item": "items",
+                             "RollTable": "tables"}[document_type],
                             document_type, identifier)
 
                     owner[key] = COMPENDIUM_UUID_INLINE_RE.sub(replace, value)
@@ -232,6 +244,8 @@ class ModuleAssembler(object):
                 entity.entity.get("_id") for entity in self.converter.items.entities},
             ("Item", "cards"): {
                 entity.entity.get("_id") for entity in self.converter.cards.entities},
+            ("RollTable", "tables"): {
+                entity.entity.get("_id") for entity in self.converter.tables.entities},
         }
         for document in self._documents():
             for _, key, value in self._walk(document):
@@ -302,6 +316,36 @@ class ModuleAssembler(object):
             source, manifest_path or "", destination, type="html", dedup=True)
         return config_path
 
+    @staticmethod
+    def _relativeAsset(value):
+        decoded = html.unescape(str(value or "")).strip().replace("\\", "/")
+        if not decoded or decoded.startswith(("http://", "https://", "//",
+                                               "data:", "#", "@UUID[")):
+            return ""
+        if decoded.startswith(("modules/", "systems/", "worlds/", "icons/", "ui/", "/")):
+            return ""
+        return decoded if re.search(r"\.[A-Za-z0-9]{2,5}(?:[?&].*)?$", decoded) else ""
+
+    def _copyRelativeAsset(self, value):
+        source = self._relativeAsset(value)
+        if not source:
+            return ""
+        archive = getattr(self.converter, "zip", None)
+        if archive is None or not hasattr(archive, "namelist"):
+            return ""
+        clean = source.split("?", 1)[0]
+        matches = [name for name in archive.namelist()
+                   if name == clean or name.endswith("/" + clean)]
+        if len(matches) > 1:
+            raise ValueError("relative HTML image is ambiguous in source ZIP: %s" % source)
+        if not matches:
+            return ""
+        helper = self._assetHelper()
+        _, config_path = helper.copyZipFile(
+            source, matches[0], os.path.join("assets", "html", "embedded"),
+            type="html", dedup=True)
+        return config_path
+
     def _internalizeString(self, value):
         def replace_tag(tag_match):
             tag = tag_match.group(0)
@@ -310,16 +354,22 @@ class ModuleAssembler(object):
                 return tag
             source = match.group(3)
             external = self._externalAsset(source)
-            if not external:
+            relative = self._relativeAsset(source)
+            if not external and not relative:
                 return tag
             try:
-                local = self._copyExternalAsset(external)
+                local = (self._copyExternalAsset(external) if external
+                         else self._copyRelativeAsset(relative))
             except Roll20PlaceholderError:
-                self.placeholder_urls.add(external)
+                self.placeholder_urls.add(external or relative)
                 self.placeholder_references += 1
                 self.placeholder_tags_stripped += 1
                 return ""
             if not local:
+                if relative:
+                    self.missing_relative_assets.add(relative)
+                    self.missing_relative_tags_stripped += 1
+                    return ""
                 raise ValueError("could not internalize embedded image %s" % external)
             replacement = "%s%s%s%s" % (
                 match.group(1), match.group(2), local, match.group(4))
@@ -346,6 +396,11 @@ class ModuleAssembler(object):
                 "0 stored files" % (
                     len(self.placeholder_urls), self.placeholder_references,
                     self.placeholder_tags_stripped))
+        if self.missing_relative_tags_stripped and hasattr(self.converter, "logInfo"):
+            self.converter.logInfo(
+                "Unavailable relative HTML art: %d paths, %d stripped HTML tags" % (
+                    len(self.missing_relative_assets),
+                    self.missing_relative_tags_stripped))
 
     def collectRecommendations(self):
         self.recommendations = set()
@@ -405,6 +460,8 @@ class ModuleAssembler(object):
                     "flags": {self.converter.name: {
                         "sourceJournalFolder": True,
                         "sourceIndexPath": list(path)}},
+                    "_stats": dnd5e.stats(foundry.DOCUMENT_SCHEMA_CORE_VERSION,
+                                           self.converter.game_system_version),
                     "parent": parent, "descendants": 0,
                 }
                 folders.append(record)
@@ -452,7 +509,7 @@ class ModuleAssembler(object):
             if folder.get("folder") is not None and folder["folder"] not in folder_ids:
                 raise ValueError("Adventure folder %s has a missing parent" % folder.get("_id"))
         for attribute in ("actors", "items", "scenes", "journal", "playlists",
-                          "tables", "decks", "cards"):
+                          "tables", "decks", "cards", "macros"):
             for document in self._collection(attribute):
                 if document.get("folder") is not None and document["folder"] not in folder_ids:
                     raise ValueError("Adventure document %s has a missing folder" %
@@ -482,7 +539,7 @@ class ModuleAssembler(object):
             "scenes": scenes,
             "journal": self._collection("journal"),
             "tables": self._collection("tables") + self._collection("decks"),
-            "macros": [],
+            "macros": self._collection("macros"),
             "cards": [],
             "playlists": self._collection("playlists"),
             "folders": folders,

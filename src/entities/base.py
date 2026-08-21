@@ -422,7 +422,16 @@ class Entity(object):
         return self._database.getArgument(name, default)
 
     def replaceEntityLinks(self, content):
+        content = self.replaceMarkdownLinks(content)
         return re.sub('<a ([^>]*)href=[\'"]http://journal.roll20.net/([^/]+)/([^\'"]+)[\'"]([^>]*)>(.*?)</a>', self._foundJournal, content)
+
+    @staticmethod
+    def replaceMarkdownLinks(content):
+        def replace(match):
+            label, target = match.groups()
+            target = target.replace("&", "&amp;").replace('"', "&quot;")
+            return '<a href="%s">%s</a>' % (target, label)
+        return re.sub(r'(?<!!)\[([^\]\n]+)\]\(([^)\n]+)\)', replace, content)
 
     def replaceCompendiumLinks(self, content):
         return re.sub('<a ([^>]*)href=[\'"]https?://roll20.net/compendium/dnd5e/([^\'"]+)(?:(?:%3[aA])|:)([^\'"]+)[\'"]([^>]*)>(.*?)</a>', self._foundCompendium, content)

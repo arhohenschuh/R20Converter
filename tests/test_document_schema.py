@@ -13,6 +13,7 @@ from entities.actors import Actor
 from entities.folders import Folder
 from entities.items import Item
 from entities.journal import Handout
+from entities.macros import Macro
 from entities.tables import Table
 
 from conftest import FakeDatabase
@@ -48,6 +49,8 @@ class TestFolder(object):
         Folder.__init__(folder, folder._database, "abc", "Monsters", "Actor", None, 1)
         assert "parent" not in folder.entity
         assert "folder" in folder.entity
+        assert folder.entity["_stats"]["coreVersion"] == "13"
+        assert folder.entity["_stats"]["systemVersion"] == "5.3.3"
 
 
 class TestTableResults(object):
@@ -69,6 +72,11 @@ class TestTableResults(object):
         # around would invite emitting an invalid value.
         assert not hasattr(Table, "RESULT_TYPE_COMPENDIUM")
         assert not hasattr(Table, "RESULT_TYPE_ENTITY")
+
+    def testPrimaryTableCarriesSchemaStats(self, tmp_path):
+        table = self.makeTable(tmp_path)
+        assert table.entity["_stats"]["coreVersion"] == "13"
+        assert table.entity["_stats"]["systemVersion"] == "5.3.3"
 
     def testTextResult(self, tmp_path):
         table = self.makeTable(tmp_path)
@@ -139,6 +147,8 @@ class TestJournalPages(object):
         assert "content" not in handout.entity
         assert "img" not in handout.entity
         assert "pages" in handout.entity
+        assert handout.entity["_stats"]["coreVersion"] == "13"
+        assert handout.entity["_stats"]["systemVersion"] == "5.3.3"
 
     def testTextOnlyHandoutHasOneTextPage(self, tmp_path):
         handout = self.makeHandout(tmp_path, notes="<p>hello</p>")
@@ -213,6 +223,13 @@ class TestDocumentLinks(object):
         assert linker.replaceEntityLinks(html) == \
             "@UUID[Compendium.r20-module.actors.Actor.%s]{Bob}" % Entity.normalizeID("-ABC")
 
+    def testMarkdownJournalLinkIsLocalized(self, tmp_path):
+        linker = self.makeLinker(tmp_path, compendium=True)
+        markdown = "[N&amp;#8288;oir](http://journal.roll20.net/handout/-ABC)"
+        assert linker.replaceEntityLinks(markdown) == \
+            "@UUID[Compendium.r20-module.journal.JournalEntry.%s]{N&amp;#8288;oir}" \
+            % Entity.normalizeID("-ABC")
+
     def testLegacySyntaxIsNotEmitted(self, tmp_path):
         linker = self.makeLinker(tmp_path, compendium=True)
         html = '<a href="http://journal.roll20.net/handout/-ABC">Note</a>'
@@ -251,6 +268,26 @@ class TestDocumentLinks(object):
         html = '<a href="http://journal.roll20.net/item/-ABC">a{b}c</a>'
         assert linker.replaceEntityLinks(html) == \
             "@UUID[Item.%s]{a_b_c}" % Entity.normalizeID("-ABC")
+
+
+class TestMacroLinks(object):
+    def testMarkdownJournalLinkIsLocalizedInCommand(self, tmp_path):
+        database = FakeDatabase(str(tmp_path), {"export_as_module": True})
+        database._img_path = "icons/svg/dice-target.svg"
+        database._package = "r20-module"
+        database._pack_name = "macros"
+        database._converter = type("Converter", (), {})()
+        database.findID = lambda identifier, kind=None: object()
+        macro = Macro(database, {
+            "id": "-macro", "name": "Noir", "player_id": "-player",
+            "visibleto": "all",
+            "action": "[Noir](http://journal.roll20.net/handout/-ABC)",
+        }, 0)
+        assert macro.entity["command"] == \
+            "@UUID[Compendium.r20-module.journal.JournalEntry.%s]{Noir}" \
+            % Entity.normalizeID("-ABC")
+        assert macro.entity["_stats"]["coreVersion"] == "13"
+        assert macro.entity["_stats"]["systemVersion"] == "5.3.3"
 
 
 class TestTextureData(object):

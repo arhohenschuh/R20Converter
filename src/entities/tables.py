@@ -111,7 +111,8 @@ class Table(Entity):
             "formula": "0",
             "replacement": with_replacement,
             "displayRoll": False,
-            "results": []
+            "results": [],
+            "_stats": self.documentStats(),
         }
 
     def addEntry(self, name, img=None, weight=1, entity=None, collection=None, drawn=False):

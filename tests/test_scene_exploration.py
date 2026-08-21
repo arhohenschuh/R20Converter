@@ -40,6 +40,8 @@ def make_scene(tmp_path, **arguments):
 def test_scene_defaults_to_token_vision_and_individual_exploration(tmp_path):
     scene = make_scene(tmp_path)
 
+    assert scene["_stats"]["coreVersion"] == "13"
+    assert scene["_stats"]["systemVersion"] == "5.3.3"
     assert scene["tokenVision"] is True
     assert scene["fog"]["mode"] == 1
     assert scene["fog"]["colors"] == {"explored": None, "unexplored": None}

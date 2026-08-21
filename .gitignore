@@ -5,6 +5,7 @@ worlds/
 *.zip
 windows/
 build/
+build-*-superseded/
 dist/
 systems/
 .vscode

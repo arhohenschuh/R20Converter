@@ -96,7 +96,7 @@ def _mergeRecharge(data, recharge):
     return data
 
 
-def _mergeSpellConsumption(system, custom_data):
+def _mergeSpellConsumption(system, custom_data, item_name="spell"):
     """Keep source casting resources while retaining compendium activities (B062)."""
     method = custom_data.get("method", "spell")
     activities = system.get("activities") or {}
@@ -112,25 +112,32 @@ def _mergeSpellConsumption(system, custom_data):
         if self_targets:
             source_consumers.append((source.get("type"), self_targets))
 
+    def selectPrimary(candidates):
+        canonical = [candidate for candidate in candidates
+                     if candidate[0] == "dnd5eactivity000"]
+        if canonical:
+            return canonical
+        slot_consumers = [candidate for candidate in candidates
+                          if candidate[1].get("consumption", {}).get("spellSlot") is True]
+        if len(slot_consumers) == 1:
+            return slot_consumers
+        cast_activities = [candidate for candidate in slot_consumers
+                           if candidate[1].get("type") != "transform"]
+        if len(cast_activities) == 1:
+            return cast_activities
+        return candidates if len(candidates) == 1 else []
+
     primary = set()
     for source_type, targets in source_consumers:
-        candidates = [(activity_id, activity) for activity_id, activity in activities.items()
-                      if activity_id not in primary and activity.get("type") == source_type]
-        if len(candidates) > 1:
-            canonical = [candidate for candidate in candidates
-                         if candidate[0] == "dnd5eactivity000"]
-            candidates = canonical
+        available = [(activity_id, activity) for activity_id, activity in activities.items()
+                     if activity_id not in primary]
+        candidates = selectPrimary([
+            candidate for candidate in available if candidate[1].get("type") == source_type])
         if not candidates:
-            canonical = [(activity_id, activity)
-                         for activity_id, activity in activities.items()
-                         if activity_id not in primary
-                         and activity_id == "dnd5eactivity000"]
-            if canonical:
-                candidates = canonical
-            elif len(activities) == 1:
-                candidates = list(activities.items())
+            candidates = selectPrimary(available)
         if not candidates:
-            raise ValueError("Cannot select one primary donor activity for limited innate spell")
+            raise ValueError("Cannot select one primary donor activity for limited innate spell '%s'" %
+                             item_name)
         activity_id, activity = candidates[0]
         primary.add(activity_id)
         consumption = activity.setdefault("consumption", {})
@@ -585,7 +592,8 @@ class Item(Entity):
                     if key in custom_data:
                         item.entity["system"][key] = custom_data[key]
                 if item.entity["type"] == "spell":
-                    _mergeSpellConsumption(item.entity["system"], custom_data)
+                    _mergeSpellConsumption(item.entity["system"], custom_data,
+                                           item.entity["name"])
         _validateResourceContract(item.entity["type"], item.entity["name"],
                                   item.entity["system"])
         # The compendium copy carries whatever `_stats` its pack was built with.

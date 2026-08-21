@@ -272,7 +272,7 @@ class TestPackMapping(object):
     def test_collections_that_split_are_known_foundry_ones(self):
         assert set(leveldb_pack.PACK_COLLECTIONS.values()) <= {
             "adventures", "journal", "actors", "items", "scenes", "playlists",
-            "tables", "cards"}
+            "tables", "cards", "macros"}
 
 
 def readKeys(path):

@@ -46,6 +46,7 @@ PACK_COLLECTIONS = {
     "tables": "tables",
     "decks": "tables",
     "cards": "items",
+    "macros": "macros",
 }
 
 #: Embedded fields Foundry stores as separate entries. Values are ``many`` for
@@ -88,6 +89,7 @@ PACK_FOLDER_TYPES = {
     "tables": "RollTable",
     "decks": "RollTable",
     "cards": "Item",
+    "macros": "Macro",
 }
 
 

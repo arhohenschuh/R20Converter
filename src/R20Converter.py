@@ -277,6 +277,17 @@ class R20Converter(object):
             return
 
         package_id = self.customCompendiumId(packs_dir, name)
+        declared_types = {}
+        try:
+            with open(os.path.join(os.path.dirname(packs_dir), "module.json"),
+                      "r", encoding="utf-8") as handle:
+                package = json.load(handle)
+            declared_types = {
+                pack.get("name"): pack.get("type") or pack.get("entity")
+                for pack in package.get("packs", []) if pack.get("name")
+            }
+        except (OSError, ValueError, TypeError):
+            pass
 
         buckets = {}
         total = 0
@@ -286,6 +297,7 @@ class R20Converter(object):
                     or not os.path.isfile(os.path.join(path, "CURRENT"))):
                 continue
             db = DatabaseFile(self, "%s.db" % entry, package_id, entry)
+            db._document_type = declared_types.get(entry)
             try:
                 db.load(path)
             except Exception as e:
@@ -293,7 +305,7 @@ class R20Converter(object):
                                 % (entry, e))
                 continue
             for entity in db.entities:
-                role = foundry.COMPENDIUM_DOCUMENT_ROLES.get(entity.entity.get("type"))
+                role = self.customCompendiumRole(entity.entity, db._document_type)
                 if role:
                     buckets.setdefault(role, []).append(entity)
                     total += 1
@@ -319,6 +331,13 @@ class R20Converter(object):
         self.logInfo("Loaded %d documents from custom compendium '%s' (%s, %s precedence): %s."
                      % (total, package_id, mode, precedence, ", ".join(sorted(buckets))))
         self.warnAboutCompendiumAssets(package_id, buckets)
+
+    @staticmethod
+    def customCompendiumRole(document, declared_type=None):
+        role = foundry.COMPENDIUM_DOCUMENT_ROLES.get(document.get("type"))
+        if role is None and declared_type == "RollTable":
+            return "rolltables"
+        return role
 
     @staticmethod
     def customCompendiumId(packs_dir, fallback):
@@ -477,6 +496,8 @@ class R20Converter(object):
 
             if self.getArgument("disable_module_items", False):
                 self.items = EmptyDB(self, "items")
+
+            self.macros = Macros(self)
 
             # Module will add the packs that are not empty and save them to file
             self.module = Module(self).save()

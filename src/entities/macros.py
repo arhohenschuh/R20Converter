@@ -32,6 +32,7 @@ class Macro(Entity):
             elif player != "":
                 player_id = Entity.normalizeID(player)
                 permissions[player_id] = Macro.OWNERSHIP_OBSERVER
+            command = self.replaceCompendiumLinks(self.replaceEntityLinks(macro["action"]))
         self.entity = {
             "_id":self._id,
             "name": macro["name"] or "Unnamed Macro",
@@ -40,9 +41,10 @@ class Macro(Entity):
             "sort": index * Entity.SORT_ORDER,
             "flags":{},
             "scope": "global",
-            "command": macro["action"],
+            "command": command,
             "author": Entity.normalizeID(macro["player_id"]),
             # Roll 20 icon from "Roll20 for android" Android store app
             "img": self._database._img_path,
-            "actorIds": []
+            "actorIds": [],
+            "_stats": self.documentStats(),
         } 

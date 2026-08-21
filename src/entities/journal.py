@@ -101,7 +101,8 @@ class Handout(Entity):
                        # `img` fields with an ordered list of pages, and dropped
                        # the migration in 12.316 (ADR-002). A Roll20 handout maps
                        # to at most one text page plus one image page.
-                       "pages": self.genPages(name, content, avatar_filename)
+                       "pages": self.genPages(name, content, avatar_filename),
+                       "_stats": self.documentStats(),
                        }
 
     def genPages(self, name, content, img):

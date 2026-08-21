@@ -1,5 +1,60 @@
 # Changelog
 
+## v1.15.2
+
+**v1.15.1 was an unpublished local candidate. v1.15.2 is the first tagged release of these fixes.**
+
+- Split multiple NPC innate cadence markers found on the same source line. Roll20's Hashalaq Quori
+  stores `At will: charm person 3/day each: detect thoughts, disguise self, suggestion` as one
+  line; v1.15.0 consumed the `3/day each` marker as spell-list text and then rejected the explicit
+  `Disguise Self` cadence as contradictory. The parser now segments each line by cadence marker
+  while still requiring the first marker to begin the line, so ordinary prose is not reclassified
+  (B081).
+- Select a limited innate spell's unique slot-consuming donor activity when no canonical activity
+  ID exists. The Eyebite donor's initial save consumes a slot while its second save is explicitly a
+  free `Concentration Action`; v1.15.0 rejected both same-type activities as ambiguous. Multiple
+  slot-consuming candidates still fail closed (B082).
+- Treat transform activities as follow-ups when a limited innate donor has exactly one other
+  slot-consuming activity. The Polymorph donor exposes a save cast plus a transform action, both
+  marked for slot consumption; the source utility row cannot type-match either. The save now
+  receives the one daily-use consumer, the transform stays free, and future ambiguity errors name
+  the affected spell (B083).
+- Interpret Jumpgate ellipse points as bounding-box corners, reconstructing eight valid Eberron
+  Setting ellipses into 128 deterministic Walls. Four exact zero-area records are logged and
+  skipped as source debris; other degenerate, incomplete, or non-finite circle geometry still
+  fails closed (B084).
+- Retain declared RollTable packs as supplemental custom-compendium donors and localize prose table
+  links. Confusion's embedded `RollTable` UUID now clones the behavior table into the module
+  `tables` pack and rewrites all source descriptions before the Adventure snapshot is built (B085).
+- Convert raw Markdown links in rich-text content to HTML anchors before existing Roll20 Journal
+  and compendium link handling. Internal Journal targets become local UUIDs; remaining web links
+  stay readable anchors instead of raw Markdown that Foundry displays literally (B086).
+- Resolve undeclared relative HTML image paths from a unique source-ZIP suffix when bytes exist.
+  Ambiguous matches abort; complete tags with no retained source bytes are logged and stripped while
+  surrounding text remains intact (B087).
+- Preserve Roll20 Macros in module output. Module conversion now creates a Macro pack, includes its
+  documents in the native Adventure, and normalizes embedded Markdown/Journal/compendium links in
+  each command instead of silently dropping the complete source macro collection (B088).
+- Stamp Folder, JournalEntry, Macro, Scene, and RollTable primary documents with the converter's
+  core-13 / dnd5e-5.3.3 `_stats` contract. The native Adventure no longer contains hundreds of
+  unstamped source primaries that force or confuse Foundry migration at package/import time (B089).
+
+Suite: **914 passed** in the shipping Python 3.8 environment.
+
+Frozen-binary qualification against immutable *Eberron Setting* passes production Gate A
+**36 / 0 / 0 / 4**. The source's eight valid ellipses produce all 128 stable Wall IDs while four
+exact zero-area records produce none; Hashalaq Quori, Eyebite, and Polymorph satisfy their cadence
+and consumption contracts; all three Confusion copies link to one localized RollTable; all 87
+Macros occur in both the source pack and Adventure; and all 886 converter-owned primary Adventure
+documents carry core-13 / dnd5e-5.3.3 schema stamps while the one donor table keeps its measured
+source stamp. Output has zero raw Markdown links, relative HTML images, zero-byte assets, or known
+Roll20 placeholder files.
+
+Frozen-binary qualification against immutable *Lost Mine of Phandelver* passes production Gate A
+**37 / 0 / 0 / 3**. Source packs and Adventure exactly conserve 40 Actors, 119 Items, 10 Scenes,
+87 Journals, 13 Tables, 22 folders, 3 Macros, and 206/206 Token actor links, with zero external
+HTML images, zero zero-byte assets, and zero known Roll20 placeholder files.
+
 ## v1.15.0
 
 **Closes all five systemic defects found during Tomb of Annihilation v1.14.0 qualification.**

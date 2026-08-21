@@ -96,6 +96,15 @@ mechanically for the physical-item class of defect.
 | [B078](B078-structured-innate-cadence-is-ignored.md) | High | Fixed (v1.15.0) | Structured `data-Spells` and unambiguous trait clauses now drive native cadence; all nine measured ToA rows infer from immutable source. |
 | [B079](B079-system-summon-with-empty-texture-is-not-localized.md) | High | Fixed (v1.15.0) | System Actor summons are art-qualified; null-art donors localize once using the invoking Item icon or fail with the exact UUID. |
 | [B080](B080-roll20-placeholder-is-stored-as-art.md) | High | Fixed (v1.15.0) | The exact Roll20 placeholder body is rejected across acquisition paths; complete HTML tags are stripped and structural image fields fail closed. |
+| [B081](B081-inline-innate-cadence-boundary-is-swallowed.md) | High | Fixed (v1.15.2) | A second cadence marker on the same trait line was swallowed into the first spell list, causing valid explicit spell cadence to fail as contradictory. |
+| [B082](B082-unique-slot-consuming-donor-primary-not-selected.md) | High | Fixed (v1.15.2) | A multi-activity donor with one initial slot-consuming cast and one free follow-up was rejected because neither activity had the canonical primary ID. |
+| [B083](B083-transform-followup-blocks-limited-innate-primary.md) | High | Fixed (v1.15.2) | Polymorph's save cast and transform follow-up both advertised slot consumption, leaving a utility-shaped source row with no recognized primary. |
+| [B084](B084-zero-area-jumpgate-ellipse-aborts-conversion.md) | High | Fixed (v1.15.2) | Jumpgate ellipse bounding-box corners were treated as polygon vertices; all 12 Eberron ellipses failed instead of yielding 128 Walls plus four explicit debris skips. |
+| [B085](B085-rolltable-prose-target-is-not-localized.md) | High | Fixed (v1.15.2) | Custom compendium loading discarded declared RollTable packs and the assembler matched only Actor/Item UUIDs, leaving Confusion linked to its build-time donor. |
+| [B086](B086-markdown-links-bypass-rich-text-localization.md) | High | Fixed (v1.15.2) | Markdown links embedded in rich-text fields bypassed HTML link resolvers and remained literal in source packs and the Adventure. |
+| [B087](B087-relative-html-images-have-no-package-root.md) | High | Fixed (v1.15.2) | Bare HTML image paths were neither localized nor removed, so they resolved against a server data root and broke on every other installation. |
+| [B088](B088-module-output-drops-source-macros.md) | High | Fixed (v1.15.2) | Module mode never instantiated or saved Macros and hardcoded an empty Adventure macro collection, dropping all 87 Eberron Setting macros. |
+| [B089](B089-primary-adventure-documents-lack-schema-stamps.md) | High | Fixed (v1.15.2) | Folder, JournalEntry, Macro, Scene, and source RollTable primaries lacked `_stats`, leaving 886 Adventure documents without a core schema version. |
 
 ## Cross-cutting observations
 
@@ -106,7 +115,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B081**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B090**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent

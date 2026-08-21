@@ -487,6 +487,21 @@ class TestSourceInnateCadence(object):
             ("misty step", 2): "at will",
         }
 
+    def test_inline_cadence_boundaries_are_parsed(self):
+        actor = CadenceActor(spells={
+            "charm": cadence_spell("Charm Person", "charm"),
+            "disguise": cadence_spell("Disguise Self", "disguise"),
+            "suggest": cadence_spell("Suggestion", "suggest"),
+        }, traits={
+            "list": cadence_trait("Innate Spellcasting",
+                "At will: charm person 3/day each: disguise self, suggestion"),
+        })
+        assert actor.inferInnateCadence() == {
+            ("charm person", 1): "at will",
+            ("disguise self", 1): "3/day",
+            ("suggestion", 1): "3/day",
+        }
+
     def test_named_item_trait_with_next_dawn_is_one_per_day(self):
         actor = CadenceActor(spells={
             "ray": cadence_spell("Scorching Ray", "ray"),

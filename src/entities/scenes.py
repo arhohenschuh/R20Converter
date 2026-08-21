@@ -502,6 +502,10 @@ class Scene(Entity):
                 })
                 drawings.append(drawing)
             elif path and layer == "walls":
+                if self.isZeroAreaJumpgateEllipse(path):
+                    self.logInfo("Skipping zero-area source ellipse '%s'" %
+                                 path.get("id", "unknown"))
+                    continue
                 # Since Jumpgate, a path's width/height needs to be calculated
                 (polygon, path_type, tile_width, tile_height) = self.pathToPolygonList(path, tile_width, tile_height)
                 drawing_width = tile_width * path["scaleX"]
@@ -777,6 +781,7 @@ class Scene(Entity):
                        "playlistSound": None,
                        "journal": None,
                        "weather": "",
+                              "_stats": self.documentStats(),
                     }
 
     def filterItems(self, type, layer=None, exclude=None):
@@ -1005,6 +1010,16 @@ class Scene(Entity):
             size = self.getRotatedBoxSize(size[0], size[1], rotation)
         return size
 
+    @staticmethod
+    def isZeroAreaJumpgateEllipse(path):
+        points = path.get("points") or []
+        return (path.get("path") is None and path.get("shape") == "eli"
+            and path.get("width") == 0 and path.get("height") == 0
+            and len(points) >= 2
+            and all(len(point) >= 2 and math.isfinite(point[0])
+                and math.isfinite(point[1]) for point in points)
+            and len(set((point[0], point[1]) for point in points)) == 1)
+
     def pathToPolygonList(self, path, width, height):
         polygon = []
         (w, h) = (width, height)
@@ -1018,7 +1033,7 @@ class Scene(Entity):
             return (int(w), int(h))
         if path["path"] is None:
             # Jumpgate uses path.points instead of path.path
-            points = path.get("points") or []
+            source_points = path.get("points") or []
             SHAPE_TO_PATH_TYPE = {
                 "pol": PATH_TYPE.POLYGON,
                 "eli": PATH_TYPE.CIRCLE,
@@ -1026,25 +1041,43 @@ class Scene(Entity):
                 "free": PATH_TYPE.FREEHAND,
             }
             path_type = SHAPE_TO_PATH_TYPE.get(path["shape"], PATH_TYPE.POLYGON)
-            if path_type == PATH_TYPE.CIRCLE and len(points) < 2:
-                if not all(math.isfinite(value) and value > 0 for value in (w, h)):
+            if path_type == PATH_TYPE.CIRCLE:
+                if len(source_points) >= 2:
+                    if not all(len(point) >= 2 and math.isfinite(point[0])
+                               and math.isfinite(point[1]) for point in source_points):
+                        raise ValueError("Path '%s' contains non-finite geometry" %
+                                         path.get("id", "unknown"))
+                    min_x = min(point[0] for point in source_points)
+                    max_x = max(point[0] for point in source_points)
+                    min_y = min(point[1] for point in source_points)
+                    max_y = max(point[1] for point in source_points)
+                    w = max_x - min_x
+                    h = max_y - min_y
+                elif all(math.isfinite(value) and value > 0 for value in (w, h)):
+                    min_x, min_y = 0, 0
+                    max_x, max_y = w, h
+                else:
                     raise ValueError("Path '%s' is a degenerate ellipse" %
                                      path.get("id", "unknown"))
-                center_x, center_y = w / 2.0, h / 2.0
+                if w <= 0 or h <= 0:
+                    raise ValueError("Path '%s' is a degenerate ellipse" %
+                                     path.get("id", "unknown"))
+                center_x = min_x + w / 2.0
+                center_y = min_y + h / 2.0
                 points = [
-                    (center_x + center_x * math.cos(math.pi + step * math.pi / 8.0),
-                     center_y + center_y * math.sin(math.pi + step * math.pi / 8.0))
+                    (center_x + w / 2.0 * math.cos(math.pi + step * math.pi / 8.0),
+                     center_y + h / 2.0 * math.sin(math.pi + step * math.pi / 8.0))
                     for step in range(17)
                 ]
-            #for point in points:
-            #    (w, h) = add_point(point[0], point[1], w, h)
-            min_x = min([x for (x, _) in path["points"]])
-            max_x = max([x for (x, _) in path["points"]])
-            min_y = min([y for (_, y) in path["points"]])
-            max_y = max([y for (_, y) in path["points"]])
-            # Calculate width/height from the range of coordinates used by the points
-            w = max_x - min_x
-            h = max_y - min_y
+                points[-1] = points[0]
+            else:
+                points = source_points
+                min_x = min(point[0] for point in points)
+                max_x = max(point[0] for point in points)
+                min_y = min(point[1] for point in points)
+                max_y = max(point[1] for point in points)
+                w = max_x - min_x
+                h = max_y - min_y
             for point in points:
                 # Remove the points's minimum x/y to the polygon to make it relative to the top-left corner
                 polygon.append((point[0] - min_x, point[1] - min_y))

@@ -22,3 +22,9 @@ def test_id_based_compendium_without_manifest_keeps_id(tmp_path):
     packs.mkdir(parents=True)
     assert R20Converter.customCompendiumId(
         str(packs), "configured-package-id") == "configured-package-id"
+
+
+def test_declared_rolltable_pack_is_retained_as_a_supplemental_donor():
+    table = {"_id": "table00000000001", "name": "Behavior", "formula": "1d10"}
+    assert R20Converter.customCompendiumRole(table, "RollTable") == "rolltables"
+    assert R20Converter.customCompendiumRole(table, "JournalEntry") is None

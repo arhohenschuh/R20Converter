@@ -1,6 +1,7 @@
 """Self-contained module assembly regressions (v1.14.0)."""
 
 import copy
+import os
 
 import pytest
 
@@ -42,10 +43,11 @@ class Converter(object):
         self.tables = Database()
         self.decks = Database()
         self.cards = Database()
+        self.macros = Database()
         self.folders = Database()
         self.packs = {}
         for database in (self.journal, self.actors, self.items, self.scenes,
-                         self.playlists, self.tables, self.decks, self.cards,
+                         self.playlists, self.tables, self.decks, self.cards, self.macros,
                          self.folders):
             database._converter = self
 
@@ -91,6 +93,16 @@ class TestAdventureAssembly(object):
         assert [document["_id"] for document in adventure["items"]] == [
             "carditem00000001"]
         assert adventure["cards"] == []
+
+    def test_macros_join_adventure_macros(self, tmp_path):
+        converter = Converter(tmp_path)
+        converter.macros = Database([Document({
+            "_id": "macro00000000001", "name": "Roll", "type": "chat",
+            "command": "[[1t[Encounter]]]", "folder": None,
+        })])
+        adventure = ModuleAssembler(converter).buildAdventure()
+        assert [document["_id"] for document in adventure["macros"]] == [
+            "macro00000000001"]
 
     def test_rejects_a_broken_token_actor_link(self, tmp_path):
         converter = Converter(tmp_path)
@@ -200,6 +212,27 @@ class TestExecutableReferences(object):
         assert converter.journal.entities[0].entity["pages"][0]["text"]["content"] == \
             "@UUID[Compendium.test-module.items.Item.%s]{Wand}" % identifier
 
+    def test_external_rolltable_link_in_prose_is_localized_when_donor_exists(self, tmp_path):
+        converter = Converter(tmp_path)
+        identifier = "table00000000001"
+        source_uuid = "Compendium.custom-module.roll-tables.RollTable.%s" % identifier
+        converter.items.entities = [Document({
+            "_id": "spell00000000001", "name": "Confusion", "type": "spell",
+            "system": {"description": {"value": "@UUID[%s]{Behavior}" % source_uuid}},
+        })]
+        donor = Document({
+            "_id": identifier, "name": "Confusion: Behavior", "folder": None,
+            "formula": "1d10", "results": [],
+        }, package="custom-module", pack="roll-tables")
+        donor._database._document_type = "RollTable"
+        converter.packs = {"rolltables": Database([donor])}
+
+        ModuleAssembler(converter).localizeExecutableReferences()
+
+        assert [entry.entity["_id"] for entry in converter.tables.entities] == [identifier]
+        assert converter.items.entities[0].entity["system"]["description"]["value"] == \
+            "@UUID[Compendium.test-module.tables.RollTable.%s]{Behavior}" % identifier
+
     def test_usable_system_actor_target_stays_external(self, tmp_path):
         converter = Converter(tmp_path)
         source_uuid = "Compendium.dnd5e.monsters.Actor.systemactor00001"
@@ -288,6 +321,8 @@ class TestExecutableReferences(object):
         folders = [entity.entity for entity in converter.folders.entities]
         assert [folder["name"] for folder in folders] == ["Root", "Chapter"]
         assert folders[1]["folder"] == folders[0]["_id"]
+        assert all(folder["_stats"]["coreVersion"] == "13" for folder in folders)
+        assert all(folder["_stats"]["systemVersion"] == "5.3.3" for folder in folders)
         assert converter.journal.entities[0].entity["folder"] == folders[1]["_id"]
 
 
@@ -344,6 +379,59 @@ class TestEmbeddedHtmlArt(object):
         assert assembler.placeholder_references == 1
         assert assembler.placeholder_tags_stripped == 1
         assert not (tmp_path / "assets").exists()
+
+    def test_unrecoverable_bare_img_removes_the_complete_tag(self, tmp_path):
+        converter = Converter(tmp_path)
+        document = Document({
+            "_id": "journal000000001", "name": "Gears", "type": "journal",
+            "pages": [{"text": {"content":
+                '<p>Before</p><img src="0_DnD_EFA_Intro_Gear1..jpg"><p>After</p>'}}],
+        })
+        converter.journal.entities = [document]
+        assembler = ModuleAssembler(converter)
+
+        assembler.internalizeAssets()
+
+        assert document.entity["pages"][0]["text"]["content"] == \
+            "<p>Before</p><p>After</p>"
+        assert assembler.missing_relative_assets == {"0_DnD_EFA_Intro_Gear1..jpg"}
+        assert assembler.missing_relative_tags_stripped == 1
+
+    def test_unique_relative_img_is_copied_from_the_source_zip(self, tmp_path):
+        converter = Converter(tmp_path)
+        converter.zip = type("Archive", (), {
+            "namelist": lambda self: ["journal/001 - Gears/gear.jpg"],
+        })()
+        document = Document({
+            "_id": "journal000000001", "name": "Gears", "type": "journal",
+            "pages": [{"text": {"content": '<img src="gear.jpg">'}}],
+        })
+        converter.journal.entities = [document]
+        assembler = ModuleAssembler(converter)
+        copied = []
+        helper = type("Helper", (), {
+            "copyZipFile": lambda self, url, source, destination, **kwargs:
+                (copied.append((url, source, destination, kwargs)) or
+                 ("asset", "modules/test-module/assets/html/gear.jpg")),
+        })()
+        assembler._assetHelper = lambda: helper
+
+        assembler.internalizeAssets()
+
+        assert copied == [("gear.jpg", "journal/001 - Gears/gear.jpg",
+                   os.path.join("assets", "html", "embedded"),
+                   {"type": "html", "dedup": True})]
+        assert document.entity["pages"][0]["text"]["content"] == \
+            '<img src="modules/test-module/assets/html/gear.jpg">'
+
+    def test_ambiguous_relative_img_fails_closed(self, tmp_path):
+        converter = Converter(tmp_path)
+        converter.zip = type("Archive", (), {
+            "namelist": lambda self: ["journal/001/gear.jpg", "journal/002/gear.jpg"],
+        })()
+        assembler = ModuleAssembler(converter)
+        with pytest.raises(ValueError, match="ambiguous"):
+            assembler._copyRelativeAsset("gear.jpg")
 
     def test_placeholder_in_structural_image_field_fails_closed(self, tmp_path):
         converter = Converter(tmp_path)

@@ -99,6 +99,37 @@ def test_degenerate_circle_is_rejected():
         Scene.__new__(Scene).pathToPolygonList(path, 0, 0)
 
 
+def test_exact_zero_area_jumpgate_ellipse_is_source_debris():
+    path = {
+        "id": "-OfdWqaRPUGfua7D38jL",
+        "path": None,
+        "points": [[0, 0], [0, 0]],
+        "shape": "eli",
+        "width": 0,
+        "height": 0,
+    }
+    assert Scene.isZeroAreaJumpgateEllipse(path) is True
+
+
+def test_two_point_jumpgate_ellipse_is_reconstructed():
+    path = {
+        "id": "-OfdX0FtG4sM1hLknO8q",
+        "path": None,
+        "points": [[0, 0], [26.25, 26.25]],
+        "shape": "eli",
+        "width": 0,
+        "height": 0,
+    }
+    polygon, path_type, width, height = Scene.__new__(Scene).pathToPolygonList(
+        path, path["width"], path["height"])
+    assert path_type == PATH_TYPE.CIRCLE
+    assert len(polygon) == 17
+    assert polygon[0] == polygon[-1]
+    assert polygon[0] == pytest.approx((0, 13.125))
+    assert polygon[4] == pytest.approx((13.125, 0))
+    assert (width, height) == pytest.approx((26.25, 26.25))
+
+
 def test_non_finite_circle_is_rejected():
     path = circle_path()
     path["path"][1][1] = math.inf

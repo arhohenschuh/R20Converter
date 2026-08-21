@@ -444,6 +444,92 @@ class TestCompendiumKeepsCharacterState(object):
         assert activities["dnd5eactivity100"]["consumption"] == {
             "spellSlot": False, "targets": []}
 
+    def test_limited_innate_uses_unique_slot_consuming_donor_activity(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        target = {"type": "itemUses", "target": "", "value": "1",
+                  "scaling": {"mode": "", "formula": ""}}
+        custom = {
+            "method": "innate",
+            "prepared": 1,
+            "uses": {"spent": 0, "max": "3", "recovery": []},
+            "activities": {
+                "source": {"type": "save", "consumption": {"targets": [target]}},
+            },
+        }
+        donor = _spell_document()
+        donor["system"]["activities"] = {
+            "initial": {
+                "_id": "initial", "type": "save",
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+            "followup": {
+                "_id": "followup", "name": "Concentration Action", "type": "save",
+                "consumption": {"spellSlot": False, "targets": []},
+            },
+        }
+        item = self._build(entity._database, custom, donor)
+        activities = item.entity["system"]["activities"]
+        assert activities["initial"]["consumption"] == {
+            "spellSlot": True, "targets": [target]}
+        assert activities["followup"]["consumption"] == {
+            "spellSlot": False, "targets": []}
+
+    def test_limited_innate_rejects_ambiguous_slot_consuming_activities(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        target = {"type": "itemUses", "target": "", "value": "1",
+                  "scaling": {"mode": "", "formula": ""}}
+        custom = {
+            "method": "innate",
+            "prepared": 1,
+            "uses": {"spent": 0, "max": "3", "recovery": []},
+            "activities": {
+                "source": {"type": "save", "consumption": {"targets": [target]}},
+            },
+        }
+        donor = _spell_document()
+        donor["system"]["activities"] = {
+            "first": {
+                "_id": "first", "type": "save",
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+            "second": {
+                "_id": "second", "type": "save",
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+        }
+        with pytest.raises(ValueError, match="Cannot select one primary donor activity"):
+            self._build(entity._database, custom, donor)
+
+    def test_limited_innate_prefers_cast_over_transform_followup(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        target = {"type": "itemUses", "target": "", "value": "1",
+                  "scaling": {"mode": "", "formula": ""}}
+        custom = {
+            "method": "innate",
+            "prepared": 1,
+            "uses": {"spent": 0, "max": "1", "recovery": []},
+            "activities": {
+                "source": {"type": "utility", "consumption": {"targets": [target]}},
+            },
+        }
+        donor = _spell_document()
+        donor["system"]["activities"] = {
+            "save": {
+                "_id": "save", "type": "save",
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+            "transform": {
+                "_id": "transform", "name": "Transform", "type": "transform",
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+        }
+        item = self._build(entity._database, custom, donor)
+        activities = item.entity["system"]["activities"]
+        assert activities["save"]["consumption"] == {
+            "spellSlot": True, "targets": [target]}
+        assert activities["transform"]["consumption"] == {
+            "spellSlot": False, "targets": []}
+
     def test_limited_innate_without_a_positive_consumer_is_rejected(self, entity):
         donor = _multi_activity_spell_document()
         donor["system"].update({
