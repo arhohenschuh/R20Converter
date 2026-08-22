@@ -6,15 +6,19 @@ the finished world, so each test asserts the observable outcome rather than the
 call sequence that produces it. No network access -- the session is stubbed.
 """
 
+import copy
 import os
+from types import SimpleNamespace
 
 import pytest
 
 import entities.base as base
 import entities.journal as journal
 import entities.items as items_module
+from entities.actors import Actor
 from entities.items import Item
 
+from conftest import FakeDatabase
 from test_base_download import StubResponse, StubSession, stub_session, clear_resource_cache  # noqa: F401
 
 
@@ -286,6 +290,128 @@ class TestItemFolderNumbering(object):
 class FakeCompendiumItem(object):
     def __init__(self, entity):
         self.entity = entity
+
+
+class StubOwnedItem(object):
+    def __init__(self, entity):
+        self.entity = entity
+
+    def addToOwnedList(self, items):
+        items.append(self.entity)
+        return self.entity
+
+
+class StubInventoryItems(object):
+    def __init__(self):
+        self.source_names = []
+        self.replacements = 0
+
+    def createItemInventory(self, identifier, name, description, inventory_type,
+                            attributes, activation, attack, specific, **kwargs):
+        self.source_names.append(name)
+        return StubOwnedItem({
+            "_id": "sourceitem000001",
+            "name": name,
+            "type": inventory_type,
+            "img": None,
+            "system": {
+                "activities": {
+                    "sourceAttack0001": {
+                        "_id": "sourceAttack0001",
+                        "type": "attack",
+                    },
+                },
+                "damage": {"base": {"number": 1, "denomination": 6,
+                                      "types": ["bludgeoning"]}},
+            },
+        })
+
+    def createItemFromCompendium(self, identifier, compendium_item, custom_data):
+        self.replacements += 1
+        return StubOwnedItem(copy.deepcopy(compendium_item.entity))
+
+
+class InventoryBoundaryActor(Actor):
+    def __init__(self, database, donor=None):
+        self._database = database
+        self._converter = SimpleNamespace(items=StubInventoryItems())
+        self._avatar_filename = "source.webp"
+        self._donor = donor
+        self.lookups = []
+        self.warnings = []
+
+    def findCompendiumItem(self, compendium, name):
+        self.lookups.append((compendium, name))
+        return self._donor
+
+    def abilityMods(self):
+        return {}
+
+    def exportItem(self, item, folder_prefix, force=False):
+        pass
+
+    def getName(self):
+        return "Fixture Actor"
+
+    def logWarning(self, message):
+        self.warnings.append(message)
+
+
+def _inventory_donor(name, item_type):
+    return FakeCompendiumItem({
+        "_id": "donoritem0000001",
+        "name": name,
+        "type": item_type,
+        "img": "icons/donor.webp",
+        "system": {"activities": {
+            "donorUtility001": {"_id": "donorUtility001", "type": "utility"},
+        }},
+        "_stats": {},
+    })
+
+
+class TestCompendiumTypeBoundary(object):
+    """B090 -- a name match cannot erase source mechanics by changing type."""
+
+    def _build(self, tmp_path, donor, name="Shovel"):
+        actor = InventoryBoundaryActor(FakeDatabase(str(tmp_path)), donor)
+        owned = []
+        item = actor.createItemInventory(
+            owned, name, "", "weapon", object(), object(), object(), object())
+        return actor, item
+
+    def test_equipment_donor_does_not_replace_source_weapon(self, tmp_path):
+        actor, item = self._build(tmp_path, _inventory_donor("Shovel", "equipment"))
+        assert item["type"] == "weapon"
+        assert list(item["system"]["activities"]) == ["sourceAttack0001"]
+        assert item["system"]["damage"]["base"]["denomination"] == 6
+        assert actor._converter.items.replacements == 0
+        assert any("incompatible" in warning.lower() for warning in actor.warnings)
+
+    def test_compatible_weapon_donor_still_enriches(self, tmp_path):
+        actor, item = self._build(tmp_path, _inventory_donor("Shovel", "weapon"))
+        assert item["type"] == "weapon"
+        assert list(item["system"]["activities"]) == ["donorUtility001"]
+        assert actor._converter.items.replacements == 1
+
+
+class TestNPCItemNameNormalization(object):
+    """B091 -- source formatting whitespace is not part of an Item name."""
+
+    def test_outer_whitespace_is_removed_before_lookup_and_creation(self, tmp_path):
+        actor = InventoryBoundaryActor(FakeDatabase(str(tmp_path)))
+        owned = []
+        item = actor.createItemInventory(
+            owned, "\nDagger (Ranged)\t", "", "weapon",
+            object(), object(), object(), object())
+        assert actor.lookups == [("Items", "Dagger (Ranged)")]
+        assert actor._converter.items.source_names == ["Dagger (Ranged)"]
+        assert item["name"] == "Dagger (Ranged)"
+
+    def test_whitespace_only_name_uses_placeholder(self, tmp_path):
+        actor = InventoryBoundaryActor(FakeDatabase(str(tmp_path)))
+        assert actor.nameOrPlaceholder(" \n\t", "action") == "Unnamed Action"
+        assert len(actor.warnings) == 1
 
 
 def _class_document():

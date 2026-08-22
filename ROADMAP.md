@@ -33,10 +33,12 @@ Adopt this incrementally rather than rewriting the converter:
   links and undeclared relative HTML image paths before module assembly; preserve source Macros in
   both a module pack and the native Adventure; stamp every primary source document before the
   native Adventure snapshot is built.
-7. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+7. **Done in v1.15.3:** keep explicit source Item types authoritative across same-name compendium
+  matches, and normalize outer whitespace at NPC Item-name boundaries.
+8. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-8. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+9. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 World LevelDB output remains out of scope for this stage: worlds retain the established NeDB

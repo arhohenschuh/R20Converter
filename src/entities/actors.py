@@ -1940,6 +1940,7 @@ class Actor(Entity):
         compendium entry. Dropping the entry instead would lose whatever damage
         or description it carries, so it is named and reported.
         """
+        name = str(name or "").strip()
         if name != "":
             return name
         label = "Unnamed %s" % kind.capitalize()
@@ -1955,10 +1956,15 @@ class Actor(Entity):
         kwargs.setdefault("ability_mods", self.abilityMods())
         item = self._converter.items.createItemInventory(None, name, description, inventory_type, attributes,
                                                         activity, attack, specific, **kwargs)
-        # Prevent a weapon (torch, shovel) from being transformed into loot and losing its damage/attack properties
-        if compendium_item and (compendium_item.entity["type"] != "loot" or inventory_type == "loot"):
+        source_type = item.entity["type"]
+        donor_type = compendium_item.entity["type"] if compendium_item else None
+        types_compatible = source_type == "loot" or donor_type == source_type
+        if compendium_item and types_compatible:
             item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
+            if compendium_item:
+                self.logWarning("Compendium Item '%s' has incompatible type '%s' for source type '%s'; keeping source mechanics."
+                                % (name, donor_type, source_type))
             item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
         owned_item = item.addToOwnedList(items)
 
@@ -2197,7 +2203,8 @@ class Actor(Entity):
                 self.createItemFeat(items, name, description, None, None, None, source=source, requirements=source_type)
 
     def addNPCAction(self, items, action, activation_type):
-        name = self.getAttribute("name", "", from_dict=action)[0]
+        name = self.nameOrPlaceholder(
+            self.getAttribute("name", "", from_dict=action)[0], "action")
         name_display = self.getAttribute("name_display", "", from_dict=action)[0]
         desc = self.getAttribute("desc", "", from_dict=action)[0]
         description = self.getAttribute("description", "", from_dict=action)[0] or desc

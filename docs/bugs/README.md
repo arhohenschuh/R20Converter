@@ -105,6 +105,8 @@ mechanically for the physical-item class of defect.
 | [B087](B087-relative-html-images-have-no-package-root.md) | High | Fixed (v1.15.2) | Bare HTML image paths were neither localized nor removed, so they resolved against a server data root and broke on every other installation. |
 | [B088](B088-module-output-drops-source-macros.md) | High | Fixed (v1.15.2) | Module mode never instantiated or saved Macros and hardcoded an empty Adventure macro collection, dropping all 87 Eberron Setting macros. |
 | [B089](B089-primary-adventure-documents-lack-schema-stamps.md) | High | Fixed (v1.15.2) | Folder, JournalEntry, Macro, Scene, and source RollTable primaries lacked `_stats`, leaving 886 Adventure documents without a core schema version. |
+| [B090](B090-compendium-type-mismatch-replaces-source-weapon.md) | High | Fixed (v1.15.3) | Explicitly typed source Items now reject incompatible same-name donors; a source NPC weapon retains its attack and damage. |
+| [B091](B091-npc-item-names-retain-source-whitespace.md) | Minor | Fixed (v1.15.3) | NPC Item names are trimmed before placeholder selection, lookup, activity-ID derivation, and document creation. |
 
 ## Cross-cutting observations
 
@@ -115,7 +117,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B090**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B092**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent

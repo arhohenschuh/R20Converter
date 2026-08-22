@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.15.3
+
+- Preserve explicitly typed source Items when a same-name compendium donor has an incompatible
+  document type. A Roll20 NPC weapon can no longer become equipment and lose its source attack and
+  damage; generic source loot may still be upgraded by a more specific donor (B090).
+- Trim outer whitespace from NPC Item names before placeholder selection, compendium lookup,
+  activity-ID derivation, and document creation. Internal whitespace remains unchanged, and a
+  whitespace-only name receives the existing descriptive placeholder (B091).
+
+Suite: **918 passed** in the shipping Python 3.8 environment.
+
 ## v1.15.2
 
 **v1.15.1 was an unpublished local candidate. v1.15.2 is the first tagged release of these fixes.**
