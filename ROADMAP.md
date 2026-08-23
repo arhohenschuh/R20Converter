@@ -37,10 +37,12 @@ Adopt this incrementally rather than rewriting the converter:
   matches, and normalize outer whitespace at NPC Item-name boundaries.
 8. **Done in v1.15.4:** preserve bounded alternative placement activities when each is a complete
   cast drawing from the same limited innate Item-use pool.
-9. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+9. **Done in v1.15.5:** preserve omnidirectional Scene AmbientLights as 360-degree emitters and
+  limit rotation correction to narrowed directional cones.
+10. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-10. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+11. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 World LevelDB output remains out of scope for this stage: worlds retain the established NeDB

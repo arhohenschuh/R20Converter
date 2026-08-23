@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.15.5
+
+- Preserve omnidirectional Scene-light arcs as `AmbientLight.config.angle: 360` instead of
+  rewriting them to a zero-degree cone. Omitted/malformed angles remain full-circle, while valid
+  directional cones keep their angle and receive the existing rotation correction (B093).
+
+Immutable *Out of the Abyss* source contains **15** affected wall-layer lights: Velkynvelve 9,
+Lake Shore Roll20 Map 4, and Worm Nursery 2. Eleven explicitly store 360 degrees and four omit the
+angle; none is directional.
+
+Suite: **922 passed** in the shipping Python 3.8 environment.
+
 ## v1.15.4
 
 - Preserve mutually exclusive placement choices on limited innate spells. Wall of Fire's **Place

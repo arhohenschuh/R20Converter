@@ -1,5 +1,5 @@
 from .base import DatabaseFile, Entity
-from .actors import Token
+from .actors import FULL_ANGLE, Token
 
 from PIL import Image, ImageFont, ImageDraw
 
@@ -397,15 +397,13 @@ class Scene(Entity):
                 if dim > 0 or bright > 0:
                     try:
                         angle = int(Token.lightAngle(graphic))
-                        if angle == 360:
-                            angle = 0
                     except:
-                        angle = 0
+                        angle = FULL_ANGLE
                     try:
                         rotation = graphic["rotation"]
                     except:
                         rotation = 0
-                    if angle != 0:
+                    if angle != FULL_ANGLE:
                         rotation = (rotation + 180) % 360
                     # Foundry v10 moved every AmbientLight emission property into
                     # a nested `config` object and dropped the migration in
