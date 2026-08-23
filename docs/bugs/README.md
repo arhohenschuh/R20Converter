@@ -107,6 +107,7 @@ mechanically for the physical-item class of defect.
 | [B089](B089-primary-adventure-documents-lack-schema-stamps.md) | High | Fixed (v1.15.2) | Folder, JournalEntry, Macro, Scene, and source RollTable primaries lacked `_stats`, leaving 886 Adventure documents without a core schema version. |
 | [B090](B090-compendium-type-mismatch-replaces-source-weapon.md) | High | Fixed (v1.15.3) | Explicitly typed source Items now reject incompatible same-name donors; a source NPC weapon retains its attack and damage. |
 | [B091](B091-npc-item-names-retain-source-whitespace.md) | Minor | Fixed (v1.15.3) | NPC Item names are trimmed before placeholder selection, lookup, activity-ID derivation, and document creation. |
+| [B092](B092-alternative-placement-activities-rejected-as-ambiguous.md) | High | Fixed (v1.15.4) | Explicit Wall/Ring-style placement alternatives may share one limited innate Item-use pool without weakening ordinary ambiguity rejection. |
 
 ## Cross-cutting observations
 
@@ -117,7 +118,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B092**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B093**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent
@@ -146,3 +147,10 @@ mechanically for the physical-item class of defect.
   **Not a bug**: it is declared in `IdentifiableTemplate`
   (`identified: new BooleanField({required: true, initial: true})`), which the
   physical item types also mix in. The converter is correct.
+- *Dead in Thay*'s malformed Far Realm JPEG is not attributed to R20Converter. The immutable
+  R20Exporter archive already contains the same truncated 8,724,480-byte body under both the Scene
+  graphic and thumbnail paths, and `export_report.json` records both as bundled from one HTTP 200
+  response. Defensive converter decoding may be useful, but the byte-production defect is upstream.
+- Folder sorting is already manual in R20Converter: every emitted Folder carries `sorting: "m"`,
+  including Journal and Scene folders, and the pack/Adventure tests enforce it. A later alphabetical
+  Adventure root was introduced by the post-conversion builder rather than this emitter.

@@ -96,6 +96,30 @@ def _mergeRecharge(data, recharge):
     return data
 
 
+def _alternativePlacementActivities(candidates):
+    """Whether candidates are explicit, mutually exclusive placement choices.
+
+    Some spells expose multiple complete casting activities solely because the
+    caster chooses a template shape. Each choice spends the cast resource; they
+    are not duplicate consumers or follow-up actions.
+    """
+    if len(candidates) < 2:
+        return False
+    template_types = []
+    activity_types = set()
+    for _activity_id, activity in candidates:
+        name = str(activity.get("name") or "").strip().lower()
+        consumption = activity.get("consumption") or {}
+        template_type = ((activity.get("target") or {}).get("template") or {}).get("type")
+        if (not name.startswith("place ")
+                or consumption.get("spellSlot") is not True
+                or not template_type):
+            return False
+        activity_types.add(activity.get("type"))
+        template_types.append(template_type)
+    return len(activity_types) == 1 and len(set(template_types)) == len(candidates)
+
+
 def _mergeSpellConsumption(system, custom_data, item_name="spell"):
     """Keep source casting resources while retaining compendium activities (B062)."""
     method = custom_data.get("method", "spell")
@@ -125,6 +149,8 @@ def _mergeSpellConsumption(system, custom_data, item_name="spell"):
                            if candidate[1].get("type") != "transform"]
         if len(cast_activities) == 1:
             return cast_activities
+        if _alternativePlacementActivities(slot_consumers):
+            return slot_consumers
         return candidates if len(candidates) == 1 else []
 
     primary = set()
@@ -138,13 +164,13 @@ def _mergeSpellConsumption(system, custom_data, item_name="spell"):
         if not candidates:
             raise ValueError("Cannot select one primary donor activity for limited innate spell '%s'" %
                              item_name)
-        activity_id, activity = candidates[0]
-        primary.add(activity_id)
-        consumption = activity.setdefault("consumption", {})
-        existing = [target for target in consumption.get("targets", [])
-                    if target.get("type") != dnd5e.CONSUMPTION_ITEM_USES
-                    or target.get("target")]
-        consumption["targets"] = existing + copy.deepcopy(targets)
+        for activity_id, activity in candidates:
+            primary.add(activity_id)
+            consumption = activity.setdefault("consumption", {})
+            existing = [target for target in consumption.get("targets", [])
+                        if target.get("type") != dnd5e.CONSUMPTION_ITEM_USES
+                        or target.get("target")]
+            consumption["targets"] = existing + copy.deepcopy(targets)
 
     limited = bool(custom_data.get("uses", {}).get("max"))
     for activity_id, activity in activities.items():
@@ -159,6 +185,7 @@ def _validateResourceContract(item_type, item_name, system):
     uses_max = (system.get("uses") or {}).get("max")
     method = system.get("method", "spell")
     positive_self_consumers = 0
+    positive_consumer_activities = []
     for activity_id, activity in (system.get("activities") or {}).items():
         consumption = activity.get("consumption") or {}
         self_targets = [target for target in consumption.get("targets", [])
@@ -176,9 +203,12 @@ def _validateResourceContract(item_type, item_name, system):
             except (TypeError, ValueError):
                 positive = True
         if positive:
-            positive_self_consumers += sum(
+            positive_count = sum(
                 1 for target in self_targets
                 if _positiveConsumptionTarget(target))
+            positive_self_consumers += positive_count
+            if positive_count:
+                positive_consumer_activities.append((activity_id, activity))
         if (item_type == "spell" and method == "spell" and positive
                 and consumption.get("spellSlot") is not False):
             raise ValueError("%s / %s consumes item uses and a standard spell slot" %
@@ -187,7 +217,9 @@ def _validateResourceContract(item_type, item_name, system):
         if positive_self_consumers == 0:
             raise ValueError("%s: limited innate spell has no positive item-use consumer" %
                              item_name)
-        if positive_self_consumers > 1:
+        alternatives = (positive_self_consumers == len(positive_consumer_activities)
+                        and _alternativePlacementActivities(positive_consumer_activities))
+        if positive_self_consumers > 1 and not alternatives:
             raise ValueError("%s: limited innate spell has multiple positive item-use consumers" %
                              item_name)
 

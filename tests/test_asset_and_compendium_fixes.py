@@ -626,6 +626,46 @@ class TestCompendiumKeepsCharacterState(object):
         with pytest.raises(ValueError, match="Cannot select one primary donor activity"):
             self._build(entity._database, custom, donor)
 
+    def test_limited_innate_preserves_alternative_placement_activities(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        target = {"type": "itemUses", "target": "", "value": "1",
+                  "scaling": {"mode": "", "formula": ""}}
+        custom = {
+            "method": "innate",
+            "prepared": 1,
+            "uses": {"spent": 0, "max": "1", "recovery": [
+                {"period": "day", "type": "recoverAll", "formula": ""},
+            ]},
+            "activities": {
+                "source": {"type": "save", "consumption": {"targets": [target]}},
+            },
+        }
+        donor = _spell_document()
+        donor["name"] = "Wall of Fire"
+        donor["system"]["activities"] = {
+            "saveWallOfFireII": {
+                "_id": "saveWallOfFireII", "name": "Place Wall", "type": "save",
+                "target": {"template": {"type": "wall", "size": "60"}},
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+            "addPlaceRing1III": {
+                "_id": "addPlaceRing1III", "name": "Place Ring", "type": "save",
+                "target": {"template": {"type": "cylinder", "size": "10"}},
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+            "addDamage2IIIIII": {
+                "_id": "addDamage2IIIIII", "name": "Damage", "type": "damage",
+                "consumption": {"spellSlot": False, "targets": []},
+            },
+        }
+        item = self._build(entity._database, custom, donor)
+        activities = item.entity["system"]["activities"]
+        for activity_id in ("saveWallOfFireII", "addPlaceRing1III"):
+            assert activities[activity_id]["consumption"] == {
+                "spellSlot": True, "targets": [target]}
+        assert activities["addDamage2IIIIII"]["consumption"] == {
+            "spellSlot": False, "targets": []}
+
     def test_limited_innate_prefers_cast_over_transform_followup(self, entity):
         entity._database._arguments = {"no_compendium_overwrite": True}
         target = {"type": "itemUses", "target": "", "value": "1",

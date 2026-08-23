@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.15.4
+
+- Preserve mutually exclusive placement choices on limited innate spells. Wall of Fire's **Place
+  Wall** and **Place Ring** activities now both consume the Efreeti's single 1/day Item-use pool,
+  while its follow-up Damage activity remains free. Ordinary duplicate-save ambiguity still aborts
+  conversion (B092).
+
+Suite: **919 passed** in the shipping Python 3.8 environment.
+
 ## v1.15.3
 
 - Preserve explicitly typed source Items when a same-name compendium donor has an incompatible
