@@ -110,6 +110,7 @@ mechanically for the physical-item class of defect.
 | [B092](B092-alternative-placement-activities-rejected-as-ambiguous.md) | High | Fixed (v1.15.4) | Explicit Wall/Ring-style placement alternatives may share one limited innate Item-use pool without weakening ordinary ambiguity rejection. |
 | [B093](B093-ambient-lights-convert-full-circle-to-zero-degrees.md) | High | Fixed (v1.15.5) | Scene AmbientLights preserve full-circle 360-degree emission instead of becoming zero-degree cones. |
 | [B094](B094-grouped-chat-rolls-discard-nested-dice.md) | Minor | Fixed (v1.15.6) | Grouped chat rolls now preserve nested dice, modifiers, per-die outcomes, discarded alternatives, and natural 20/1 evidence as native Foundry pools. |
+| [B095](B095-same-template-placement-alternatives-rejected.md) | High | Fixed (v1.15.7) | Same-template placement choices now remain valid when their explicit names and complete template geometry are distinct. |
 
 ## Cross-cutting observations
 
@@ -120,7 +121,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B095**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B096**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent

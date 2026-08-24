@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.15.7
+
+- Preserve same-template placement alternatives when their explicit names and complete template
+  geometry are distinct. The Dao's **Place Square Panels** and **Place Long Panels** activities now
+  both consume its single 1/day *Wall of Stone* pool; duplicate names or geometry still fail closed
+  (B095).
+
+The pristine Beyond5e 1.1.15-rc.2 census contains eleven qualifying multi-placement groups: ten
+already accepted by B092 and exactly one newly admitted group, *Wall of Stone*. A source-backed
+conversion preserves both activities in the Actor pack and native Adventure without a donor shim.
+
+Suite: **927 passed** in the shipping Python 3.8 environment.
+
 ## v1.15.6
 
 - Preserve Roll20 grouped chat rolls as native Foundry `PoolTerm` data. Nested dice, modifiers,

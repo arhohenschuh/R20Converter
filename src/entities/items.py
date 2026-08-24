@@ -105,19 +105,23 @@ def _alternativePlacementActivities(candidates):
     """
     if len(candidates) < 2:
         return False
-    template_types = []
+    names = []
+    templates = []
     activity_types = set()
     for _activity_id, activity in candidates:
         name = str(activity.get("name") or "").strip().lower()
         consumption = activity.get("consumption") or {}
-        template_type = ((activity.get("target") or {}).get("template") or {}).get("type")
+        template = (activity.get("target") or {}).get("template") or {}
         if (not name.startswith("place ")
                 or consumption.get("spellSlot") is not True
-                or not template_type):
+                or not template.get("type")
+                or name in names
+                or template in templates):
             return False
         activity_types.add(activity.get("type"))
-        template_types.append(template_type)
-    return len(activity_types) == 1 and len(set(template_types)) == len(candidates)
+        names.append(name)
+        templates.append(template)
+    return len(activity_types) == 1
 
 
 def _mergeSpellConsumption(system, custom_data, item_name="spell"):

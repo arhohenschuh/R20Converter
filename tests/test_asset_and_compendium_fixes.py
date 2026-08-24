@@ -666,6 +666,82 @@ class TestCompendiumKeepsCharacterState(object):
         assert activities["addDamage2IIIIII"]["consumption"] == {
             "spellSlot": False, "targets": []}
 
+    def test_limited_innate_preserves_same_template_placement_geometries(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        target = {"type": "itemUses", "target": "", "value": "1",
+                  "scaling": {"mode": "", "formula": ""}}
+        custom = {
+            "method": "innate",
+            "prepared": 1,
+            "uses": {"spent": 0, "max": "1", "recovery": [
+                {"period": "day", "type": "recoverAll", "formula": ""},
+            ]},
+            "activities": {
+                "source": {"type": "save", "consumption": {"targets": [target]}},
+            },
+        }
+        donor = _spell_document()
+        donor["name"] = "Wall of Stone"
+        donor["system"]["activities"] = {
+            "saveWallOfStonII": {
+                "_id": "saveWallOfStonII", "name": "Place Square Panels", "type": "save",
+                "target": {"template": {
+                    "type": "wall", "count": "10", "size": "10",
+                    "width": "0.5", "height": "10", "units": "ft",
+                }},
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+            "addPlacLongPane1": {
+                "_id": "addPlacLongPane1", "name": "Place Long Panels", "type": "save",
+                "target": {"template": {
+                    "type": "wall", "count": "10", "size": "20",
+                    "width": "0.25", "height": "10", "units": "ft",
+                }},
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+        }
+
+        item = self._build(entity._database, custom, donor)
+        activities = item.entity["system"]["activities"]
+
+        for activity_id in ("saveWallOfStonII", "addPlacLongPane1"):
+            assert activities[activity_id]["consumption"] == {
+                "spellSlot": True, "targets": [target]}
+
+    @pytest.mark.parametrize("duplicate", ["name", "geometry"])
+    def test_limited_innate_rejects_non_distinct_placement_choices(self, entity, duplicate):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        target = {"type": "itemUses", "target": "", "value": "1",
+                  "scaling": {"mode": "", "formula": ""}}
+        custom = {
+            "method": "innate",
+            "prepared": 1,
+            "uses": {"spent": 0, "max": "1", "recovery": []},
+            "activities": {
+                "source": {"type": "save", "consumption": {"targets": [target]}},
+            },
+        }
+        square = {"type": "wall", "size": "10", "width": "0.5", "height": "10"}
+        long = {"type": "wall", "size": "20", "width": "0.25", "height": "10"}
+        donor = _spell_document()
+        donor["system"]["activities"] = {
+            "first": {
+                "_id": "first", "name": "Place Square Panels", "type": "save",
+                "target": {"template": square},
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+            "second": {
+                "_id": "second",
+                "name": "Place Square Panels" if duplicate == "name" else "Place Long Panels",
+                "type": "save",
+                "target": {"template": long if duplicate == "name" else square.copy()},
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+        }
+
+        with pytest.raises(ValueError, match="Cannot select one primary donor activity"):
+            self._build(entity._database, custom, donor)
+
     def test_limited_innate_prefers_cast_over_transform_followup(self, entity):
         entity._database._arguments = {"no_compendium_overwrite": True}
         target = {"type": "itemUses", "target": "", "value": "1",
