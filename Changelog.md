@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.15.6
+
+- Preserve Roll20 grouped chat rolls as native Foundry `PoolTerm` data. Nested dice, modifiers,
+  per-die outcomes, discarded alternatives, formulas, and totals now survive in both top-level and
+  inline chat rolls; malformed legacy groups retain the previous aggregate fallback (B094).
+
+The retained non-legacy export corpus contains **78** affected grouped parts across three archives:
+72 inline and 6 top-level. The patched converter preserves all 150 nested alternatives and 107
+individual die outcomes with exact aggregate totals.
+
+Suite: **924 passed** in the shipping Python 3.8 environment.
+
 ## v1.15.5
 
 - Preserve omnidirectional Scene-light arcs as `AmbientLight.config.angle: 360` instead of

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from entities.chat import ChatMessage
+from entities.chat import ChatMessage, Roll
 
 
 class FakeDatabase(object):
@@ -110,10 +110,71 @@ def test_roll_result_preserves_discarded_dice_and_modifier_total():
     ]
 
 
-def test_grouped_roll_preserves_formula_with_evaluated_string_term():
+def test_grouped_roll_preserves_nested_dice_and_modifier():
     converted = ChatMessage(
         FakeDatabase(),
         "grouped-roll-result",
+        message(
+            "rollresult",
+            content='{"total":9,"rolls":[{"type":"G","rolls":[['
+                    '{"type":"R","dice":2,"sides":4,"mods":{},'
+                    '"results":[{"v":1},{"v":4}]},'
+                    '{"type":"M","expr":"+4"}]],"mods":{},'
+                    '"resultType":"sum","results":[{"v":9}]}]}',
+            origRoll="{2D4+4}",
+        ),
+    ).entity
+
+    pool = converted["rolls"][0]["terms"][0]
+    assert pool["class"] == "PoolTerm"
+    assert pool["terms"] == ["2d4+4"]
+    assert pool["modifiers"] == []
+    assert pool["results"] == [{"result": 9, "active": True}]
+    nested = pool["rolls"][0]
+    assert nested["formula"] == "2d4+4"
+    assert nested["total"] == 9
+    assert nested["terms"][0]["results"] == [
+        {"result": 1, "active": True},
+        {"result": 4, "active": True},
+    ]
+    assert nested["terms"][1:] == [
+        {"class": "OperatorTerm", "options": {}, "evaluated": True, "operator": "+"},
+        {"class": "NumericTerm", "options": {}, "evaluated": True, "number": 4},
+    ]
+
+
+def test_grouped_keep_high_uses_only_retained_dice_for_critical_state():
+    source = {
+        "total": 20,
+        "rolls": [{
+            "type": "G",
+            "rolls": [
+                [{"type": "R", "dice": 1, "sides": 20, "results": [{"v": 1}]}],
+                [{"type": "R", "dice": 1, "sides": 20, "results": [{"v": 20}]}],
+            ],
+            "mods": {"keep": {"count": 1, "end": "h"}},
+            "results": [{"v": 1, "d": True}, {"v": 20}],
+        }],
+    }
+
+    roll = Roll("{1d20,1d20}kh1", source)
+    pool = roll.toJSON()["terms"][0]
+
+    assert pool["modifiers"] == ["kh1"]
+    assert pool["results"] == [
+        {"result": 1, "active": False},
+        {"result": 20, "active": True},
+    ]
+    assert roll.isCrit() is True
+    assert not roll.isFail()
+    assert "1" in roll.getTooltip()
+    assert "20" in roll.getTooltip()
+
+
+def test_grouped_roll_without_nested_data_preserves_aggregate_fallback():
+    converted = ChatMessage(
+        FakeDatabase(),
+        "legacy-grouped-roll-result",
         message(
             "rollresult",
             content='{"total":14,"rolls":[{"type":"G","results":[{"v":14}]}]}',

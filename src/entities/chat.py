@@ -129,21 +129,39 @@ class Roll:
                 self.parts.append(dice)
             elif roll["type"] == "G":
                 # Compound rolls, like {1d20, 1d20} or {1d20, 1d20}kh1
-                # FIXME: Ignoring the 'rolls' attribute which contains the actual rolls.
-                dice = {
-                    'class': 'Die',
-                    'number': len(roll.get("results", [])),
-                    'faces': 0,
-                    "formula": "0d0",
-                    "options": {},
-                    "rolls": []
-                }
-                for result in roll.get("results", []):
-                    die = {"roll": result["v"]}
-                    if result.get("d", False):
-                        die["discarded"] = True
-                    dice["rolls"].append(die)
-                self.parts.append(dice)
+                alternatives = roll.get("rolls", [])
+                results = roll.get("results", [])
+                if alternatives and len(alternatives) == len(results):
+                    formulas = [self._partsFormula(alternative) for alternative in alternatives]
+                    self.parts.append({
+                        "class": "PoolTerm",
+                        "terms": formulas,
+                        "modifiers": self._groupModifiers(roll.get("mods", {})),
+                        "rolls": [
+                            Roll(formula, {"total": result["v"], "rolls": alternative})
+                            for formula, result, alternative in zip(formulas, results, alternatives)
+                        ],
+                        "results": [
+                            {"result": result["v"], "active": not result.get("d", False)}
+                            for result in results
+                        ],
+                        "options": {},
+                    })
+                else:
+                    dice = {
+                        'class': 'Die',
+                        'number': len(results),
+                        'faces': 0,
+                        "formula": "0d0",
+                        "options": {},
+                        "rolls": []
+                    }
+                    for result in results:
+                        die = {"roll": result["v"]}
+                        if result.get("d", False):
+                            die["discarded"] = True
+                        dice["rolls"].append(die)
+                    self.parts.append(dice)
             elif roll["type"] == "M":
                 self.parts.append(str(roll["expr"]))
             elif roll["type"] == "L" or roll["type"] == "C":
@@ -151,26 +169,80 @@ class Roll:
             else:
                 raise Exception("Unknown roll type %s" % str(roll))
 
-    def isCrit(self):
+    @staticmethod
+    def _groupModifiers(modifiers):
+        converted = []
+        for source, prefix in (("keep", "k"), ("drop", "d")):
+            modifier = modifiers.get(source)
+            if not isinstance(modifier, dict):
+                continue
+            end = modifier.get("end")
+            count = modifier.get("count")
+            if end not in ("h", "l") or not isinstance(count, int) or count < 1:
+                continue
+            converted.append("{}{}{}".format(prefix, end, count))
+        return converted
+
+    @classmethod
+    def _partsFormula(cls, parts):
+        formula = []
+        for part in parts:
+            part_type = part.get("type")
+            if part_type == "R":
+                formula.append("{}d{}".format(part.get("dice", 0), part.get("sides", 0)))
+            elif part_type == "M":
+                formula.append(str(part.get("expr", "")))
+            elif part_type == "G":
+                alternatives = [cls._partsFormula(alternative) for alternative in part.get("rolls", [])]
+                formula.append("{{{}}}{}".format(",".join(alternatives), "".join(cls._groupModifiers(part.get("mods", {})))))
+            elif part_type not in ("L", "C"):
+                raise Exception("Unknown roll type %s" % str(part))
+        return "".join(formula) or "0"
+
+    def _activeDice(self):
         for part in self.parts:
-            if isinstance(part, dict):
-                for roll in part["rolls"]:
-                    if roll.get("discarded", False):
-                        continue
-                    if roll["roll"] == part["faces"]:
-                        return True
+            if not isinstance(part, dict):
+                continue
+            if part.get("class") != "PoolTerm":
+                yield part
+                continue
+            for nested, result in zip(part["rolls"], part["results"]):
+                if result["active"]:
+                    yield from nested._activeDice()
+
+    def isCrit(self):
+        for part in self._activeDice():
+            for roll in part["rolls"]:
+                if roll.get("discarded", False):
+                    continue
+                if roll["roll"] == part["faces"]:
+                    return True
                         
     def isFail(self):
+        for part in self._activeDice():
+            for roll in part["rolls"]:
+                if roll.get("discarded", False):
+                    continue
+                if roll["roll"] == 1:
+                    return True
+
+    def _tooltipExpression(self):
+        expression = []
         for part in self.parts:
-            if isinstance(part, dict):
-                for roll in part["rolls"]:
-                    if roll.get("discarded", False):
-                        continue
-                    if roll["roll"] == 1:
-                        return True
+            if isinstance(part, str):
+                expression.append(part)
+            elif part.get("class") == "PoolTerm":
+                alternatives = []
+                for nested, result in zip(part["rolls"], part["results"]):
+                    value = nested._tooltipExpression()
+                    alternatives.append(value if result["active"] else "({}) discarded".format(value))
+                expression.append("{{{}}}{}".format(", ".join(alternatives), "".join(part["modifiers"])))
+            else:
+                expression.append("(" + "+".join(str(result["roll"]) for result in part["rolls"]) + ")")
+        return "".join(expression)
 
     def getTooltip(self):
-        return "Rolling {} = {}".format(self.formula, "".join(map(lambda r: r if isinstance(r, str) else ("+(" + "+".join(map(lambda d: str(d["roll"]), r["rolls"])) + ")"),self.parts)))
+        return "Rolling {} = {}".format(self.formula, self._tooltipExpression())
 
     def getInline(self):
         if self.isCrit() and self.isFail():
@@ -191,6 +263,18 @@ class Roll:
         terms_total = 0
         for part in self.parts:
             if not isinstance(part, dict):
+                continue
+            if part.get("class") == "PoolTerm":
+                terms.append({
+                    'class': 'PoolTerm',
+                    'options': part['options'],
+                    'evaluated': True,
+                    'terms': part['terms'],
+                    'modifiers': part['modifiers'],
+                    'rolls': [roll.toJSON() for roll in part['rolls']],
+                    'results': part['results'],
+                })
+                terms_total += sum(result['result'] for result in part['results'] if result['active'])
                 continue
             active_results = [result for result in part["rolls"] if not result.get("discarded", False)]
             part_total = sum(result["roll"] for result in active_results)
