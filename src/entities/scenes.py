@@ -3,6 +3,7 @@ from .actors import FULL_ANGLE, Token
 
 from PIL import Image, ImageFont, ImageDraw
 
+import io
 import os
 import math
 import time
@@ -139,7 +140,11 @@ class Scene(Entity):
             else:
                 (thumb_filename, thumb_image) = self.copyZipFile(page["thumbnail"], filename, dest, type="tiles")
             try:
-                self.createThumbnail(thumb_filename)
+                generated_filename, generated_image = self.createThumbnail(thumb_filename, dest)
+                if generated_filename:
+                    thumb_filename = generated_filename
+                if generated_image:
+                    thumb_image = generated_image
             except Exception as e:
                 self.logInfo("Unable to create thumbnail : %s" % e)
         
@@ -1279,7 +1284,7 @@ class Scene(Entity):
                     })
         return (drawing, width, height)
 
-    def createThumbnail(self, filename):
+    def createThumbnail(self, filename, destination=None):
         temporary = filename + ".thumbnail"
         try:
             with Image.open(filename) as source:
@@ -1297,8 +1302,14 @@ class Scene(Entity):
                 image_format = Image.registered_extensions().get(extension) or source.format
                 if image_format == "JPEG" and thumbnail.mode not in ("RGB", "L"):
                     thumbnail = thumbnail.convert("RGB")
+                if destination is not None and self.getArgument("dedup_assets", False):
+                    content = io.BytesIO()
+                    thumbnail.save(content, format=image_format)
+                    return self._storeAssetContent(
+                        None, destination, content.getvalue(), type="tiles", dedup=True)
                 thumbnail.save(temporary, format=image_format)
             os.replace(temporary, filename)
+            return (filename, None)
         finally:
             if os.path.exists(temporary):
                 os.remove(temporary)

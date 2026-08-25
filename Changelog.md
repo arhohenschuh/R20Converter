@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.15.10
+
+- Preserve complete `Create ...` placement alternatives alongside `Place ...` choices when every
+  candidate remains slot-consuming, same-type, uniquely named, and backed by a distinct concrete
+  template. *Wall of Force* now keeps both **Place Panels** and **Create Dome/Globe** on one limited
+  innate use pool (B099).
+- Keep generated Scene thumbnails separate from acquired content-addressed bodies. In dedup mode,
+  thumbnail bytes receive their own body hash and Scene reference; non-dedup mode retains the
+  established in-place thumbnail behavior (B101).
+
+The pristine Beyond5e 1.2.1 spell census moves from two Place-only groups to seven bounded
+Place/Create groups, adding exactly *Prismatic Wall*, *Wall of Force*, *Wall of Ice*, *Wall of
+Thorns*, and *Wall of Water*. Independent Opus QA approved B099 at 6/6 targets and B101 at 7/7
+targets, both with zero findings in their approving rounds.
+
+A full *Tomb of Annihilation* source-candidate conversion completes after an explicit immutable-
+source cleanup removes 176 attributes belonging to duplicate Bone Naga and Dao spell rows and
+their linked data, while the disposable data root supplies dnd5e 5.3.3, Beyond5e 1.2.1, Beyond5e
+Assets 1.0.2, and Tokenizer. The cleaned-input run passes Gate A at 38 pass / 0 fail / 4 skipped,
+including G12, G41, and G42. The preceding logical verifier reports 1,910 assets /
+1,303,201,729 bytes, zero duplicate bodies, zero root content-hash mismatches, 35 Macros, 120
+corrected source Multiattacks, and both Acererak *Wall of Force* placements in Actor pack and
+Adventure.
+
+Suite: **965 passed** in the shipping Python 3.8 environment.
+
 ## v1.15.9
 
 - Make `--dedup-assets` a byte-identity contract. Equal acquired bodies reuse one package-owned

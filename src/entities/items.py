@@ -120,7 +120,7 @@ def _alternativePlacementActivities(candidates):
         name = str(activity.get("name") or "").strip().lower()
         consumption = activity.get("consumption") or {}
         template = (activity.get("target") or {}).get("template") or {}
-        if (not name.startswith("place ")
+        if (not name.startswith(("place ", "create "))
                 or consumption.get("spellSlot") is not True
                 or not template.get("type")
                 or name in names

@@ -741,6 +741,47 @@ class TestCompendiumKeepsCharacterState(object):
         assert activities["addDamage2IIIIII"]["consumption"] == {
             "spellSlot": False, "targets": []}
 
+    def test_limited_innate_preserves_place_and_create_placement_activities(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        target = {"type": "itemUses", "target": "", "value": "1",
+                  "scaling": {"mode": "", "formula": ""}}
+        custom = {
+            "method": "innate",
+            "prepared": 1,
+            "uses": {"spent": 0, "max": "1", "recovery": [
+                {"period": "day", "type": "recoverAll", "formula": ""},
+            ]},
+            "activities": {
+                "source": {"type": "utility", "consumption": {"targets": [target]}},
+            },
+        }
+        donor = _spell_document()
+        donor["name"] = "Wall of Force"
+        donor["system"]["activities"] = {
+            "utilityWalOfForI": {
+                "_id": "utilityWalOfForI", "name": "Place Panels", "type": "utility",
+                "target": {"template": {
+                    "type": "wall", "count": "10", "size": "10",
+                    "width": "0.02", "height": "10", "units": "ft",
+                }},
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+            "addCreateDomeGl1": {
+                "_id": "addCreateDomeGl1", "name": "Create Dome/Globe", "type": "utility",
+                "target": {"template": {
+                    "type": "sphere", "count": "1", "size": "10", "units": "ft",
+                }},
+                "consumption": {"spellSlot": True, "targets": []},
+            },
+        }
+
+        item = self._build(entity._database, custom, donor)
+        activities = item.entity["system"]["activities"]
+
+        for activity_id in ("utilityWalOfForI", "addCreateDomeGl1"):
+            assert activities[activity_id]["consumption"] == {
+                "spellSlot": True, "targets": [target]}
+
     def test_limited_innate_preserves_same_template_placement_geometries(self, entity):
         entity._database._arguments = {"no_compendium_overwrite": True}
         target = {"type": "itemUses", "target": "", "value": "1",

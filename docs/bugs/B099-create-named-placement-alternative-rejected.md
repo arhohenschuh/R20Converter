@@ -1,7 +1,7 @@
 # B099 - Create-named placement alternative is rejected as ambiguous
 
 **Severity:** High
-**Status:** Open owner-pickup request
+**Status:** Fixed (v1.15.10)
 **Found:** 2026-08-25 during the v1.15.8 full *Shattered Obelisk* conversion
 **Component:** `src/entities/items.py` (`_alternativePlacementActivities`, `_mergeSpellConsumption`)
 **Related:** B077, B082, B083, B092, B095
@@ -42,6 +42,10 @@ A hash-bound conversion-only shim changes only
 primary. The same frozen converter then completes and passes Gate A 36/0/0/4. The shim is not a
 publication fix: exact placement activities must be restored after conversion.
 
+Frozen R20Converter 1.15.9 independently reproduces the same failure on Acererak during a full
+immutable *Tomb of Annihilation* conversion with the pristine Beyond5e 1.2.1 donor. The run exits
+1 before writing a manifest or Adventure and names `Wall of Force` at the same predicate.
+
 ## Acceptance criteria
 
 - Recognize **Place ...** and **Create ...** as bounded placement verbs when every candidate is a
@@ -55,3 +59,29 @@ publication fix: exact placement activities must be restored after conversion.
   newly admitted group beyond this one.
 - Prove both Actor-pack and native-Adventure copies preserve both activities and exactly one
   positive self-use consumer apiece.
+
+## Candidate resolution
+
+The placement-name guard now accepts only `Place ...` or `Create ...`; every existing slot,
+concrete-template, unique-name, unique-geometry, and same-activity-type guard remains unchanged.
+The exact `Place Panels` / `Create Dome/Globe` pair now receives one owning-Item use consumer on
+each activity.
+
+A copy-first census of all pristine Beyond5e 1.2.1 spells found two groups accepted by the old
+Place-only predicate and seven by the candidate. Exactly five are newly admitted, all explicit
+shape alternatives with complete distinct templates: *Prismatic Wall*, *Wall of Force*, *Wall of
+Ice*, *Wall of Thorns*, and *Wall of Water*. The old predicate is the RED control (2 -> 7).
+
+Validation: exact B099 regression 1/1, neighboring compendium suite 63/63, and full Python 3.8
+suite 964/964 before independent review. Donor-census report: 11,280 bytes, SHA-256
+`1533F40EE3BC67621BB74DAEF338CADF73588CA26671123A0DF9D54607D91656`.
+
+Independent Opus QA passed all 6 targets with zero findings and rejected all 9 negative controls.
+The 19-file packet remained byte-identical at lock SHA-256
+`AFE25CF4922ABA94826FF72B2E2FD2915D5006B5B448360F933FA43E89CC026B`.
+
+The post-review full ToA source-candidate conversion preserves both exact placement activities in
+the Acererak Actor pack and native Adventure. Each keeps `spellSlot: true`, a concrete distinct
+template, and exactly one positive owning-Item use consumer. The combined logical verifier passes
+with SHA-256 `60E6828302DE32C663FD01D6AB631C8AACD074E7CD86425F93D516138481694D`.
+The final combined Python 3.8 suite passes 965/965.
