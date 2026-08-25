@@ -176,6 +176,7 @@ class Scene(Entity):
                               if explicit_secret_color else [])
         page_has_native_doors = len(page.get("doors", []) or []) > 0
         classify_by_colour = self.shouldClassifyDoorsByColour(page, door_color)
+        inferred_door_color = None
         if self.getArgument("auto_doors", False) and not Scene._auto_doors_warning_emitted:
             self.logWarning("--auto-doors is deprecated and no longer enables unsafe "
                             "frequency-based inference; use --door-color for custom campaigns")
@@ -235,6 +236,7 @@ class Scene(Entity):
                     inferred_door, inferred_secrets = self.inferDoorColors(page, wall_colors)
                     if inferred_door:
                         door_color = inferred_door
+                        inferred_door_color = inferred_door
                         secret_door_colors = inferred_secrets
                         self.logInfo("Door color selected from Roll20's legacy convention: %s"
                                      % door_color)
@@ -271,6 +273,8 @@ class Scene(Entity):
                 walls.append(wall)
                 
         total_walls = len(walls)
+        grouped_door_paths_retained = 0
+        grouped_door_segments_retained = 0
         for zid in ids_to_display:
             graphic = self.findItemByID(page, zid, "graphics")
             text = self.findItemByID(page, zid, "texts")
@@ -513,6 +517,11 @@ class Scene(Entity):
                 top = (top - (drawing_height / 2))
                 barrierType = path.get("barrierType", "wall")
                 oneWayReversed = path.get("oneWayReversed", False)
+                door_type = self.pathDoorType(
+                    path, door_color, secret_door_colors, inferred_door_color)
+                if self.pathIsGroupedDoorInferenceExclusion(path, inferred_door_color):
+                    grouped_door_paths_retained += 1
+                    grouped_door_segments_retained += len(polygon) - 1
                 previous_point = None
                 previous_point_idx = 0
                 total_walls += len(polygon) - 1
@@ -544,11 +553,6 @@ class Scene(Entity):
                                 angles.append(self.getPointsAngle(previous_point, old_point, next_point))
                             if min(angles) >= min_angle:
                                 continue
-                    stroke = self.normalizeWallStroke(path.get("stroke", ""))
-                    door_type = 1 if stroke == door_color else (2 if stroke in secret_door_colors else 0)
-                    if barrierType != "wall": 
-                        # one way walls are set a different color
-                        door_type = 0
                     wall_a = [left + previous_point[0],
                                 top + previous_point[1]]
                     wall_b = [left + point[0],
@@ -687,8 +691,20 @@ class Scene(Entity):
                         tiles.append(tile)
                 
                     
-        self.assertDoorConservation(walls, expected_door_counts,
-                                    page.get("name", "Untitled"))
+        page_name = page.get("name", "Untitled")
+        actual_door_counts = self.assertDoorConservation(
+            walls, expected_door_counts, page_name)
+        if grouped_door_paths_retained:
+            self.logWarning(
+                "Page '%s' retained %d grouped canonical-orange paths (%d segments) "
+                "as walls instead of automatically inferring doors; explicit --door-color "
+                "still overrides this safeguard."
+                % (page_name, grouped_door_paths_retained, grouped_door_segments_retained))
+        self.logInfo(
+            "Scene barrier summary for '%s': %d walls, %d ordinary doors, %d secret doors, "
+            "%d native door objects, %d grouped inferred-door segments retained as walls."
+            % (page_name, len(walls), actual_door_counts[1], actual_door_counts[2],
+               len(page.get("doors", []) or []), grouped_door_segments_retained))
         if len(walls) != total_walls:
             self.logInfo("With a minimum wall length of %d pixels and a maximum angle between continuous walls of %d degrees, the total number of walls was decreased from %d to %d walls." % (self.getArgument("minimum_wall_length", 0), self.getArgument("maximum_wall_angle", 0), total_walls, len(walls)))
         tiles = map_tiles + objects_tiles
@@ -840,6 +856,37 @@ class Scene(Entity):
         if self.LEGACY_DOOR_COLOR in normalized:
             return (self.LEGACY_DOOR_COLOR, [])
         return (None, [])
+
+    @staticmethod
+    def pathIsGrouped(path):
+        """Whether Roll20 declares a wall path as part of a grouped assembly."""
+        group = path.get("groupwith")
+        if isinstance(group, str):
+            return bool(group.strip())
+        if isinstance(group, (list, tuple, set)):
+            return bool(group)
+        return group is not None and group is not False
+
+    def pathDoorType(self, path, door_color, secret_door_colors,
+                     inferred_door_color=None):
+        """Classify one source path without turning grouped machinery into doors."""
+        if path.get("barrierType", "wall") != "wall":
+            return 0
+        stroke = self.normalizeWallStroke(path.get("stroke", ""))
+        if stroke in secret_door_colors:
+            return 2
+        if stroke != door_color:
+            return 0
+        if self.pathIsGroupedDoorInferenceExclusion(path, inferred_door_color):
+            return 0
+        return 1
+
+    def pathIsGroupedDoorInferenceExclusion(self, path, inferred_door_color):
+        """Whether an inferred door candidate is grouped wall machinery."""
+        return bool(inferred_door_color
+                    and path.get("barrierType", "wall") == "wall"
+                    and self.normalizeWallStroke(path.get("stroke", "")) == inferred_door_color
+                    and self.pathIsGrouped(path))
 
     @staticmethod
     def assertDoorConservation(walls, expected, page_name):

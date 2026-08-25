@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.15.8
+
+- Keep grouped canonical-orange wall assemblies as walls during automatic legacy-door inference.
+  *Labyrinth of Eyes* no longer becomes 182 independent ordinary doors, while ungrouped orange
+  paths remain automatic and explicit ordinary/secret color overrides remain authoritative
+  (B096).
+- Emit a per-Scene barrier summary and a focused warning when grouped inferred-door geometry is
+  retained as walls, giving RC acceptance exact Wall/door/native/exclusion populations.
+
+Across 21 retained exports, 195 non-native pages contain 4,835 canonical-orange segments. Grouped
+orange occurs only on *Labyrinth of Eyes*: 11 paths / 182 segments. The other 4,653 segments remain
+eligible for automatic door conversion. v1.15.7 reproduces RED by classifying the grouped sample as
+an ordinary door.
+
+Suite: **945 passed** in the shipping Python 3.8 environment; focused B058/B096 suite: **51 passed**.
+
 ## v1.15.7
 
 - Preserve same-template placement alternatives when their explicit names and complete template

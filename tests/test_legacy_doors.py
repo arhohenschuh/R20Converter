@@ -28,6 +28,9 @@ class FakeScene(object):
     inferDoorColors = scenes.Scene.inferDoorColors
     normalizeWallStroke = staticmethod(scenes.Scene.normalizeWallStroke)
     assertDoorConservation = staticmethod(scenes.Scene.assertDoorConservation)
+    pathIsGrouped = staticmethod(scenes.Scene.pathIsGrouped)
+    pathDoorType = scenes.Scene.pathDoorType
+    pathIsGroupedDoorInferenceExclusion = scenes.Scene.pathIsGroupedDoorInferenceExclusion
     LEGACY_DOOR_COLOR = scenes.Scene.LEGACY_DOOR_COLOR
 
     def __init__(self, **arguments):
@@ -149,3 +152,47 @@ class TestDoorConservation(object):
     def test_a_dropped_classified_door_fails_closed(self):
         with pytest.raises(ValueError, match="Door conservation failed on page 'Map'"):
             FakeScene.assertDoorConservation([{"door": 1}], {1: 2, 2: 0}, "Map")
+
+
+class TestGroupedAutomaticDoorInference(object):
+    LABYRINTH_PATH = {
+        "barrierType": "wall",
+        "stroke": "#ff9900",
+        "groupwith": "path-2,path-3,path-4",
+    }
+
+    def test_ordinary_ungrouped_orange_path_remains_automatic(self):
+        path = {"barrierType": "wall", "stroke": "#ff9900", "groupwith": ""}
+        assert FakeScene().pathDoorType(path, "#ff9900", [], "#ff9900") == 1
+
+    def test_grouped_orange_assembly_is_not_automatically_a_door(self):
+        assert FakeScene().pathDoorType(
+            self.LABYRINTH_PATH, "#ff9900", [], "#ff9900") == 0
+        assert FakeScene().pathIsGroupedDoorInferenceExclusion(
+            self.LABYRINTH_PATH, "#ff9900") is True
+
+    def test_explicit_door_colour_still_wins_for_grouped_geometry(self):
+        assert FakeScene().pathDoorType(
+            self.LABYRINTH_PATH, "#ff9900", [], None) == 1
+
+    def test_explicit_secret_colour_still_wins_for_grouped_geometry(self):
+        assert FakeScene().pathDoorType(
+            self.LABYRINTH_PATH, None, ["#ff9900"], None) == 2
+
+    @pytest.mark.parametrize("group", ["path-2", ["path-2"], ("path-2",), {"path-2"}])
+    def test_supported_group_shapes_are_detected(self, group):
+        assert FakeScene.pathIsGrouped({"groupwith": group}) is True
+
+    @pytest.mark.parametrize("group", [None, "", "   ", [], (), set(), False])
+    def test_empty_group_shapes_are_not_detected(self, group):
+        assert FakeScene.pathIsGrouped({"groupwith": group}) is False
+
+    def test_one_way_orange_path_is_never_a_door(self):
+        path = dict(self.LABYRINTH_PATH, barrierType="oneWay")
+        assert FakeScene().pathDoorType(path, "#ff9900", [], "#ff9900") == 0
+
+    @pytest.mark.parametrize("barrier_type", ["oneWay", "transparent"])
+    def test_grouped_non_wall_barriers_are_not_counted_as_inference_exclusions(
+            self, barrier_type):
+        path = dict(self.LABYRINTH_PATH, barrierType=barrier_type)
+        assert FakeScene().pathIsGroupedDoorInferenceExclusion(path, "#ff9900") is False
