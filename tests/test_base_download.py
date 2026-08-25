@@ -208,6 +208,29 @@ class TestDownloadResource(object):
         _, config = entity.downloadResource(url, "scenes/map.png")
         assert config.endswith(".jpg")
 
+    def test_downloaded_png_content_overrides_a_jpg_url(self, entity, stub_session):
+        url = "https://example.invalid/picture.jpg"
+        png = b"\x89PNG\r\n\x1a\n" + b"content"
+        stub_session({url: StubResponse(200, png)})
+        dest, config = entity.downloadResource(url, "scenes/map.jpg")
+        assert dest.endswith(".png")
+        assert config.endswith(".png")
+        assert open(dest, "rb").read() == png
+
+    def test_distinct_urls_with_equal_downloaded_bytes_reuse_one_file(
+            self, entity, stub_session):
+        first_url = "https://example.invalid/one.png"
+        second_url = "https://example.invalid/two.png"
+        png = b"\x89PNG\r\n\x1a\n" + b"same-content"
+        entity._database._arguments["dedup_assets"] = True
+        stub_session({
+            first_url: StubResponse(200, png),
+            second_url: StubResponse(200, png),
+        })
+        first = entity.downloadResource(first_url, "scenes/one.png", type="actors")
+        second = entity.downloadResource(second_url, "scenes/two.png", type="tiles")
+        assert first == second
+
 
 class TestResourceSession(object):
     def test_session_is_reused(self):

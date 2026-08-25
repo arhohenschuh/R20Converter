@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.15.9
+
+- Make `--dedup-assets` a byte-identity contract. Equal acquired bodies reuse one package-owned
+  file across different URLs and asset categories; occupied content-hash paths are verified before
+  reuse. Encoded PNG, JPEG, WebP, GIF, BMP, TIFF, and AVIF signatures choose the stored extension
+  without transcoding, while unknown media retain and report their source-extension decision
+  (B097).
+- Keep NPC traits, actions, reactions, and legendary/lair components source-authored instead of
+  replacing them from **Class Features** by display name. PC class-feature enrichment remains
+  unchanged. Non-spell utility fallbacks explicitly disable spell-slot consumption (B100).
+
+The official-comparison corpus measures 304 duplicate files / 119,151,571 wasted bytes in
+*Shattered Obelisk* and 537 / 163,300,070 in *Tomb of Annihilation*. ToA also pins one
+11,716,084-byte PNG body stored under `.jpg`. The B100 release census covers 20 modules / 3,281
+Actors / 9,828 embedded feats and finds 1,968 normalized class-feature name collisions under 20
+names, including 1,111 exact donor-description replacements. Independent Opus QA approved B100 at
+6/6 targets with zero findings.
+
+Suite: **963 passed** in the shipping Python 3.8 environment.
+
 ## v1.15.8
 
 - Keep grouped canonical-orange wall assemblies as walls during automatic legacy-door inference.

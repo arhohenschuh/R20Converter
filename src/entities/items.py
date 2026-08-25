@@ -48,6 +48,14 @@ def _utilityOnly(item_name, activation_type):
     return {activity_id: dnd5e.utilityActivity(activity_id)}
 
 
+def _utilityActivities(item_type, item_name, activation_type, activation):
+    activities = _utilityOnly(item_name, activation_type)
+    if item_type != "spell":
+        for activity in activities.values():
+            activity["consumption"]["spellSlot"] = False
+    return _applyMetadata(activities, item_type, activation)
+
+
 def _applyMetadata(activities, item_type, activation):
     """Copy the activated-effect block from the item onto each activity.
 
@@ -255,8 +263,8 @@ def _buildActivities(item_type, item_name, attack, ability_mods=None, ranged=Non
     activation_type = getattr(activation, "activation", "") or ""
 
     if attack is None:
-        return {}, _applyMetadata(
-            _utilityOnly(item_name, activation_type), item_type, activation)
+        return {}, _utilityActivities(
+            item_type, item_name, activation_type, activation)
 
     mods = ability_mods or {}
     is_weapon = item_type in _BASE_DAMAGE_TYPES
@@ -381,8 +389,8 @@ def _buildActivities(item_type, item_name, attack, ability_mods=None, ranged=Non
         # dnd5e's own migration gives anything with an activation but no action
         # type a utility activity (ActivitiesTemplate.#createInitialActivity).
         # Without one a utility spell has no button on the sheet at all.
-        return system, _applyMetadata(
-            _utilityOnly(item_name, activation_type), item_type, activation)
+        return system, _utilityActivities(
+            item_type, item_name, activation_type, activation)
     else:
         # Nothing rollable and nothing to activate: emit no activity rather than
         # an empty one that puts an unusable button on the sheet.

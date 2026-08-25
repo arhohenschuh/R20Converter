@@ -46,10 +46,13 @@ Adopt this incrementally rather than rewriting the converter:
 12. **Done in v1.15.8:** keep automatic canonical-orange legacy doors while excluding grouped
   moving-wall assemblies, preserving explicit color overrides and emitting RC-facing barrier
   summaries.
-13. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+13. **Done in v1.15.9:** deduplicate package assets by acquired bytes, correct image
+  extensions from signatures without transcoding, and keep NPC source components outside the
+  class-feature name-matching domain while retaining PC enrichment.
+14. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-14. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+15. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 World LevelDB output remains out of scope for this stage: worlds retain the established NeDB

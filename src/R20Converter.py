@@ -45,6 +45,16 @@ class R20Converter(object):
         self.zip_paths_by_url = {}
         self.export_report = None
         self._zip_misses = 0
+        self._asset_body_sizes = {}
+        self._asset_url_identity = {}
+        self._asset_identity = {
+            "acquiredReferences": 0,
+            "uniqueBodies": 0,
+            "reusedReferences": 0,
+            "duplicateBytesAvoided": 0,
+            "signatureCorrections": 0,
+            "retainedSourceExtensions": 0,
+        }
         if not args.json:
             self.loadExportReport()
         self.packs = {}
@@ -148,6 +158,44 @@ class R20Converter(object):
                 "path-derivation fault far more often than an incomplete export (B053) — "
                 "re-exporting with R20Exporter 0.14.0 or later lets the converter read the "
                 "paths from the export manifest instead of recomputing them.")
+
+    def noteAssetIdentity(self, url, content_digest, size, reused,
+                          detected_extension, advertised_extension):
+        self._asset_identity["acquiredReferences"] += 1
+        if content_digest not in self._asset_body_sizes:
+            self._asset_body_sizes[content_digest] = size
+            self._asset_identity["uniqueBodies"] += 1
+        if reused:
+            self._asset_identity["reusedReferences"] += 1
+            self._asset_identity["duplicateBytesAvoided"] += size
+        if detected_extension and detected_extension.lower() != advertised_extension.lower():
+            self._asset_identity["signatureCorrections"] += 1
+        if not detected_extension:
+            self._asset_identity["retainedSourceExtensions"] += 1
+        if url:
+            self._asset_url_identity[url] = (content_digest, size)
+
+    def noteAssetReuse(self, url):
+        identity = self._asset_url_identity.get(url)
+        if identity is None:
+            return
+        self._asset_identity["acquiredReferences"] += 1
+        self._asset_identity["reusedReferences"] += 1
+        self._asset_identity["duplicateBytesAvoided"] += identity[1]
+
+    def assetIdentitySummary(self):
+        return dict(self._asset_identity)
+
+    def logAssetIdentitySummary(self):
+        summary = self.assetIdentitySummary()
+        if not summary["acquiredReferences"]:
+            return
+        self.logInfo(
+            "Asset identity: %(acquiredReferences)d acquired references, "
+            "%(uniqueBodies)d unique bodies, %(reusedReferences)d reused references, "
+            "%(duplicateBytesAvoided)d duplicate bytes avoided, "
+            "%(signatureCorrections)d signature corrections, "
+            "%(retainedSourceExtensions)d retained source extensions." % summary)
 
     def getArgument(self, name, default=None):
         return getattr(self.args, name, default)
@@ -530,6 +578,7 @@ class R20Converter(object):
             self.folders.save()
             self.items.save()
             self.world = World(self).save()
+        self.logAssetIdentitySummary()
 
     def _writeLog(self, msg):
         """Mirror a log line into the output folder so the run leaves a record.

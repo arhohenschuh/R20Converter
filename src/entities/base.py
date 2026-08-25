@@ -601,16 +601,17 @@ class Entity(object):
             directory = "worlds"
         return os.path.join(directory, world_dir_name)
 
-    def getDestinationPaths(self, destination, url=None, type=None, dedup=None):
+    def getDestinationPaths(self, destination, url=None, type=None, dedup=None,
+                            content_hash=None):
         # Remove leading, trailing and duplicate spaces in the destination name
         destination = re.sub(" +", " ", destination).strip()
         if dedup is None:
             dedup = self.getArgument("dedup_assets", False)
-        if dedup is True and url is not None:
+        if dedup is True and (url is not None or content_hash is not None):
             splitext = os.path.splitext(destination)
-            filename = self.hashString(url) + splitext[1]
+            filename = (content_hash or self.hashString(url)) + splitext[1]
             dir = self.getArgument("assets_directory", "assets")
-            if type is not None:
+            if type is not None and content_hash is None:
                 dir = os.path.join(dir, type)
             destination = os.path.join(dir, filename)
             destination_safe = self.urlsafe(destination)
@@ -720,17 +721,67 @@ class Entity(object):
             return "." + self.EXTENSION_ALIASES[suffix]
         return extension
 
-    def downloadResource(self, url, destination, type=None, dedup=None):
-        extension = self.assetExtension(url)
+    @staticmethod
+    def assetContentExtension(content):
+        """Return a recognized image extension from encoded bytes, or ``""``."""
+        if content.startswith(b"\x89PNG\r\n\x1a\n"):
+            return ".png"
+        if content.startswith(b"\xff\xd8\xff"):
+            return ".jpg"
+        if content.startswith((b"GIF87a", b"GIF89a")):
+            return ".gif"
+        if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+            return ".webp"
+        if content.startswith(b"BM"):
+            return ".bmp"
+        if content.startswith((b"II*\x00", b"MM\x00*")):
+            return ".tiff"
+        if (len(content) >= 12 and content[4:8] == b"ftyp"
+                and content[8:12] in (b"avif", b"avis")):
+            return ".avif"
+        return ""
+
+    def _deduplicatesAssets(self, dedup):
+        return self.getArgument("dedup_assets", False) if dedup is None else dedup is True
+
+    def _configPathForOutputFile(self, filename):
+        root = os.path.abspath(self._database._path)
+        absolute = os.path.abspath(filename)
+        if absolute != root and not absolute.startswith(root + os.path.sep):
+            return None
+        relative = os.path.relpath(absolute, root)
+        return os.path.join(self.getDirectoryName(), relative).replace(os.path.sep, "/")
+
+    def _storeAssetContent(self, url, destination, content, type=None, dedup=None):
+        detected_extension = self.assetContentExtension(content)
+        advertised_extension = self.assetExtension(url or "") \
+            or os.path.splitext(destination)[1].lower()
+        extension = detected_extension or advertised_extension
         if extension:
-            splitext = os.path.splitext(destination)
-            destination = splitext[0] + extension
-        (dest_filename, config_path) = self.getDestinationPaths(destination, url, type, dedup)
-        # getDestinationPaths should always return a unique new file, unless dedup is enabled
-        # So if the file already exists, assume dedup is enabled and return the file directly
-        # without downloading (or copy from cache)
-        if os.path.exists(dest_filename):
-            return (dest_filename, config_path)
+            destination = os.path.splitext(destination)[0] + extension
+        deduplicate = self._deduplicatesAssets(dedup)
+        content_digest = hashlib.sha256(content).hexdigest()
+        content_hash = content_digest if deduplicate else None
+        dest_filename, config_path = self.getDestinationPaths(
+            destination, url, type, deduplicate, content_hash=content_hash)
+        reused = os.path.exists(dest_filename)
+        if reused:
+            digest = hashlib.sha256()
+            with open(dest_filename, "rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != content_digest:
+                raise ValueError("Asset content-hash path collision: %s" % dest_filename)
+        else:
+            with open(dest_filename, "wb") as handle:
+                handle.write(content)
+        note = getattr(self._database._converter, "noteAssetIdentity", None)
+        if note is not None:
+            note(url, content_digest, len(content), deduplicate and reused,
+                 detected_extension, advertised_extension)
+        return (dest_filename, config_path)
+
+    def downloadResource(self, url, destination, type=None, dedup=None):
         originalUrl = url
 
         # Cache hit: the same URL was already downloaded for another entity, so
@@ -739,6 +790,21 @@ class Entity(object):
         # on Entity.
         cached = Entity.resource_cache.get(originalUrl, None)
         if cached is not None and os.path.exists(cached):
+            if self._deduplicatesAssets(dedup):
+                config_path = self._configPathForOutputFile(cached)
+                if config_path is not None:
+                    note = getattr(self._database._converter, "noteAssetReuse", None)
+                    if note is not None:
+                        note(originalUrl)
+                    return (cached, config_path)
+                with open(cached, "rb") as handle:
+                    return self._storeAssetContent(
+                        url, destination, handle.read(), type, dedup)
+            extension = os.path.splitext(cached)[1]
+            if extension:
+                destination = os.path.splitext(destination)[0] + extension
+            dest_filename, config_path = self.getDestinationPaths(
+                destination, url, type, dedup=False)
             shutil.copyfile(cached, dest_filename)
             return (dest_filename, config_path)
 
@@ -747,8 +813,8 @@ class Entity(object):
             self.logWarning("Failed to download URL : %s" % originalUrl)
             return (None, "")
 
-        with open(dest_filename, "wb") as f:
-            f.write(content)
+        dest_filename, config_path = self._storeAssetContent(
+            url, destination, content, type, dedup)
         Entity.resource_cache[originalUrl] = dest_filename
         return (dest_filename, config_path)
 
@@ -847,16 +913,6 @@ class Entity(object):
         zip_extension = None
         if url:
             zip_extension = os.path.splitext(url)[1].split("?")[0]
-        dest_extension = self.assetExtension(url) if url else ""
-        if dest_extension:
-            splitext = os.path.splitext(destination)
-            destination = splitext[0] + dest_extension
-        (dest_filename, config_path) = self.getDestinationPaths(destination, url, type, dedup)
-        # getDestinationPaths should always return a unique new file, unless dedup is enabled
-        # So if the file already exists, assume dedup is enabled and return the file directly
-        # without copying it from the zip a second time
-        if os.path.exists(dest_filename):
-            return (dest_filename, config_path)
         # R20Exporter 0.14.0+ records the path it actually wrote for every asset. Trust
         # that over our own derivation, which cannot know about entity types we do not
         # consume -- a single PDF in a journal folder shifted 111 paths by one (B053).
@@ -902,9 +958,7 @@ class Entity(object):
                 return self.downloadResource(url, destination, type, dedup)
             raise Roll20PlaceholderError(
                 "Roll20 placeholder in Zip file without a fallback URL: %s" % filename)
-        with open(dest_filename, "wb") as f:
-            f.write(content)
-        return (dest_filename, config_path)
+        return self._storeAssetContent(url, destination, content, type, dedup)
 
     def __str__(self):
         if self.getArgument("export_as_module", False):

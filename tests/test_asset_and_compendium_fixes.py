@@ -16,7 +16,7 @@ import entities.base as base
 import entities.journal as journal
 import entities.items as items_module
 from entities.actors import Actor
-from entities.items import Item
+from entities.items import Item, ItemActivation
 
 from conftest import FakeDatabase
 from test_base_download import StubResponse, StubSession, stub_session, clear_resource_cache  # noqa: F401
@@ -412,6 +412,81 @@ class TestNPCItemNameNormalization(object):
         actor = InventoryBoundaryActor(FakeDatabase(str(tmp_path)))
         assert actor.nameOrPlaceholder(" \n\t", "action") == "Unnamed Action"
         assert len(actor.warnings) == 1
+
+
+class FeatBoundaryItems(object):
+    def __init__(self, database):
+        self.database = database
+        self.replacements = 0
+
+    def createItemFeat(self, identifier, name, description, activation, attack,
+                       recharge, **kwargs):
+        return Item.createItemFeat(
+            self.database, identifier, name, description, activation, attack,
+            recharge, **kwargs)
+
+    def createItemFromCompendium(self, identifier, compendium_item, custom_data):
+        self.replacements += 1
+        return Item.createItemFromCompendium(
+            self.database, identifier, compendium_item, custom_data)
+
+
+class FeatBoundaryActor(InventoryBoundaryActor):
+    def __init__(self, database, donor, npc):
+        super(FeatBoundaryActor, self).__init__(database, donor)
+        self._converter.items = FeatBoundaryItems(database)
+        self._npc_fixture = npc
+
+    def isNPC(self):
+        return self._npc_fixture
+
+
+def _hunter_multiattack_donor():
+    return FakeCompendiumItem({
+        "_id": "hunterMultiattak",
+        "name": "Multiattack",
+        "type": "feat",
+        "img": "icons/hunter.webp",
+        "system": {
+            "description": {"value": "<p>Hunter 11 class feature.</p>"},
+            "activities": {},
+        },
+        "_stats": {},
+    })
+
+
+class TestNPCClassFeatureBoundary(object):
+    """B100 -- NPC actions cannot be replaced by same-name class features."""
+
+    SOURCE = "Sildar makes two Longsword attacks."
+
+    def _build(self, tmp_path, npc):
+        database = FakeDatabase(str(tmp_path))
+        database._arguments = {"no_compendium_overwrite": True}
+        actor = FeatBoundaryActor(database, _hunter_multiattack_donor(), npc)
+        owned = []
+        item = actor.createItemFeat(
+            owned, "Multiattack", self.SOURCE,
+            ItemActivation(ItemActivation.ACTION, 1), None, None)
+        return actor, item
+
+    def test_npc_multiattack_keeps_source_text_and_utility(self, tmp_path):
+        actor, item = self._build(tmp_path, True)
+        assert actor.lookups == []
+        assert self.SOURCE in item["system"]["description"]["value"]
+        assert "Hunter 11" not in item["system"]["description"]["value"]
+        assert len(item["system"]["activities"]) == 1
+        activity = next(iter(item["system"]["activities"].values()))
+        assert activity["type"] == "utility"
+        assert activity["activation"] == {
+            "type": "action", "value": 1, "condition": "", "override": True}
+        assert activity["consumption"]["spellSlot"] is False
+
+    def test_pc_class_feature_lookup_remains_available(self, tmp_path):
+        actor, item = self._build(tmp_path, False)
+        assert actor.lookups == [("Class Features", "Multiattack")]
+        assert item["system"]["description"]["value"] == "<p>Hunter 11 class feature.</p>"
+        assert actor._converter.items.replacements == 1
 
 
 def _class_document():

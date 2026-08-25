@@ -112,9 +112,10 @@ mechanically for the physical-item class of defect.
 | [B094](B094-grouped-chat-rolls-discard-nested-dice.md) | Minor | Fixed (v1.15.6) | Grouped chat rolls now preserve nested dice, modifiers, per-die outcomes, discarded alternatives, and natural 20/1 evidence as native Foundry pools. |
 | [B095](B095-same-template-placement-alternatives-rejected.md) | High | Fixed (v1.15.7) | Same-template placement choices now remain valid when their explicit names and complete template geometry are distinct. |
 | [B096](B096-grouped-orange-geometry-inferred-as-doors.md) | High | Fixed (v1.15.8) | Automatic canonical-orange inference now retains grouped moving-wall assemblies as walls while explicit color overrides remain authoritative. |
-| [B097](B097-dedup-assets-keys-by-url-not-content.md) | Major | Open request | `--dedup-assets` hashes URLs rather than acquired bodies, retaining exact duplicates and false extensions. |
+| [B097](B097-dedup-assets-keys-by-url-not-content.md) | Major | Fixed (v1.15.9) | Byte-aware placement deduplicates equal bodies across URLs and corrects stored image extensions from signatures without transcoding. |
 | [B098](B098-fine-roll20-grid-expands-foundry-canvas.md) | Moderate | Open request | Sub-0.5 Roll20 snapping automatically expands all Scene coordinates but emits no scale telemetry for RC review. |
 | [B099](B099-create-named-placement-alternative-rejected.md) | High | Open request | Limited innate Wall of Force rejects its complete Create Dome/Globe placement because only Place-prefixed alternatives are recognized. |
+| [B100](B100-npc-actions-collide-with-class-features.md) | High | Fixed (v1.15.9) | NPC components remain source-authored instead of being replaced by same-name class features; PC enrichment is unchanged. |
 
 ## Cross-cutting observations
 
@@ -125,7 +126,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B100**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B101**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent

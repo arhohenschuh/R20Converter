@@ -2142,7 +2142,10 @@ class Actor(Entity):
     def createItemFeat(self, items, name, description, activation=None, attack=None, recharge=None, **kwargs):
         name = self.nameOrPlaceholder(name, "feature")
         description = self.textToHtml(description)
-        compendium_item = self.findCompendiumItem("Class Features", name)
+        # NPC actions, reactions and traits are monster components, not class
+        # features. A name-only lookup turned every NPC "Multiattack" into the
+        # Hunter 11 feature and discarded its source prose/activity (B100).
+        compendium_item = None if self.isNPC() else self.findCompendiumItem("Class Features", name)
         kwargs.setdefault("ability_mods", self.abilityMods())
         item = self._converter.items.createItemFeat(None, name, description, activation, attack, recharge, **kwargs)
         if compendium_item and compendium_item.entity["type"] != "loot":
