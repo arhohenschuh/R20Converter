@@ -24,6 +24,11 @@ class FakeDB(object):
         return self
 
 
+class FakeEntity(object):
+    def __init__(self, entity):
+        self.entity = entity
+
+
 class FakeConverter(object):
     """Just enough converter for the manifest builders."""
 
@@ -170,6 +175,27 @@ class TestModuleManifest(object):
         Module(converter).save()
         written = json.loads((tmp_path / "module.json").read_text())
         assert written["id"] == "my-campaign"
+
+    def test_map_pins_declare_and_copy_the_single_click_script(self, converter, tmp_path):
+        converter.scenes.entities.append(FakeEntity({
+            "notes": [{"flags": {"R20Converter": {"mapPin": {"id": "pin"}}}}],
+        }))
+        module = Module(converter)
+        assert module.toDict()["scripts"] == ["scripts/map-pin-notes.js"]
+
+        module.save()
+        script = (tmp_path / "scripts" / "map-pin-notes.js").read_text()
+        assert "prototype._onClickLeft" in script
+        assert "originalActivate.call(this, event)" in script
+        assert "targetNote.document.page?.toc" in script
+        assert "slugifyHeading(heading)" in script
+        assert 'Object.defineProperty(prototype, "isVisible"' in script
+        assert "prototype._canControl" in script
+        assert "prototype._onHoverIn" in script
+        assert "prototype._onHoverOut" in script
+
+    def test_module_without_map_pins_declares_no_scripts(self, converter):
+        assert Module(converter).toDict()["scripts"] == []
 
     def test_assembly_registers_the_adventure_pack(self, converter):
         converter.folders = FakeDB()

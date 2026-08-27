@@ -3,7 +3,10 @@ from .actors import FULL_ANGLE, Token
 
 from PIL import Image, ImageFont, ImageDraw
 
+import copy
+import html
 import io
+import json
 import os
 import math
 import time
@@ -56,6 +59,98 @@ class Scene(Entity):
     token_ids = {}
     _auto_doors_warning_emitted = False
 
+    def _mapPinTarget(self, pin):
+        link = str(pin.get("link") or "")
+        link_type = str(pin.get("linkType") or "")
+        if not link or link_type not in ("", "handout"):
+            raise ValueError("Map Pin %s has no supported Handout link" %
+                             pin.get("id", "unknown"))
+        journal = getattr(self._converter, "journal", None)
+        target = journal.getById(Entity.normalizeID(link)) if journal is not None else None
+        if target is None:
+            raise ValueError("Map Pin %s links to missing Handout %s" %
+                             (pin.get("id", "unknown"), link))
+        pages = target.entity.get("pages", [])
+        text_page = next((page for page in pages if page.get("type") == "text"), None)
+        if text_page is None:
+            raise ValueError("Map Pin %s Handout has no text page" %
+                             pin.get("id", "unknown"))
+        return target.entity["_id"], text_page["_id"]
+
+    def _mapPinTexture(self, pin):
+        label = str(pin.get("iconText") or "")[:3]
+        shape = str(pin.get("shape") or "teardrop")
+        background = Entity.color(pin.get("bgColor"), "#242424")
+        foreground = Entity.color(pin.get("fgColor"), "#ffffff")
+        identity = json.dumps({"label": label, "shape": shape,
+                               "background": background,
+                               "foreground": foreground}, sort_keys=True)
+        filename = "%s.svg" % Entity.hashString(identity)
+        directory = os.path.join(self._database._path, "assets", "map-pins")
+        os.makedirs(directory, exist_ok=True)
+        destination = os.path.join(directory, filename)
+        if not os.path.exists(destination):
+            shapes = {
+                "circle": '<circle cx="40" cy="40" r="35" />',
+                "diamond": '<path d="M40 3 77 40 40 77 3 40Z" />',
+                "square": '<rect x="5" y="5" width="70" height="70" rx="7" />',
+                "teardrop": '<path d="M40 3C19 3 5 18 5 38c0 25 35 39 35 39s35-14 35-39C75 18 61 3 40 3Z" />',
+            }
+            body = shapes.get(shape, shapes["teardrop"])
+            escaped = html.escape(label)
+            svg = ("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 80 80\">"
+                   "<g fill=\"%s\" stroke=\"%s\" stroke-width=\"3\">%s</g>"
+                   "<text x=\"40\" y=\"45\" text-anchor=\"middle\" "
+                   "font-family=\"Arial,sans-serif\" font-size=\"22\" font-weight=\"700\" "
+                   "fill=\"%s\">%s</text></svg>" %
+                   (background, foreground, body, foreground, escaped))
+            with open(destination, "w", encoding="utf-8", newline="\n") as stream:
+                stream.write(svg)
+        package_type = "modules" if self.getArgument("export_as_module", False) else "worlds"
+        return "%s/%s/assets/map-pins/%s" % (
+            package_type, self._converter.name, filename)
+
+    def createMapPinNotes(self, page, margin_left, margin_top, grid_multiplier):
+        notes = []
+        for index, pin in enumerate(page.get("pins", []) or []):
+            pin_id = str(pin.get("id") or "")
+            try:
+                x = float(pin["x"])
+                y = float(pin["y"])
+            except (KeyError, TypeError, ValueError):
+                raise ValueError("Map Pin %s has invalid coordinates" %
+                                 (pin_id or "unknown"))
+            if not pin_id or not math.isfinite(x) or not math.isfinite(y):
+                raise ValueError("Map Pin %s has invalid id or coordinates" %
+                                 (pin_id or "unknown"))
+            entry_id, page_id = self._mapPinTarget(pin)
+            scale = safeCast(float, pin.get("scale", 1), 1)
+            label = str(pin.get("iconText") or pin.get("title")
+                        or pin.get("subLink") or "")[:3]
+            notes.append({
+                "_id": Entity.normalizeID(pin_id),
+                "author": None,
+                "entryId": entry_id,
+                "pageId": page_id,
+                "x": int(round(margin_left + x * grid_multiplier)),
+                "y": int(round(margin_top + y * grid_multiplier)),
+                "elevation": 0,
+                "levels": [],
+                "sort": index * 10,
+                "locked": True,
+                "texture": Entity.texture(self._mapPinTexture(pin), anchor=0.5,
+                                            fit="contain"),
+                "iconSize": max(32, int(round(40 * max(scale, 0.25)))),
+                "text": label,
+                "fontFamily": "Signika",
+                "fontSize": 32,
+                "textAnchor": 1,
+                "textColor": "#ffffff",
+                "global": True,
+                "flags": {"R20Converter": {"mapPin": copy.deepcopy(pin)}},
+            })
+        return notes
+
     def __init__(self, database, page, index, active_page):
         Entity.__init__(self, database, page["id"])
         self._page = page
@@ -94,6 +189,8 @@ class Scene(Entity):
         if not page["showgrid"]:
             grid_type = 0
         map_layer = [g for g in page["graphics"] if g["layer"] == "map"]
+        map_pin_notes = self.createMapPinNotes(
+            page, margin_left, margin_top, grid_multiplier)
 
         zip_page_path = os.path.join("pages", "%03d - %s" % (index, name))
         bg = None
@@ -795,7 +892,7 @@ class Scene(Entity):
                        "drawings": drawings,
                        "sounds": [],
                        "templates": [],
-                       "notes": [],
+                       "notes": map_pin_notes,
                        "playlist": None,
                        "playlistSound": None,
                        "journal": None,

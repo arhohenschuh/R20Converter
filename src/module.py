@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 
 import foundry
 from module_assembly import ModuleAssembler
@@ -27,6 +28,11 @@ class Module(object):
         self._description = converter.getArgument("description")
         self._packs = []
         self._recommendations = set()
+        self._has_map_pins = any(
+            note.get("flags", {}).get("R20Converter", {}).get("mapPin")
+            for scene in converter.scenes.entities
+            for note in getattr(scene, "entity", {}).get("notes", [])
+        )
 
         assembler = None
         adventure = None
@@ -108,7 +114,8 @@ class Module(object):
                 "authors": [{"name": foundry.PACKAGE_AUTHOR}],
                 "compatibility": foundry.compatibility(),
                 "relationships": relationships,
-                "packs": self._packs
+                "packs": self._packs,
+                "scripts": ["scripts/map-pin-notes.js"] if self._has_map_pins else []
             } 
 
     # This is a json file, not a db file, so let's override the __str__ method
@@ -119,4 +126,11 @@ class Module(object):
         filename = os.path.join(self._path, "module.json")
         with open(filename, "w", encoding='utf-8') as f:
             f.write(str(self))
+        if self._has_map_pins:
+            scripts = os.path.join(self._path, "scripts")
+            os.makedirs(scripts, exist_ok=True)
+            parent = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            if not os.path.exists(os.path.join(parent, "templates")):
+                parent = os.path.abspath(os.path.join(parent, ".."))
+            shutil.copy(os.path.join(parent, "templates", "map-pin-notes.js"), scripts)
         return self

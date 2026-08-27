@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.15.11
+
+- Convert Roll20 Map Pins into native Foundry Scene Notes linked to their exact Handout text page.
+  Preserve source coordinates, labels, styling, visibility, and complete Pin payloads; abort rather
+  than silently omit a Pin whose Handout cannot be resolved (B102).
+- Load a conditional Map Pin runtime script only when required. A single click opens the exact
+  source-authored table-of-contents anchor, double-click gestures activate once, Pin hover is
+  disabled, and GM-only Pins remain invisible to players without changing ordinary Note behavior.
+
+The Pin-based *Waterdeep: Dungeon of the Mad Mage* source contains 1,620 unique Pins on 26 of 29
+pages, all linked to Handouts and exact headings. The 1.4.1 export closes all 1,620 references with
+zero Pin integrity findings; Level 1 retains 92 Pins, including **38. Secret Tunnel**. Tagged
+v1.15.10 fails both new regressions, while the candidate passes them and the complete suite.
+
+Suite: **971 passed** in the shipping Python 3.8 environment.
+
 ## v1.15.10
 
 - Preserve complete `Create ...` placement alternatives alongside `Place ...` choices when every

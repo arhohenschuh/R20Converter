@@ -51,10 +51,12 @@ Adopt this incrementally rather than rewriting the converter:
   class-feature name-matching domain while retaining PC enrichment.
 14. **Done in v1.15.10:** admit bounded Create-named spell-placement alternatives and keep
   generated Scene thumbnails outside shared content-addressed source bodies.
-15. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+15. **Done in v1.15.11:** preserve Roll20 Map Pins as native linked Scene Notes with exact-heading
+  single-click navigation, source visibility, click-only interaction, and complete source flags.
+16. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-16. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+17. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 World LevelDB output remains out of scope for this stage: worlds retain the established NeDB
