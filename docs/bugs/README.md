@@ -120,6 +120,7 @@ mechanically for the physical-item class of defect.
 | [B102](B102-roll20-map-pins-are-omitted.md) | High | Fixed (v1.15.11) | Roll20 Map Pins become native linked Scene Notes with exact-heading single-click navigation and source visibility. |
 | [B103](B103-map-pin-runtime-assumes-own-visibility-getter.md) | High | Fixed (v1.15.12) | The Map Pin runtime resolves Foundry's inherited `isVisible` getter instead of crashing during `init`. |
 | [B104](B104-map-pin-runtime-invalid-flag-scope.md) | High | Fixed (v1.15.13) | The Map Pin runtime reads its structured payload directly instead of passing a non-package mixed-case scope to Foundry's validated `getFlag` API. |
+| [B105](B105-map-pins-obscure-tokens-and-cannot-be-moved.md) | High | Fixed (v1.15.14) | Converted Map Pins render below Tokens and gain a GM-only unlock/move mode while preserving click navigation and player invisibility. |
 
 ## Cross-cutting observations
 

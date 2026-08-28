@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.15.14
+
+- Render converted Map Pins in a dedicated interface container immediately below Tokens while
+  retaining native Notes-layer registration, visibility, quadtree, drag, update, and teardown
+  behavior. Ordinary Journal Notes remain in Foundry's foreground Notes layer (B105).
+- Add a GM-only **Edit Map Pins** control that unlocks current-Scene Pins for native hover,
+  selection, and dragging, then relocks them and restores click-only exact-heading navigation.
+  Players receive neither the control nor any visible, rendered, viewable, controllable, or
+  hoverable Pins.
+- Select Foundry's native manual Scene-directory sorting mode when a generated Pin runtime is
+  active, so numeric Folder sort values are displayed instead of lexicographic `1, 10, ..., 2`.
+
+Focused Map Pin runtime suite: **4 passed**. Complete shipping Python 3.8 suite: **973 passed**.
+
 ## v1.15.13
 
 - Read converted Map Pin metadata directly from the stored structured flag instead of calling

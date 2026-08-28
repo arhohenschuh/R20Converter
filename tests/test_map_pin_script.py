@@ -435,3 +435,302 @@ process.stdout.write(JSON.stringify({
         "player": {"ordinary": True, "hidden": False},
         "gm": {"hidden": True},
     }
+
+
+def test_map_pin_script_layers_below_tokens_and_has_gm_edit_mode():
+    harness = r"""
+const fs = require("fs");
+const vm = require("vm");
+
+const hooks = new Map();
+global.Hooks = {
+  once(name, callback) {
+    if (name === "init") callback();
+    else this.on(name, callback);
+  },
+  on(name, callback) {
+    const callbacks = hooks.get(name) || [];
+    callbacks.push(callback);
+    hooks.set(name, callbacks);
+    return callbacks.length;
+  },
+  off() {},
+  callAll(name, ...args) {
+    return (hooks.get(name) || []).map(callback => callback(...args));
+  },
+};
+
+class Container {
+  constructor() {
+    this.children = [];
+    this.parent = null;
+    this.destroyed = false;
+    this.visible = true;
+    this.zIndex = 0;
+  }
+
+  addChild(child) {
+    child.parent?.removeChild(child);
+    this.children.push(child);
+    child.parent = this;
+    return child;
+  }
+
+  removeChild(child) {
+    const index = this.children.indexOf(child);
+    if (index >= 0) this.children.splice(index, 1);
+    child.parent = null;
+    return child;
+  }
+
+  sortChildren() {
+    this.children.sort((left, right) => left.zIndex - right.zIndex);
+  }
+
+  destroy() {
+    this.destroyed = true;
+  }
+}
+
+class BasePlaceablesLayer {
+  get placeables() {
+    return this.objects.children;
+  }
+}
+
+class NotesLayer extends BasePlaceablesLayer {
+  constructor() {
+    super();
+    this.objects = new Container();
+    this.objects.visible = true;
+    this.quadtree = {
+      updates: 0,
+      removals: 0,
+      update() { this.updates += 1; },
+      remove() { this.removals += 1; },
+    };
+    this.active = false;
+  }
+
+  activate() {
+    this.active = true;
+  }
+}
+
+const calls = {click: 0, activate: 0, hoverIn: 0, hoverOut: 0, releases: 0};
+class Note {
+  get isVisible() { return true; }
+  get layer() { return canvas.notes; }
+  get bounds() { return {x: this.document.x, y: this.document.y, width: 40, height: 40}; }
+  get isPreview() { return false; }
+  _canControl() { return true; }
+  _canView() { return true; }
+  _onClickLeft() { calls.click += 1; }
+  _onClickLeft2() { calls.activate += 1; }
+  _onHoverIn() { calls.hoverIn += 1; }
+  _onHoverOut() { calls.hoverOut += 1; }
+  _updateQuadtree() { calls.originalQuadtree = (calls.originalQuadtree || 0) + 1; }
+  release() { this.controlled = false; calls.releases += 1; }
+}
+
+global.PIXI = {Container};
+global.CONFIG = {
+  Note: {objectClass: Note},
+  Canvas: {layers: {notes: {layerClass: NotesLayer}}},
+};
+global.game = {
+  user: {isGM: true, id: "gm"},
+  scenes: {
+    sortingMode: "a",
+    toggleSortingMode() { this.sortingMode = "m"; calls.sortToggles = (calls.sortToggles || 0) + 1; },
+  },
+};
+global.JournalEntryPage = {implementation: {slugifyHeading: () => "heading"}};
+
+const notes = new NotesLayer();
+const ticker = {
+  callbacks: new Set(),
+  add(callback) { this.callbacks.add(callback); },
+  remove(callback) { this.callbacks.delete(callback); },
+};
+const interfaceLayer = new Container();
+const documents = [];
+global.canvas = {
+  notes,
+  tokens: {zIndex: 200},
+  interface: interfaceLayer,
+  app: {ticker},
+  scene: {
+    notes: documents,
+    async updateEmbeddedDocuments(type, updates) {
+      calls.updateType = type;
+      calls.updates = updates;
+      for (const update of updates) {
+        const document = documents.find(candidate => candidate.id === update._id);
+        document.locked = update.locked;
+      }
+    },
+  },
+};
+global.ui = {
+  controls: {render() { calls.controlsRendered = (calls.controlsRendered || 0) + 1; }},
+  scenes: {render() { calls.scenesRendered = (calls.scenesRendered || 0) + 1; }},
+};
+
+function makeNote(id, pin) {
+  const document = {
+    id,
+    x: 100,
+    y: 200,
+    locked: Boolean(pin),
+    flags: pin ? {R20Converter: {mapPin: {subLink: "Area", visibleTo: ""}}} : {},
+    getFlag() { throw new Error("Map Pin runtime must not call getFlag"); },
+  };
+  const note = {
+    id,
+    document,
+    destroyed: false,
+    controlled: false,
+    renderFlags: {set() {}},
+  };
+  Object.setPrototypeOf(note, Note.prototype);
+  document.object = note;
+  documents.push(document);
+  notes.objects.addChild(note);
+  return note;
+}
+
+const pin = makeNote("pin", true);
+const ordinary = makeNote("ordinary", false);
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"), {filename: process.argv[1]});
+
+Hooks.callAll("ready");
+Hooks.callAll("canvasReady");
+const previewParent = new Container();
+previewParent.name = "NativeNotePreview";
+const preview = makeNote("preview", true);
+documents.pop();
+notes.objects.removeChild(preview);
+previewParent.addChild(preview);
+Object.defineProperty(preview, "isPreview", {value: true});
+Hooks.callAll("drawNote", preview);
+const lowered = {
+  parentName: pin.parent.name,
+  zIndex: pin.parent.zIndex,
+  ordinaryStayedNative: ordinary.parent === notes.objects,
+  registeredIds: notes.placeables.map(note => note.id).sort(),
+  quadtreeUpdates: notes.quadtree.updates,
+  tickerCallbacks: ticker.callbacks.size,
+  previewStayedNative: preview.parent === previewParent,
+  previewRegistered: notes.placeables.includes(preview),
+};
+
+const gmControls = {notes: {tools: {}}};
+Hooks.callAll("getSceneControlButtons", gmControls);
+const tool = gmControls.notes.tools.r20MapPinEdit;
+(async () => {
+  await tool.onChange(null, true);
+  pin.controlled = true;
+  pin._onHoverIn({});
+  pin._onHoverOut({});
+  pin._onClickLeft({});
+  const unlocked = {
+    locked: pin.document.locked,
+    notesActive: notes.active,
+    toolVisible: tool.visible,
+    updateType: calls.updateType,
+    updates: calls.updates,
+    calls: {...calls},
+  };
+
+  await tool.onChange(null, false);
+  pin._onClickLeft({});
+  const relocked = {
+    locked: pin.document.locked,
+    controlled: pin.controlled,
+    calls: {...calls},
+  };
+
+  game.user = {isGM: false, id: "player"};
+  const playerControls = {notes: {tools: {}}};
+  Hooks.callAll("getSceneControlButtons", playerControls);
+  Hooks.callAll("canvasTearDown");
+  process.stdout.write(JSON.stringify({
+    sorting: {mode: game.scenes.sortingMode, toggles: calls.sortToggles, renders: calls.scenesRendered},
+    lowered,
+    unlocked,
+    relocked,
+    playerHasTool: Object.hasOwn(playerControls.notes.tools, "r20MapPinEdit"),
+    teardown: {
+      pinRestored: pin.parent === notes.objects,
+      registeredIds: notes.placeables.map(note => note.id).sort(),
+      tickerCallbacks: ticker.callbacks.size,
+    },
+  }));
+})().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
+"""
+
+    result = subprocess.run(
+        ["node", "-e", harness, str(SCRIPT)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(result.stdout) == {
+        "sorting": {"mode": "m", "toggles": 1, "renders": 1},
+        "lowered": {
+            "parentName": "R20ConverterMapPins",
+            "zIndex": 199,
+            "ordinaryStayedNative": True,
+            "registeredIds": ["ordinary", "pin"],
+            "quadtreeUpdates": 1,
+            "tickerCallbacks": 1,
+            "previewStayedNative": True,
+            "previewRegistered": False,
+        },
+        "unlocked": {
+            "locked": False,
+            "notesActive": True,
+            "toolVisible": True,
+            "updateType": "Note",
+            "updates": [{"_id": "pin", "locked": False}],
+            "calls": {
+                "click": 1,
+                "activate": 0,
+                "hoverIn": 1,
+                "hoverOut": 1,
+                "releases": 0,
+                "sortToggles": 1,
+                "scenesRendered": 1,
+                "controlsRendered": 1,
+                "updateType": "Note",
+                "updates": [{"_id": "pin", "locked": False}],
+            },
+        },
+        "relocked": {
+            "locked": True,
+            "controlled": False,
+            "calls": {
+                "click": 2,
+                "activate": 1,
+                "hoverIn": 1,
+                "hoverOut": 1,
+                "releases": 1,
+                "sortToggles": 1,
+                "scenesRendered": 1,
+                "controlsRendered": 1,
+                "updateType": "Note",
+                "updates": [{"_id": "pin", "locked": True}],
+            },
+        },
+        "playerHasTool": False,
+        "teardown": {
+            "pinRestored": True,
+            "registeredIds": ["ordinary", "pin"],
+            "tickerCallbacks": 0,
+        },
+    }
