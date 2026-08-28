@@ -9,7 +9,15 @@ Hooks.once("init", () => {
   const originalCanView = prototype._canView;
   const originalHoverIn = prototype._onHoverIn;
   const originalHoverOut = prototype._onHoverOut;
-  const originalVisibility = Object.getOwnPropertyDescriptor(prototype, "isVisible");
+  let visibilityOwner = prototype;
+  let originalVisibility;
+  while (visibilityOwner && !originalVisibility) {
+    originalVisibility = Object.getOwnPropertyDescriptor(visibilityOwner, "isVisible");
+    visibilityOwner = Object.getPrototypeOf(visibilityOwner);
+  }
+  if (typeof originalVisibility?.get !== "function") {
+    throw new Error("R20Converter Map Pins require Note.isVisible");
+  }
 
   Object.defineProperty(prototype, "isVisible", {
     configurable: originalVisibility.configurable,

@@ -365,3 +365,70 @@ process.stdout.write(JSON.stringify({
         "ordinaryViewAllowed": True,
         "remainingHooks": 0,
     }
+
+
+def test_map_pin_script_resolves_visibility_inherited_by_configured_note_class():
+    harness = r"""
+const fs = require("fs");
+const vm = require("vm");
+
+global.Hooks = {
+  once(name, callback) {
+    if (name === "init") callback();
+  },
+  on() { return 1; },
+  off() {},
+};
+
+class CoreNote {
+  get isVisible() {
+    return true;
+  }
+}
+
+class ConfiguredNote extends CoreNote {
+  _canControl() { return true; }
+  _canView() { return true; }
+  _onClickLeft() {}
+  _onClickLeft2() {}
+  _onHoverIn() {}
+  _onHoverOut() {}
+}
+
+global.CONFIG = {Note: {objectClass: ConfiguredNote}};
+global.game = {user: {isGM: false}};
+global.JournalEntryPage = {implementation: {slugifyHeading: () => "heading"}};
+vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"), {filename: process.argv[1]});
+
+const makeNote = pin => {
+  const note = {document: {getFlag: () => pin}};
+  Object.setPrototypeOf(note, ConfiguredNote.prototype);
+  return note;
+};
+const ordinary = makeNote(null);
+const hidden = makeNote({visibleTo: ""});
+const player = {ordinary: ordinary.isVisible, hidden: hidden.isVisible};
+game.user = {isGM: true};
+const gm = {hidden: hidden.isVisible};
+
+process.stdout.write(JSON.stringify({
+  patched: ConfiguredNote.prototype.__r20MapPinClickPatched,
+  ownsVisibility: Object.hasOwn(ConfiguredNote.prototype, "isVisible"),
+  player,
+  gm,
+}));
+"""
+
+    result = subprocess.run(
+        ["node", "-e", harness, str(SCRIPT)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(result.stdout) == {
+        "patched": True,
+        "ownsVisibility": True,
+        "player": {"ordinary": True, "hidden": False},
+        "gm": {"hidden": True},
+    }

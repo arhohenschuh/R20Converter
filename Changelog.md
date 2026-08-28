@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.15.12
+
+- Resolve the native Note visibility getter through the configured class's prototype chain. Foundry
+  14 can configure a Note subclass that inherits `isVisible`; treating it as an own property made
+  the conditional Map Pin runtime throw during `init` and left all Pin interactions unpatched
+  (B103).
+- Extend the runtime regression with Foundry's inherited-getter shape while preserving ordinary
+  Note visibility, hidden-player denial, hidden-GM visibility, and exact-heading Pin activation.
+
+Focused Map Pin runtime suite: **3 passed**. Complete shipping Python 3.8 suite: **972 passed**.
+
 ## v1.15.11
 
 - Convert Roll20 Map Pins into native Foundry Scene Notes linked to their exact Handout text page.
