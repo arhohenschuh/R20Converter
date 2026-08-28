@@ -55,10 +55,12 @@ Adopt this incrementally rather than rewriting the converter:
   single-click navigation, source visibility, click-only interaction, and complete source flags.
 16. **Done in v1.15.12:** resolve the configured Note class's inherited visibility getter so the
   conditional Map Pin runtime installs cleanly on Foundry 14.
-17. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+17. **Done in v1.15.13:** read the converter-owned Map Pin payload directly instead of asking
+  Foundry to validate the historical mixed-case flag namespace as an active package.
+18. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-18. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+19. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 World LevelDB output remains out of scope for this stage: worlds retain the established NeDB

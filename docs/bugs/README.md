@@ -119,6 +119,7 @@ mechanically for the physical-item class of defect.
 | [B101](B101-deduplicated-scene-thumbnail-overwrites-source.md) | Critical | Fixed (v1.15.10) | Scene thumbnails receive separate content-addressed bodies without mutating shared acquired art. |
 | [B102](B102-roll20-map-pins-are-omitted.md) | High | Fixed (v1.15.11) | Roll20 Map Pins become native linked Scene Notes with exact-heading single-click navigation and source visibility. |
 | [B103](B103-map-pin-runtime-assumes-own-visibility-getter.md) | High | Fixed (v1.15.12) | The Map Pin runtime resolves Foundry's inherited `isVisible` getter instead of crashing during `init`. |
+| [B104](B104-map-pin-runtime-invalid-flag-scope.md) | High | Fixed (v1.15.13) | The Map Pin runtime reads its structured payload directly instead of passing a non-package mixed-case scope to Foundry's validated `getFlag` API. |
 
 ## Cross-cutting observations
 
@@ -129,7 +130,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B104**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B105**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent

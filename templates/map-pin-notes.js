@@ -2,6 +2,7 @@ Hooks.once("init", () => {
   const NoteClass = CONFIG.Note?.objectClass;
   const prototype = NoteClass?.prototype;
   if (!prototype || prototype.__r20MapPinClickPatched) return;
+  const getMapPin = document => document?.flags?.R20Converter?.mapPin ?? null;
 
   const originalClick = prototype._onClickLeft;
   const originalActivate = prototype._onClickLeft2;
@@ -23,33 +24,33 @@ Hooks.once("init", () => {
     configurable: originalVisibility.configurable,
     enumerable: originalVisibility.enumerable,
     get() {
-      const pin = this.document.getFlag("R20Converter", "mapPin");
+      const pin = getMapPin(this.document);
       if (pin && pin.visibleTo !== "all" && !game.user.isGM) return false;
       return originalVisibility.get.call(this);
     },
   });
 
   prototype._canControl = function(user, event) {
-    const pin = this.document.getFlag("R20Converter", "mapPin");
+    const pin = getMapPin(this.document);
     if (pin) return this._canView(user, event);
     return originalCanControl.call(this, user, event);
   };
 
   prototype._canView = function(user, event) {
     user ||= game.user;
-    const pin = this.document.getFlag("R20Converter", "mapPin");
+    const pin = getMapPin(this.document);
     if (pin && pin.visibleTo !== "all" && !user.isGM) return false;
     return originalCanView.call(this, user, event);
   };
 
   prototype._onHoverIn = function(...args) {
-    const pin = this.document.getFlag("R20Converter", "mapPin");
+    const pin = getMapPin(this.document);
     if (pin) return true;
     return originalHoverIn.apply(this, args);
   };
 
   prototype._onHoverOut = function(...args) {
-    const pin = this.document.getFlag("R20Converter", "mapPin");
+    const pin = getMapPin(this.document);
     if (pin) return true;
     return originalHoverOut.apply(this, args);
   };
@@ -79,14 +80,14 @@ Hooks.once("init", () => {
   }
 
   prototype._onClickLeft = function(event) {
-    const pin = this.document.getFlag("R20Converter", "mapPin");
+    const pin = getMapPin(this.document);
     if (!pin) return originalClick.call(this, event);
     if (originalCanControl.call(this, game.user, event)) originalClick.call(this, event);
     return activateMapPin(this, event, pin);
   };
 
   prototype._onClickLeft2 = function(event) {
-    const pin = this.document.getFlag("R20Converter", "mapPin");
+    const pin = getMapPin(this.document);
     if (pin) return activateMapPin(this, event, pin);
     return originalActivate.call(this, event);
   };

@@ -99,9 +99,8 @@ function makeNote(pin, page = null) {
   const note = {
     document: {
       page,
-      getFlag(scope, key) {
-        return scope === "R20Converter" && key === "mapPin" ? pin : null;
-      },
+      flags: pin ? {R20Converter: {mapPin: pin}} : {},
+      getFlag() { throw new Error("Map Pin runtime must not validate the legacy flag scope"); },
     },
   };
   Object.setPrototypeOf(note, Note.prototype);
@@ -256,15 +255,13 @@ global.JournalEntryPage = {implementation: {slugifyHeading: () => "area-key"}};
 vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"), {filename: process.argv[1]});
 
 function makePin({visibleTo = "all", nativeControlAllowed = false} = {}) {
+  const pin = {subLink: "Area Key", visibleTo};
   const note = {
     nativeControlAllowed,
     document: {
       page: null,
-      getFlag(scope, key) {
-        return scope === "R20Converter" && key === "mapPin"
-          ? {subLink: "Area Key", visibleTo}
-          : null;
-      },
+      flags: {R20Converter: {mapPin: pin}},
+      getFlag() { throw new Error("Map Pin runtime must not validate the legacy flag scope"); },
     },
   };
   Object.setPrototypeOf(note, Note.prototype);
@@ -317,7 +314,10 @@ if (gmSingleAllowed) gmInteraction.callback("clickLeft");
 
 const ordinaryNote = {
   nativeControlAllowed: true,
-  document: {getFlag() { return null; }},
+  document: {
+    flags: {},
+    getFlag() { throw new Error("Map Pin runtime must not call getFlag for ordinary Notes"); },
+  },
 };
 Object.setPrototypeOf(ordinaryNote, Note.prototype);
 const ordinaryInteraction = interaction(ordinaryNote);
@@ -401,7 +401,10 @@ global.JournalEntryPage = {implementation: {slugifyHeading: () => "heading"}};
 vm.runInThisContext(fs.readFileSync(process.argv[1], "utf8"), {filename: process.argv[1]});
 
 const makeNote = pin => {
-  const note = {document: {getFlag: () => pin}};
+  const note = {document: {
+    flags: pin ? {R20Converter: {mapPin: pin}} : {},
+    getFlag() { throw new Error("Map Pin runtime must not validate the legacy flag scope"); },
+  }};
   Object.setPrototypeOf(note, ConfiguredNote.prototype);
   return note;
 };

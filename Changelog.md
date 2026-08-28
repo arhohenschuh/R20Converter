@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.15.13
+
+- Read converted Map Pin metadata directly from the stored structured flag instead of calling
+  Foundry's validated `Document#getFlag` API with the historical mixed-case `R20Converter` scope.
+  Foundry 14 rejects that scope because it is not an active package, producing one page error each
+  time a Pin-bearing Scene initializes and preventing reliable interaction (B104).
+- Make every Map Pin runtime harness throw if the implementation calls `getFlag`, while preserving
+  click-only behavior, exact-heading activation, GM-only visibility, inherited visibility lookup,
+  and ordinary Note behavior.
+
+Focused Map Pin runtime suite: **3 passed**. Complete shipping Python 3.8 suite: **972 passed**.
+
 ## v1.15.12
 
 - Resolve the native Note visibility getter through the configured class's prototype chain. Foundry
