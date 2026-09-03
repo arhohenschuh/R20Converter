@@ -4,7 +4,6 @@ class Macros(DatabaseFile):
     def __init__(self, converter):
         DatabaseFile.__init__(self, converter, "macros.db")
         self._macros = self._campaign.get("macros", [])
-        self._img_path = None
         self.entities = self.genEntities()
 
     def genEntities(self):
@@ -17,14 +16,10 @@ class Macros(DatabaseFile):
         return macros
 
 class Macro(Entity):
+    DEFAULT_ICON = "icons/svg/dice-target.svg"
+
     def __init__(self, database, macro, index):
         Entity.__init__(self, database, macro["id"])
-        if self._database._img_path is None:
-            (_, img_path) = self.downloadResource("https://lh3.googleusercontent.com/swEnBHMCVeDnhj21txjMIFqAiP09T7l0-XlWE0lnrnp5tOVYUJ8yAvWocECizn71qLo=s180-rw", "macros/roll20_macro.png")
-            if img_path != "":
-                self._database._img_path = img_path
-            else:
-                self._database._img_path = "icons/svg/dice-target.svg"
         permissions = {"default": Macro.OWNERSHIP_NONE, Entity.normalizeID(macro["player_id"]): Macro.OWNERSHIP_OWNER}
         for player in macro.get("visibleto", "").split(","):
             if player == "all":
@@ -43,8 +38,7 @@ class Macro(Entity):
             "scope": "global",
             "command": command,
             "author": Entity.normalizeID(macro["player_id"]),
-            # Roll 20 icon from "Roll20 for android" Android store app
-            "img": self._database._img_path,
+            "img": Macro.DEFAULT_ICON,
             "actorIds": [],
             "_stats": self.documentStats(),
         } 

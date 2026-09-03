@@ -271,9 +271,27 @@ class TestDocumentLinks(object):
 
 
 class TestMacroLinks(object):
+    def testUsesNativeIconWithoutDownloadingBrandAsset(self, tmp_path, monkeypatch):
+        database = FakeDatabase(str(tmp_path), {"export_as_module": True})
+        database._img_path = None
+        database._package = "r20-module"
+        database._pack_name = "macros"
+        database._converter = type("Converter", (), {})()
+        database.findID = lambda identifier, kind=None: None
+
+        def rejectDownload(*args, **kwargs):
+            pytest.fail("Macro construction must not download a branded icon")
+
+        monkeypatch.setattr(Macro, "downloadResource", rejectDownload)
+        macro = Macro(database, {
+            "id": "-macro", "name": "Encounter", "player_id": "-player",
+            "visibleto": "", "action": "/roll 1d20",
+        }, 0)
+
+        assert macro.entity["img"] == "icons/svg/dice-target.svg"
+
     def testMarkdownJournalLinkIsLocalizedInCommand(self, tmp_path):
         database = FakeDatabase(str(tmp_path), {"export_as_module": True})
-        database._img_path = "icons/svg/dice-target.svg"
         database._package = "r20-module"
         database._pack_name = "macros"
         database._converter = type("Converter", (), {})()

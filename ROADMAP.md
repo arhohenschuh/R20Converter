@@ -57,11 +57,29 @@ Adopt this incrementally rather than rewriting the converter:
   conditional Map Pin runtime installs cleanly on Foundry 14.
 17. **Done in v1.15.13:** read the converter-owned Map Pin payload directly instead of asking
   Foundry to validate the historical mixed-case flag namespace as an active package.
-18. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+18. **Done in v1.15.14:** render converted Map Pins beneath Tokens, add a GM-only edit mode, and
+  preserve manual numeric Scene-folder ordering in the client.
+19. **Done in v1.15.15:** use a native Foundry Macro icon without downloading or shipping the
+  branded Roll20 Android application logo.
+20. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-19. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+21. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
+
+## Future module-policy enhancements
+
+- Add an explicit module-organization manifest for RollTable and Macro chapter/reference folders.
+  Roll20 exports provide no native folder collection for either type, so the converter must not
+  infer campaign chapters from names or prose. A manifest should preserve stable document IDs,
+  manual order, standalone-pack/Adventure parity, and reject unassigned or duplicate claims.
+- Translate only a bounded, explicitly recognized subset of Roll20 chat Macros into native Foundry
+  scripts. The current converter conserves source Macros as `type: "chat"`; native conversion must
+  prove a complete source-to-native census, local RollTable/Journal targets, equivalent whisper and
+  prompt behavior, live execution, and an explicit disposition for every unsupported source Macro.
+- R20Exporter needs no matching change for these enhancements. Its neutral archive already
+  preserves the raw Macro action, visibility, owner, token-action flag, RollTables, and stable IDs;
+  chapter assignment and Foundry script semantics are downstream conversion policy.
 
 World LevelDB output remains out of scope for this stage: worlds retain the established NeDB
 migration path until module parity is demonstrated and the operational value justifies the

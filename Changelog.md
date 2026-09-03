@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.15.15
+
+- Use Foundry's native `icons/svg/dice-target.svg` for converted Macros instead of downloading
+  and bundling the Roll20 Android application logo from a remote Google host (B106).
+- Remove Macro construction's external image request entirely. Converted source IDs, names,
+  ownership, command text, scope, author, sort order, and Adventure projection are unchanged.
+- Add a regression that rejects any Macro icon download and requires the native icon path.
+
+Focused Macro schema suite: **2 passed**. Complete shipping Python 3.8 suite: **974 passed**.
+
 ## v1.15.14
 
 - Render converted Map Pins in a dedicated interface container immediately below Tokens while
