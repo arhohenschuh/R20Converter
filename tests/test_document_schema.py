@@ -262,6 +262,22 @@ class TestDocumentLinks(object):
         assert linker._database.warnings == [
             "Could not find compendium item of type 'Rules' and name 'Ability Scores'"]
 
+    @pytest.mark.parametrize("compendium", [False, True])
+    def testExistingCompendiumItemLinkUsesItsSavedID(self, tmp_path, compendium):
+        linker = self.makeLinker(tmp_path, compendium=compendium, exists=False)
+        item = Entity(linker._database, "-linked-source-item")
+        linker._converter = type("Converter", (), {
+            "items": type("Items", (), {
+                "getByName": lambda self, name: item,
+                "getById": lambda self, identifier: item if identifier == item.getID() else None,
+            })(),
+        })()
+        html = '<a href="https://roll20.net/compendium/dnd5e/Spells:Light">Light</a>'
+        prefix = "Compendium.r20-module.items.Item" if compendium else "Item"
+
+        assert linker.replaceCompendiumLinks(html) == "@UUID[%s.%s]{Light}" % (prefix, item.getID())
+        assert linker._database.warnings == []
+
     def testBracesInLabelAreEscaped(self, tmp_path):
         # Unescaped braces would terminate the @UUID label early.
         linker = self.makeLinker(tmp_path)

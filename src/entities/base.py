@@ -469,7 +469,7 @@ class Entity(object):
                 item.entity["folder"] = Entity.normalizeID(folder_id)
                 converter.items.addEntity(item)
         if item:
-            return self.replaceEntityLinks('<a %shref="http://journal.roll20.net/item/%s"%s>%s</a>' % (before_href, item.getID(), after_href, text))
+            return self.replaceEntityLinks('<a %shref="http://journal.roll20.net/item/%s"%s>%s</a>' % (before_href, item.getID(normalized=False), after_href, text))
         else:
             self.logWarning("Could not find compendium item of type '%s' and name '%s'" % (compendium, name))
             return match.group(0)

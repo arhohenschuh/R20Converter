@@ -67,10 +67,12 @@ Adopt this incrementally rather than rewriting the converter:
   (B108), and internalize complete wildcard module-image families without dropping random-image
   selection or members (B109). Final build validation passes locally; the owner assigned full
   conversion-pipeline testing downstream and waived Opus review for this release.
-21. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+21. **Done in v1.15.17:** initialize world Items before Macro/chat link resolution and preserve
+  imported Item IDs and entries through the final save (B110).
+22. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-22. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+23. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 ## Future module-policy enhancements

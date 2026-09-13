@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.15.17
+
+- Initialize the world Items collection before converting Macros or chat, so compendium links
+  can look up and import Items without an `AttributeError` (B110). Keep the same collection until
+  the final save so link-imported Items are not discarded.
+- Preserve the original Item ID when routing imported compendium links through the Roll20-link
+  resolver, avoiding double normalization and ensuring native UUIDs point to saved Items.
+- Add world-mode coverage for HTML and Markdown Macro links, repeated/nested Macro entries,
+  chat enabled/disabled, imported Item persistence, and existing world/module Item links.
+
+The six world-startup regressions fail on released v1.15.16 with the reported missing-Items
+error and pass with the fix. Complete shipping Python 3.8 suite: **1,023 passed**.
+Full Out of the Abyss conversion acceptance remains downstream; no Opus review is claimed.
+
 ## v1.15.16
 
 - Preserve a compendium spell's generated supply pool when the source has no casting-use quota

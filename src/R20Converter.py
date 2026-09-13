@@ -556,14 +556,14 @@ class R20Converter(object):
             self.settings = SettingsDB(self).save()
             self.users = Users(self).save()
             self.folders = Folders(self)
+            # Items DB needs to happen as two separate calls due to cross links
+            self.items = Items(self)
+            self.items.createEntities()
             self.macros = Macros(self).save()
             if self.getArgument("dont_convert_chat", False):
                 self.chat = EmptyDB(self, "chat").save()
             else:
                 self.chat = ChatLog(self).save()
-            # Items DB needs to happen as two separate calls due to cross links
-            self.items = Items(self)
-            self.items.createEntities()
             self.journal = Journal(self).save()
             self.actors = Actors(self).save()
             self.scenes = Scenes(self).save()

@@ -4,11 +4,15 @@ Previously the log existed only on stdout (CLI) or in the Electron window (GUI),
 so a finished world carried no record of what was skipped during its conversion.
 """
 
+import json
 import os
+from types import SimpleNamespace
 
 import pytest
 
+import R20Converter as converter_module
 from R20Converter import R20Converter
+from entities.base import Entity
 
 
 class _Args(object):
@@ -123,3 +127,138 @@ class TestConversionLog(object):
         c.logInfo("one")
         c.logInfo("two")
         assert collector.lines == ["one", "two"]
+
+
+class TestWorldInitialization(object):
+    @pytest.mark.parametrize("skip_chat", [False, True])
+    def test_items_exist_before_macro_and_chat_links(self, tmp_path, monkeypatch, skip_chat):
+        converter = _converter(tmp_path, create=False)
+        converter.campaign = {"campaign_title": "Linked World"}
+        converter.getArgument = lambda name, default=None: skip_chat if name == "dont_convert_chat" else default
+        converter.logAssetIdentitySummary = lambda: None
+        item_databases = []
+
+        class Database(object):
+            def __init__(self, owner, *args):
+                self.entities = []
+                self.saved = None
+
+            @staticmethod
+            def setRelease(release):
+                pass
+
+            def save(self):
+                self.saved = list(self.entities)
+                return self
+
+        class ItemDatabase(Database):
+            def __init__(self, owner):
+                super(ItemDatabase, self).__init__(owner)
+                item_databases.append(self)
+
+            def createEntities(self):
+                self.entities.append("source-item")
+
+        def macros(owner):
+            assert owner.items.entities == ["source-item"]
+            owner.items.entities.append("macro-imported-item")
+            return Database(owner)
+
+        def chat(owner):
+            assert owner.items.entities == ["source-item", "macro-imported-item"]
+            owner.items.entities.append("chat-imported-item")
+            return Database(owner)
+
+        for name in ("SettingsDB", "Users", "Folders", "Journal", "Actors", "Scenes",
+                     "Combat", "Playlists", "Tables", "EmptyDB", "World"):
+            monkeypatch.setattr(converter_module, name, Database)
+        monkeypatch.setattr(converter_module, "Items", ItemDatabase)
+        monkeypatch.setattr(converter_module, "Macros", macros)
+        monkeypatch.setattr(converter_module, "ChatLog", chat)
+
+        try:
+            converter.convert()
+        finally:
+            converter.closeLog()
+
+        assert item_databases == [converter.items]
+        expected = ["source-item", "macro-imported-item"]
+        if not skip_chat:
+            expected.append("chat-imported-item")
+        assert converter.items.saved == expected
+        assert converter.cards is converter.items
+
+    @pytest.mark.parametrize("syntax", ["html", "markdown"])
+    @pytest.mark.parametrize("skip_chat", [False, True])
+    def test_world_macro_compendium_links_resolve_to_one_saved_item(
+            self, tmp_path, monkeypatch, syntax, skip_chat):
+        data_root = tmp_path / "foundry" / "Data"
+        system_root = data_root / "systems" / "dnd5e"
+        system_root.mkdir(parents=True)
+        (system_root / "system.json").write_text(json.dumps({
+            "id": "dnd5e", "version": "5.3.3", "packs": [],
+        }), encoding="utf-8")
+        url = "https://roll20.net/compendium/dnd5e/Spells:Light"
+        action = '<a href="%s">Light</a>' % url if syntax == "html" else "[Light](%s)" % url
+        campaign = {
+            "campaign_title": "World Macro Links", "release": "legacy",
+            "playerspecificpages": False, "playerpageid": None, "turnorder": [],
+            "players": [{"id": "-player", "d20userid": "1", "displayname": "Gamemaster",
+                         "color": "#000000", "macrobar": []}],
+            "journalfolder": [], "handouts": [], "characters": [], "pages": [],
+            "decks": [], "rollabletables": [], "tables": [], "jukebox": [], "jukeboxfolder": [],
+            "macros": [
+                {"id": "-macro-first", "name": "First", "player_id": "-player",
+                 "visibleto": "all", "action": action},
+                [{"id": "-macro-second", "name": "Second", "player_id": "-player",
+                  "visibleto": "", "action": action}],
+            ],
+            "chat_archive": [{"-message": {"type": "general", "content": "Kept message",
+                                          "who": "Gamemaster", "playerid": "-player", ".priority": 123}}],
+        }
+        source = tmp_path / "campaign.json"
+        source.write_text(json.dumps(campaign), encoding="utf-8")
+        output = tmp_path / "world"
+        donor = {
+            "_id": "donorLight000001", "name": "Light", "type": "spell",
+            "img": "icons/svg/light.svg", "system": {"description": {"value": "Linked spell"}},
+            "effects": [],
+        }
+        pack_root = system_root / "packs"
+        pack_root.mkdir()
+        pack_name = converter_module.foundry.DND5E_SRD_PACKS["2014"]["spells"]
+        (pack_root / (pack_name + ".db")).write_text(json.dumps(donor) + "\n", encoding="utf-8")
+        monkeypatch.setattr(converter_module.utils, "getFVTTDataPath",
+                            lambda: pytest.fail("World fixture must not discover machine-wide Foundry data"))
+        converter = R20Converter(SimpleNamespace(
+            path=str(output), zip_file=str(source), json=True, srd_edition="2014",
+            fvtt_data_path=str(data_root.parent), dont_convert_chat=skip_chat), _Collector())
+        assert converter.fvtt_path == str(data_root.parent)
+
+        try:
+            converter.convert()
+        finally:
+            converter.closeLog()
+
+        def records(filename):
+            return [json.loads(line) for line in (output / "data" / filename).read_text(
+                encoding="utf-8").splitlines() if line]
+
+        items = records("items.db")
+        assert len(items) == 1
+        assert items[0]["name"] == "Light"
+        assert items[0]["system"]["description"]["value"] == "Linked spell"
+        macros = records("macros.db")
+        assert len(macros) == 2
+        assert {macro["command"] for macro in macros} == {"@UUID[Item.%s]{Light}" % items[0]["_id"]}
+        assert {macro["_id"] for macro in macros} == {
+            Entity.normalizeID("-macro-first"), Entity.normalizeID("-macro-second")}
+        folders = records("folders.db")
+        assert any(folder["_id"] == items[0]["folder"] and folder["type"] == "Item" for folder in folders)
+        if skip_chat:
+            assert not (output / "data/messages.db").exists()
+        else:
+            messages = records("messages.db")
+            assert len(messages) == 1
+            assert messages[0]["content"] == "Kept message"
+        assert (output / "world.json").is_file()
