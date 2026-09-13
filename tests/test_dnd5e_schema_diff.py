@@ -10,6 +10,7 @@ something outside it. Adding a type here is cheap; the point is that the check
 is mechanical rather than a reviewer noticing.
 """
 
+import copy
 import json
 
 import pytest
@@ -349,6 +350,17 @@ class TestSpellSlotShape(object):
         assert all(spells["spell%d" % level]["override"] is None
                    for level in range(1, 4))
 
+    @pytest.mark.parametrize("export_as_module", [False, True])
+    def test_explicit_short_rest_slots_replace_conflicting_scalar_progression(self, export_as_module):
+        traits = {"t1": {"name": "Spellcasting", "description": (
+            "The caster is a 5th-level spellcaster. It has two 2nd-level spell slots, "
+            "which it regains after finishing a short or long rest.")}}
+        actor = SlotActor(attributes=_slots(l1=(4, 4), l2=(3, 3), l3=(2, 2)),
+                          traits=traits, export_as_module=export_as_module)
+        spells = actor.createActorSpells()
+        assert all(spells["spell%d" % level] == {"value": 0, "override": 0}
+                   for level in range(1, 10))
+
     def test_remaining_above_capacity_is_clamped_and_reported(self):
         actor = SlotActor(attributes=_slots(l3=(2, 4)))
         spells = actor.createActorSpells()
@@ -378,6 +390,142 @@ class TestSpellSlotShape(object):
         spells = SlotActor(npc=False, attributes=_slots(l3=(4, 2))).createActorSpells()
         assert spells["spell3"]["override"] is None
         assert spells["spell3"]["value"] == 2
+
+
+class TestNPCSharedSpellSlots(object):
+    def fixture(self, subject="The caster"):
+        description = ("%s has two 2nd-level spell slots, which it regains after finishing "
+                       "a short or long rest. Spells: %s." %
+                       (subject, ", ".join("Shared Spell %d" % index for index in range(6))))
+        actor = SlotActor(traits={"trait": {"name": "Spellcasting", "description": description}})
+        items = [{"_id": "sharedpool000001", "type": "feat", "name": "Spellcasting", "system": {"uses": {}}}]
+        for index in range(6):
+            items.append({"_id": "spell%011d" % index, "type": "spell", "name": "Shared Spell %d" % index,
+                          "system": {"level": 1 if index < 3 else 2, "method": "spell", "prepared": 1,
+                                     "uses": {}, "activities": {
+                                         "cast": {"type": "utility", "consumption": {"spellSlot": True, "targets": []}},
+                                         "followup": {"type": "utility", "consumption": {"spellSlot": False, "targets": []}},
+                                     }}})
+        items.extend([
+            {"_id": "cantrip000000001", "type": "spell", "name": "Minor Spark",
+             "system": {"level": 0, "method": "atwill", "activities": {}}},
+            {"_id": "dailyspell000001", "type": "spell", "name": "Daily Gift",
+             "system": {"level": 1, "method": "innate", "uses": {"max": "1", "spent": 0},
+                        "activities": {"cast": {"consumption": {"spellSlot": False,
+                            "targets": [{"type": "itemUses", "target": "", "value": "1"}]}}}}},
+            {"_id": "resource00000001", "type": "feat", "name": "Other Resource",
+             "system": {"uses": {"max": "3", "spent": 1, "recovery": []}}},
+        ])
+        return actor, items
+
+    @pytest.mark.parametrize("subject", ["An unnamed caster", "A renamed traveller", "Another source creature"])
+    def test_all_listed_spells_share_source_pool_without_identity_exceptions(self, subject):
+        actor, items = self.fixture(subject)
+        untouched = copy.deepcopy(items[7:])
+        actor.applyNPCSharedSpellSlots(items)
+        assert items[0]["system"]["uses"] == {"spent": 0, "max": "2",
+            "recovery": [{"period": "sr", "type": "recoverAll"}]}
+        for item in items[1:7]:
+            assert item["system"]["method"] == "innate"
+            assert item["flags"]["dnd5e"]["spellLevel"] == {"value": 2, "base": item["system"]["level"]}
+            assert item["system"]["activities"]["cast"]["consumption"] == {
+                "spellSlot": False, "targets": [{"type": "itemUses", "target": items[0]["_id"], "value": "1",
+                                                "scaling": {"mode": "", "formula": ""}}]}
+            assert item["system"]["activities"]["followup"]["consumption"] == {"spellSlot": False, "targets": []}
+        assert items[7:] == untouched
+
+    @pytest.mark.parametrize("description", [
+        "It has two spell slots, which it regains after a short rest.",
+        "It has 2nd-level spell slots, which it regains after a short rest.",
+        "It has two 2nd-level spell slots and has three 3rd-level spell slots, which it regains after a short rest.",
+        "It has two 2nd-level spell slots. A different power recharges on a short rest.",
+        "It has two 2nd-level spell slots. It regains hit points after a short rest.",
+    ])
+    def test_incomplete_or_ambiguous_shared_contract_fails(self, description):
+        actor = SlotActor(traits={"trait": {"name": "Spellcasting", "description": description}})
+        with pytest.raises(ValueError, match="Ambiguous shared spell slots"):
+            actor.createActorSpells()
+
+    def test_html_numeric_count_and_short_rest_are_supported(self):
+        actor = SlotActor(traits={"trait": {"name": "Pact Magic", "desc":
+            "<p>It has <strong>3</strong> 4th-level spell slots, which it regains after a short rest.</p>"}})
+        contract = actor.getNPCSharedSpellSlots()
+        assert (contract["count"], contract["level"], contract["period"]) == (3, 4, "sr")
+
+    def test_multiple_shared_traits_fail(self):
+        actor, items = self.fixture()
+        actor._traits["second"] = copy.deepcopy(actor._traits["trait"])
+        with pytest.raises(ValueError, match="Multiple NPC shared"):
+            actor.createActorSpells()
+
+    @pytest.mark.parametrize("missing", [True, False])
+    def test_missing_or_duplicate_pool_feature_fails(self, missing):
+        actor, items = self.fixture()
+        if missing:
+            items.pop(0)
+        else:
+            items.append(copy.deepcopy(items[0]))
+        with pytest.raises(ValueError, match="require one source feature"):
+            actor.applyNPCSharedSpellSlots(items)
+
+    def test_unlisted_ordinary_spell_is_not_silently_rebound(self):
+        actor, items = self.fixture()
+        items[1]["name"] = "Unrelated Spell"
+        with pytest.raises(ValueError, match="absent from its shared-slot trait"):
+            actor.applyNPCSharedSpellSlots(items)
+
+    def test_spell_above_pool_level_fails(self):
+        actor, items = self.fixture()
+        items[1]["system"]["level"] = 3
+        with pytest.raises(ValueError, match="exceeds its shared slot level"):
+            actor.applyNPCSharedSpellSlots(items)
+
+    def test_duplicate_ordinary_spell_rows_are_ambiguous(self):
+        actor, items = self.fixture()
+        items.append(copy.deepcopy(items[1]))
+        with pytest.raises(ValueError, match="Duplicate ordinary spells"):
+            actor.applyNPCSharedSpellSlots(items)
+
+    def test_existing_feature_resource_is_not_overwritten(self):
+        actor, items = self.fixture()
+        items[0]["system"]["uses"] = {"max": "5", "spent": 2}
+        with pytest.raises(ValueError, match="already has another resource"):
+            actor.applyNPCSharedSpellSlots(items)
+        assert items[0]["system"]["uses"] == {"max": "5", "spent": 2}
+
+    def test_unresolved_primary_is_not_guessed(self):
+        actor, items = self.fixture()
+        items[1]["system"]["activities"]["followup"]["consumption"]["spellSlot"] = True
+        with pytest.raises(ValueError, match="Cannot select primary"):
+            actor.applyNPCSharedSpellSlots(items)
+
+    def test_forward_followup_does_not_receive_a_second_consumer(self):
+        actor, items = self.fixture()
+        followup = items[1]["system"]["activities"]["followup"]
+        followup.update({"type": "forward", "activity": {"id": "cast"}})
+        followup["consumption"]["spellSlot"] = True
+        actor.applyNPCSharedSpellSlots(items)
+        assert followup["consumption"] == {"spellSlot": False, "targets": []}
+        assert len(items[1]["system"]["activities"]["cast"]["consumption"]["targets"]) == 1
+
+    def test_forward_to_missing_cast_does_not_disambiguate(self):
+        actor, items = self.fixture()
+        followup = items[1]["system"]["activities"]["followup"]
+        followup.update({"type": "forward", "activity": {"id": "missing"}})
+        followup["consumption"]["spellSlot"] = True
+        with pytest.raises(ValueError, match="Cannot select primary"):
+            actor.applyNPCSharedSpellSlots(items)
+
+    def test_non_pact_npc_and_player_items_are_unchanged(self):
+        actor, items = self.fixture()
+        untouched = copy.deepcopy(items)
+        actor._npc = False
+        actor.applyNPCSharedSpellSlots(items)
+        assert items == untouched
+        actor._npc = True
+        actor._traits = {}
+        actor.applyNPCSharedSpellSlots(items)
+        assert items == untouched
 
 
 class TestNPCCasterLevel(object):

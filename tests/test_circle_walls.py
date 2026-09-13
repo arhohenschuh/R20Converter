@@ -135,3 +135,66 @@ def test_non_finite_circle_is_rejected():
     path["path"][1][1] = math.inf
     with pytest.raises(ValueError, match="non-finite geometry"):
         Scene.__new__(Scene).pathToPolygonList(path, 34, 34)
+
+
+def test_quadratic_tracks_the_curve_instead_of_its_control_point():
+    path = circle_path("generic-quadratic")
+    path["path"] = [["M", 0, 0], ["Q", 50, 100, 100, 0]]
+    polygon, path_type, width, height = Scene.__new__(Scene).pathToPolygonList(path, 100, 100)
+    assert path_type == PATH_TYPE.FREEHAND
+    assert polygon[0] == (0, 0) and polygon[-1] == (100, 0)
+    assert (50, 100) not in polygon
+    assert (50, 50) in polygon
+    assert all(y == pytest.approx(2 * (x / 100) * (1 - x / 100) * 100) for x, y in polygon)
+    assert len(polygon) > 3
+
+
+def test_open_cubic_is_not_closed_or_classified_as_a_circle():
+    path = circle_path("generic-cubic")
+    path["path"] = [["M", 0, 0], ["C", 25, 100, 75, 100, 100, 0]]
+    polygon, path_type, width, height = Scene.__new__(Scene).pathToPolygonList(path, 100, 100)
+    assert path_type == PATH_TYPE.FREEHAND
+    assert polygon[0] == (0, 0) and polygon[-1] == (100, 0)
+    assert len(polygon) > 5
+
+
+@pytest.mark.parametrize("scale", [1, 2, 50 / 8.75])
+def test_quadratic_flattening_has_bounded_output_pixel_error(scale):
+    scene = Scene.__new__(Scene)
+    scene._grid_multiplier = scale
+    path = circle_path()
+    path["path"] = [["M", 0, 0], ["Q", 50, 100, 100, 0]]
+    polygon = scene.pathToPolygonList(path, 100, 100)[0]
+    for sample in range(1001):
+        fraction = sample / 1000
+        point = (100 * fraction, 200 * fraction * (1 - fraction))
+        distances = []
+        for start, end in zip(polygon, polygon[1:]):
+            delta_x, delta_y = end[0] - start[0], end[1] - start[1]
+            projected = max(0, min(1, ((point[0] - start[0]) * delta_x + (point[1] - start[1]) * delta_y)
+                                    / (delta_x ** 2 + delta_y ** 2)))
+            distances.append(math.hypot(point[0] - start[0] - projected * delta_x,
+                                        point[1] - start[1] - projected * delta_y))
+        assert min(distances) * scale <= Scene.CURVE_TOLERANCE
+
+
+def test_chained_quadratic_then_cubic_uses_the_quadratic_endpoint():
+    path = circle_path()
+    path["path"] = [["M", 0, 0], ["Q", 50, 100, 100, 0], ["C", 125, -100, 175, -100, 200, 0]]
+    polygon = Scene.__new__(Scene).pathToPolygonList(path, 200, 100)[0]
+    assert (100, 0) in polygon
+    assert (150, -75) in polygon
+    assert polygon[-1] == (200, 0)
+
+
+@pytest.mark.parametrize("commands", [
+    [["Q", 50, 100, 100, 0]],
+    [["M", 0, 0], ["Q", 50, 100, 100]],
+    [["M", 0, 0], ["Q", 50, math.inf, 100, 0]],
+    [["M", 0, 0], ["C", 25, 100, 75, None, 100, 0]],
+])
+def test_malformed_curves_fail_instead_of_dropping_geometry(commands):
+    path = circle_path()
+    path["path"] = commands
+    with pytest.raises(ValueError, match="incomplete curve|non-finite geometry"):
+        Scene.__new__(Scene).pathToPolygonList(path, 100, 100)

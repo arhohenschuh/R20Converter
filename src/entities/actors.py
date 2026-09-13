@@ -2,6 +2,7 @@ from .base import DatabaseFile, Entity
 from .journal import Handout
 from .items import *
 from collections import OrderedDict
+from bs4 import BeautifulSoup
 import dnd5e
 import json
 import re
@@ -624,6 +625,7 @@ class Actor(Entity):
             self.addOrigins(owned_items, actor_data["details"])
             self.addTraits(owned_items)
             self.addSpells(owned_items)
+            self.applyNPCSharedSpellSlots(owned_items)
             # Add actions before inventory so attack items get added first
             self.addActions(owned_items)
             self.addInventory(owned_items)
@@ -1731,6 +1733,73 @@ class Actor(Entity):
                 return int(match.group(1))
         return 0
 
+    def getNPCSharedSpellSlots(self):
+        if not self.isNPC():
+            return None
+        counts = {word: index for index, word in enumerate(
+            ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"), 1)}
+        contracts = []
+        for trait in self.getRepeatingAttributes("npctrait").values():
+            name = str(self.getAttribute("name", "", from_dict=trait)[0]).strip()
+            if not re.search(r"spellcasting|pact magic", name, re.IGNORECASE):
+                continue
+            description = (self.getAttribute("description", "", from_dict=trait)[0]
+                           or self.getAttribute("desc", "", from_dict=trait)[0])
+            text = " ".join(BeautifulSoup(self._descriptionToString(description), "html.parser").get_text(" ").split())
+            if not re.search(r"\bspell slots?\b", text, re.IGNORECASE):
+                continue
+            if not re.search(r"\bshort(?:\s+or\s+(?:a\s+)?long)?\s+rest\b", text, re.IGNORECASE):
+                continue
+            matches = list(re.finditer(
+                r"\b(?:has|have)\s+(\d+|%s)\s+([1-9])(?:st|nd|rd|th)?[- ]level spell slots?\b"
+                % "|".join(counts), text, re.IGNORECASE))
+            recovery = re.match(
+                r"\s*,?\s*(?:which|that)\b[^.;!]*?\b(?:regains?|recovers?)\b"
+                r"[^.;!]*?\bshort(?:\s+or\s+(?:a\s+)?long)?\s+rest\b",
+                text[matches[0].end():] if len(matches) == 1 else "", re.IGNORECASE)
+            if len(matches) != 1 or not recovery:
+                raise ValueError("Ambiguous shared spell slots in NPC trait '%s'" % name)
+            count_text, level_text = matches[0].groups()
+            count = int(count_text) if count_text.isdigit() else counts[count_text.lower()]
+            if count < 1:
+                raise ValueError("Invalid shared spell slot count in NPC trait '%s'" % name)
+            contracts.append({"trait": name, "count": count, "level": int(level_text),
+                              "period": "sr", "text": text})
+        if len(contracts) > 1:
+            raise ValueError("Multiple NPC shared spell slot traits cannot be reconciled")
+        return contracts[0] if contracts else None
+
+    def applyNPCSharedSpellSlots(self, items):
+        contract = self.getNPCSharedSpellSlots()
+        if not contract:
+            return
+        pools = [item for item in items
+                 if item.get("type") == "feat" and item.get("name") == contract["trait"]]
+        if len(pools) != 1:
+            raise ValueError("Shared spell slots require one source feature '%s'" % contract["trait"])
+        pool = pools[0]
+        if (pool["system"].get("uses") or {}).get("max") not in (None, "", 0, "0"):
+            raise ValueError("Shared spell slot feature '%s' already has another resource" % contract["trait"])
+        source_text = self.normalizeSpellName(contract["text"])
+        spells = [item for item in items if item.get("type") == "spell"
+                  and item["system"].get("level", 0) > 0
+                  and item["system"].get("method", "spell") == "spell"]
+        if not spells:
+            raise ValueError("Shared spell slot trait '%s' has no ordinary leveled spells" % contract["trait"])
+        names = [self.normalizeSpellName(item["name"]) for item in spells]
+        if len(names) != len(set(names)):
+            raise ValueError("Duplicate ordinary spells make the shared-slot trait ambiguous")
+        for item in spells:
+            name = self.normalizeSpellName(item["name"])
+            if not re.search(r"\b%s\b" % re.escape(name), source_text):
+                raise ValueError("Ordinary spell '%s' is absent from its shared-slot trait" % item["name"])
+            if item["system"]["level"] > contract["level"]:
+                raise ValueError("Spell '%s' exceeds its shared slot level" % item["name"])
+        pool["system"]["uses"] = {"spent": 0, "max": str(contract["count"]),
+                                   "recovery": [{"period": contract["period"], "type": "recoverAll"}]}
+        for item in spells:
+            bindSharedSpellPool(item, pool["_id"], contract["level"])
+
     def createActorSpells(self):
         """Build ``system.spells``.
 
@@ -1751,10 +1820,14 @@ class Actor(Entity):
         """
         spells = OrderedDict()
         npc = self.isNPC()
+        shared_slots = self.getNPCSharedSpellSlots()
         module_source = self.getArgument("export_as_module", False)
         derived = dnd5e.spellSlots(self.getNPCCasterLevel()) \
             if npc and module_source else {}
         for level in range(1, 10):
+            if shared_slots:
+                spells["spell%d" % level] = {"value": 0, "override": 0}
+                continue
             # Both are NumberFields; the sheet stores them as strings, and
             # relying on Foundry to cast them is the habit ADR-008 exists to break.
             remaining = max(0, self.getAttributeInt("lvl%d_slots_expended" % level, 0))
@@ -1771,7 +1844,7 @@ class Actor(Entity):
                 "value": remaining,
                 "override": total if (npc and total) else None,
             }
-        spells["pact"] = {"value": 0, "override": None}
+        spells["pact"] = {"value": 0, "override": 0 if shared_slots else None}
         return spells
 
     def createCharacterResource(self, label, resource, from_dict=None):

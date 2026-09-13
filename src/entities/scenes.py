@@ -55,6 +55,7 @@ class Scene(Entity):
     PAD_X = 5
     PAD_Y = 5
     LEGACY_DOOR_COLOR = "#ff9900"
+    CURVE_TOLERANCE = 0.5
 
     token_ids = {}
     _auto_doors_warning_emitted = False
@@ -164,8 +165,15 @@ class Scene(Entity):
             safe_name = safe_name[0] + "_" + safe_name[2:]
         self.logInfo("Creating Scene : %s" % name)
         # Snapping increment gets set to 0 if grid is disabled
-        snapping_increment = safeCast(float, page["snapping_increment"], 0)
+        try:
+            snapping_increment = float(page["snapping_increment"])
+        except (TypeError, ValueError):
+            raise ValueError("Scene '%s' has an invalid snapping increment" % page["id"])
+        if not math.isfinite(snapping_increment) or snapping_increment < 0:
+            raise ValueError("Scene '%s' has an invalid snapping increment" % page["id"])
         orig_grid_size = 70 * (snapping_increment if snapping_increment else 1)
+        if not math.isfinite(orig_grid_size):
+            raise ValueError("Scene '%s' has an invalid snapping increment" % page["id"])
         # Page grid size is hardcoded to 70px in Roll20
         width = 70 * int(safeCast(float, page["width"], 1))
         height = 70 * int(safeCast(float, page["height"], 1))
@@ -177,11 +185,34 @@ class Scene(Entity):
         if grid_size < 50:
             grid_multiplier = 50.0 / orig_grid_size
             grid_size = 50
+        if not all(math.isfinite(value * grid_multiplier) for value in (width, height)):
+            raise ValueError("Scene '%s' snapping increment exceeds finite canvas bounds" % page["id"])
+        self._grid_multiplier = grid_multiplier
         grid_size = int(grid_size)
 
         padding = self.getArgument("scene_padding", 0.25)
         margin_left = math.ceil(width * grid_multiplier / grid_size * padding) * grid_size
         margin_top = math.ceil(height * grid_multiplier / grid_size * padding) * grid_size
+        scale_report = None
+        if grid_multiplier != 1:
+            output_width, output_height = int(width * grid_multiplier), int(height * grid_multiplier)
+            scale_report = {
+                "sourcePageId": page["id"], "sceneName": name,
+                "sourceWidth": width, "sourceHeight": height,
+                "snappingIncrement": snapping_increment, "originalGridPixels": orig_grid_size,
+                "multiplier": grid_multiplier, "outputWidth": output_width, "outputHeight": output_height,
+                "outputGridPixels": grid_size, "sourcePixelArea": width * height,
+                "outputPixelArea": output_width * output_height,
+                "sourceGridArea": width / orig_grid_size * height / orig_grid_size,
+                "outputGridArea": output_width / grid_size * output_height / grid_size,
+                "paddingPixels": {"x": margin_left, "y": margin_top},
+                "fineGridWarning": snapping_increment < 0.5,
+            }
+            message = "SCENE_SCALE " + json.dumps(scale_report, sort_keys=True, allow_nan=False)
+            if snapping_increment < 0.5:
+                self.logWarning(message)
+            else:
+                self.logInfo(message)
         grid_type = self.GRID_TYPES.get(page["grid_type"], -1)
         if grid_type == -1:
             self.logInfo("Unsupported grid type %s, disabling grid" % page["grid_type"])
@@ -567,6 +598,7 @@ class Scene(Entity):
                             "author": Entity.normalizeID(text["controlledby"]) or ""
                 }
                 drawing = self.createTextDrawing(drawing, text)
+                drawing["fontSize"] = text["font_size"] * grid_multiplier
                 drawings.append(drawing)
             elif path and layer != "walls":
                 tile_width = tile_width * path["scaleX"]
@@ -587,6 +619,7 @@ class Scene(Entity):
                             "author": Entity.normalizeID(path["controlledby"]) or ""
                 }
                 (drawing, drawing_width, drawing_height) = self.createPathDrawing(drawing, path)
+                drawing["strokeWidth"] *= grid_multiplier
                 # Jumpgate uses x,y instead of top/left and a 0,0 width/height, so we need to get the size from the points
                 tile_width = drawing_width * path["scaleX"]
                 tile_height = drawing_height * path["scaleY"]
@@ -840,7 +873,7 @@ class Scene(Entity):
                        "navName": name,
                        "ownership": {"default": 0},
                        "folder": Entity.normalizeID(folder),
-                       "flags": {},
+                       "flags": {"R20Converter": {"sceneScale": scale_report}} if scale_report else {},
                        "sort": sort,
                        "navOrder": page.get("placement", 0),
                        "navigation": not page["archived"],
@@ -1167,6 +1200,54 @@ class Scene(Entity):
                 and math.isfinite(point[1]) for point in points)
             and len(set((point[0], point[1]) for point in points)) == 1)
 
+    @staticmethod
+    def flattenBezier(controls, tolerance):
+        pending = [(controls, 0)]
+        points = []
+        while pending:
+            control_points, depth = pending.pop()
+            start, end = control_points[0], control_points[-1]
+            delta_x, delta_y = end[0] - start[0], end[1] - start[1]
+            length_squared = delta_x * delta_x + delta_y * delta_y
+            distances = []
+            for point in control_points[1:-1]:
+                fraction = max(0, min(1, ((point[0] - start[0]) * delta_x
+                                         + (point[1] - start[1]) * delta_y) / length_squared)) if length_squared else 0
+                distances.append(math.hypot(point[0] - start[0] - fraction * delta_x,
+                                            point[1] - start[1] - fraction * delta_y))
+            if max(distances) <= tolerance:
+                points.append(end)
+                continue
+            if depth >= 20 or len(points) + len(pending) >= 65536:
+                raise ValueError("Curve exceeds bounded flattening capacity")
+            levels = [control_points]
+            while len(levels[-1]) > 1:
+                levels.append([((first[0] + second[0]) / 2, (first[1] + second[1]) / 2)
+                               for first, second in zip(levels[-1], levels[-1][1:])])
+            pending.append(([level[-1] for level in reversed(levels)], depth + 1))
+            pending.append(([level[0] for level in levels], depth + 1))
+        return points
+
+    @staticmethod
+    def isLegacyEllipse(commands, width, height):
+        if width <= 0 or height <= 0:
+            return False
+        commands = [command for command in commands if command[0] != "Z"]
+        if len(commands) != 5 or commands[0][0] != "M" or any(command[0] != "C" for command in commands[1:]):
+            return False
+        radius_x, radius_y = width / 2, height / 2
+        factor = 4 / 3 * math.tan(math.pi / 8)
+        inset_x, inset_y = radius_x * (1 - factor), radius_y * (1 - factor)
+        expected = [[0, radius_y],
+                    [0, inset_y, inset_x, 0, radius_x, 0],
+                    [width - inset_x, 0, width, inset_y, width, radius_y],
+                    [width, height - inset_y, width - inset_x, height, radius_x, height],
+                    [inset_x, height, 0, height - inset_y, 0, radius_y]]
+        return all(len(command) == len(values) + 1 and all(
+            math.isclose(float(actual), value, rel_tol=1e-6, abs_tol=1e-6)
+            for actual, value in zip(command[1:], values))
+            for command, values in zip(commands, expected))
+
     def pathToPolygonList(self, path, width, height):
         polygon = []
         (w, h) = (width, height)
@@ -1241,41 +1322,34 @@ class Scene(Entity):
                     if point[1] is not None and point[2] is not None:
                         (w, h) = add_point(point[1], point[2], w, h)
                         current = (point[1], point[2])
-                elif point[0] == "Q": # Freehand
-                    if point[1] is not None and point[2] is not None and \
-                        point[3] is not None and point[4] is not None:
-                        (w, h) = add_point(point[1], point[2], w, h)
-                        (w, h) = add_point(point[3], point[4], w, h)
-                        path_type = PATH_TYPE.FREEHAND
-                elif point[0] == "C": # Circle
-                    if current is None or len(point) < 7 or any(
-                            value is None for value in point[1:7]):
-                        raise ValueError("Path '%s' has an incomplete cubic curve" %
+                elif point[0] in ("Q", "C"):
+                    required = 5 if point[0] == "Q" else 7
+                    if current is None or len(point) != required or any(
+                            value is None for value in point[1:]):
+                        raise ValueError("Path '%s' has an incomplete curve" %
                                          path.get("id", "unknown"))
-                    controls = [float(value) for value in point[1:7]]
-                    if not all(math.isfinite(value) for value in controls):
+                    values = [float(value) for value in point[1:]]
+                    scale = max(abs(float(path.get("scaleX", 1))), abs(float(path.get("scaleY", 1))))
+                    scale *= getattr(self, "_grid_multiplier", 1)
+                    if not all(math.isfinite(value) for value in values + [scale]):
                         raise ValueError("Path '%s' contains non-finite geometry" %
                                          path.get("id", "unknown"))
-                    x0, y0 = current
-                    x1, y1, x2, y2, x3, y3 = controls
-                    for step in range(1, 5):
-                        t = step / 4.0
-                        inverse = 1.0 - t
-                        x = (inverse ** 3 * x0
-                             + 3 * inverse ** 2 * t * x1
-                             + 3 * inverse * t ** 2 * x2
-                             + t ** 3 * x3)
-                        y = (inverse ** 3 * y0
-                             + 3 * inverse ** 2 * t * y1
-                             + 3 * inverse * t ** 2 * y2
-                             + t ** 3 * y3)
-                        (w, h) = add_point(x, y, w, h)
-                    current = (x3, y3)
-                    path_type = PATH_TYPE.CIRCLE
+                    controls = [current] + list(zip(values[::2], values[1::2]))
+                    for curve_x, curve_y in self.flattenBezier(controls, self.CURVE_TOLERANCE / (scale or 1)):
+                        (w, h) = add_point(curve_x, curve_y, w, h)
+                    current = controls[-1]
+                    path_type = PATH_TYPE.FREEHAND
                 elif point[0] == "Z": # End drawing (empty)
-                    pass
+                    if polygon and polygon[-1] != polygon[0]:
+                        (w, h) = add_point(polygon[0][0], polygon[0][1], w, h)
+                    current = polygon[0] if polygon else current
                 else:
                     self.logInfo("Unknown path type: %s" % str(point))
+            if any(point[0] == "C" for point in points) and polygon and polygon[0] == polygon[-1]:
+                if len(set(polygon)) < 3:
+                    raise ValueError("Path '%s' is a degenerate circle" % path.get("id", "unknown"))
+                if self.isLegacyEllipse(points, width, height):
+                    path_type = PATH_TYPE.CIRCLE
             if path_type == PATH_TYPE.POLYGON and len(points) == 5 and \
                 points[0][1] == 0 and points[0][2] == 0 and \
                 points[1][1] == width and points[1][2] == 0 and \
@@ -1349,7 +1423,8 @@ class Scene(Entity):
         (points, path_type, width, height) = self.pathToPolygonList(path, tile_width, tile_height)
         # v13 dropped the freehand shape type; a freehand path is a polygon
         # smoothed by a non-zero bezierFactor (ADR-002).
-        freehand = path_type == PATH_TYPE.FREEHAND
+        freehand = path_type == PATH_TYPE.FREEHAND and not any(
+            command[0] in ("Q", "C") for command in (path.get("path") or []))
         if path_type == PATH_TYPE.CIRCLE:
             drawing_type = Entity.SHAPE_ELLIPSE
             points = []

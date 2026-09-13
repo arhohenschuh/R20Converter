@@ -193,6 +193,54 @@ def _hasGeneratedSpellPool(system):
     return bool(producers and consumers - producers)
 
 
+def _selectPrimarySpellActivities(candidates, item_name):
+    canonical = [candidate for candidate in candidates
+                 if candidate[0] == "dnd5eactivity000"]
+    if canonical:
+        return canonical
+    slot_consumers = [candidate for candidate in candidates
+                      if candidate[1].get("consumption", {}).get("spellSlot") is True]
+    if len(slot_consumers) == 1:
+        return slot_consumers
+    direct_ids = {activity_id for activity_id, activity in slot_consumers
+                  if activity.get("type") not in ("transform", "forward")}
+    cast_activities = [candidate for candidate in slot_consumers
+                       if candidate[1].get("type") != "transform"
+                       and not (candidate[1].get("type") == "forward"
+                                and (candidate[1].get("activity") or {}).get("id") in direct_ids)]
+    if len(cast_activities) == 1:
+        return cast_activities
+    if (_alternativePlacementActivities(slot_consumers)
+        or _alternativeInitialSaveActivities(slot_consumers, item_name)):
+        return slot_consumers
+    return candidates if len(candidates) == 1 else []
+
+
+def bindSharedSpellPool(item, pool_id, spell_level):
+    system = item["system"]
+    activities = system.get("activities") or {}
+    selected = _selectPrimarySpellActivities(list(activities.items()), item["name"])
+    if not selected:
+        raise ValueError("Cannot select primary activities for shared-slot spell '%s'" % item["name"])
+    primary = {activity_id for activity_id, activity in selected}
+    for activity_id, activity in activities.items():
+        consumption = activity.setdefault("consumption", {})
+        consumption["spellSlot"] = False
+        if activity_id in primary:
+            targets = consumption.setdefault("targets", [])
+            if any(target.get("type") == dnd5e.CONSUMPTION_ITEM_USES
+                   and not target.get("target") and _positiveConsumptionTarget(target)
+                   for target in targets) and not _hasGeneratedSpellPool(system):
+                raise ValueError("Shared-slot spell '%s' has a conflicting item-use quota" % item["name"])
+            targets.append({"type": dnd5e.CONSUMPTION_ITEM_USES, "target": pool_id, "value": "1",
+                            "scaling": {"mode": "", "formula": ""}})
+    system["method"] = "innate"
+    system["prepared"] = 1
+    item.setdefault("flags", {}).setdefault("dnd5e", {})["spellLevel"] = {
+        "value": spell_level, "base": system["level"]}
+    _validateResourceContract("spell", item["name"], system)
+
+
 def _mergeSpellConsumption(system, custom_data, item_name="spell"):
     """Keep source casting resources while retaining compendium activities (B062)."""
     method = custom_data.get("method", "spell")
@@ -209,32 +257,14 @@ def _mergeSpellConsumption(system, custom_data, item_name="spell"):
         if self_targets:
             source_consumers.append((source.get("type"), self_targets))
 
-    def selectPrimary(candidates):
-        canonical = [candidate for candidate in candidates
-                     if candidate[0] == "dnd5eactivity000"]
-        if canonical:
-            return canonical
-        slot_consumers = [candidate for candidate in candidates
-                          if candidate[1].get("consumption", {}).get("spellSlot") is True]
-        if len(slot_consumers) == 1:
-            return slot_consumers
-        cast_activities = [candidate for candidate in slot_consumers
-                           if candidate[1].get("type") != "transform"]
-        if len(cast_activities) == 1:
-            return cast_activities
-        if (_alternativePlacementActivities(slot_consumers)
-            or _alternativeInitialSaveActivities(slot_consumers, item_name)):
-            return slot_consumers
-        return candidates if len(candidates) == 1 else []
-
     primary = set()
     for source_type, targets in source_consumers:
         available = [(activity_id, activity) for activity_id, activity in activities.items()
                      if activity_id not in primary]
-        candidates = selectPrimary([
-            candidate for candidate in available if candidate[1].get("type") == source_type])
+        candidates = _selectPrimarySpellActivities([
+            candidate for candidate in available if candidate[1].get("type") == source_type], item_name)
         if not candidates:
-            candidates = selectPrimary(available)
+            candidates = _selectPrimarySpellActivities(available, item_name)
         if not candidates:
             raise ValueError("Cannot select one primary donor activity for limited innate spell '%s'" %
                              item_name)

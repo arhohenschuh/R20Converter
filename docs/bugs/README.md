@@ -126,6 +126,7 @@ mechanically for the physical-item class of defect.
 | [B108](B108-limited-innate-blindness-deafness-primary-rejected.md) | High | Fixed (v1.15.16) | Explicit title-labelled initial-save choices with identical mechanics and distinct effects share the source casting quota; recurring saves remain free. |
 | [B109](B109-wildcard-module-assets-not-internalized.md) | High | Fixed (v1.15.16) | Complete module wildcard families are copied to isolated local patterns with all members, original bytes, random-image settings, and fail-closed checks preserved. |
 | [B110](B110-world-macros-resolve-compendium-links-before-items.md) | High | Fixed (v1.15.17) | World Items now exist before Macro/chat compendium-link resolution; imported Items survive saving and UUIDs retain the correct IDs. Source and packaged world regressions pass. |
+| [B111](B111-npc-pact-trait-loses-shared-short-rest-slots.md) | High | Open | Narrak's explicit two-slot, 2nd-level, short-rest pact trait loses to conflicting conventional 4/3/2 sheet fields; source-bound module restoration and native verification are recorded for owner triage. |
 
 ## Cross-cutting observations
 
@@ -136,7 +137,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B111**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B112**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent
