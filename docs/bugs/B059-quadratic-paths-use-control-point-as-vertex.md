@@ -1,10 +1,10 @@
 # B059 — Quadratic paths use their control point as an emitted wall vertex
 
 **Severity:** Minor for the measured campaign; potentially higher on freehand-heavy maps  
-**Status:** Open documented limitation  
+**Status:** Fixed in 1.16.1
 **Found:** 2026-08-14 during a first-release barrier audit
 
-## Defect
+## Original Defect
 
 Roll20 stores a quadratic Bézier as `Q(controlX, controlY, endX, endY)`. The curve normally
 passes toward the control point but does not pass through it. `Scene.pathToPolygonList()` appends
@@ -45,3 +45,17 @@ converter even when both readers are internally correct.
 
 This finding does not change legacy-door classification. Stroke color semantics remain governed
 by B058.
+
+## Generic Resolution
+
+Quadratic and cubic commands now use bounded adaptive subdivision at a declared tolerance of
+0.5 output pixels before integer rounding and optional user-requested wall simplification.
+The tolerance accounts for path scaling and automatic grid enlargement. Chained curves start at
+the preceding endpoint; open cubics are not forcibly closed or converted to ellipse drawings.
+Recognizable legacy ellipses retain their native shape classification.
+
+All Wall paths and simplification neighbors now use the same scale-and-rotation transform.
+Already-flattened drawings disable additional Bezier smoothing. Tests include non-collinear
+quadratics, open and chained cubics, malformed input, bounded approximation error, nonuniform
+scale, rotation, fine grids, and unchanged legacy circle controls. No module or path identity
+selects this behavior.

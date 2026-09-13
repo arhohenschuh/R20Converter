@@ -54,6 +54,23 @@ second campaign archive. Reference Journals, captured-page links, and bundled im
 to the same output. Omit `--export-as-module` for a world conversion. Do not combine enabled
 compendium conversion with `--disable-module-journal`.
 
+### Scene scale diagnostics
+
+The converter preserves Roll20's snapping increment and enlarges coordinates automatically when
+Foundry's minimum 50-pixel grid requires it. A zero increment retains disabled-grid behavior.
+Invalid, negative, or non-finite increments are rejected rather than silently reinterpreted.
+
+Every enlarged Scene retains `flags.R20Converter.sceneScale`, and the output's
+`conversion-report.json` lists the same records in `scaledScenes`. Records include the source
+page ID, source/output pixel dimensions, grid sizes, multiplier, pixel areas, grid-cell areas,
+and padding offsets. Positive increments below 0.5 also emit a `SCENE_SCALE` JSON warning in
+the conversion log. Page IDs identify evidence; they do not select conversion exceptions.
+
+Scale changes requested only for a particular page or module must be applied after conversion.
+Quadratic and cubic curves are flattened to a 0.5-output-pixel tolerance before integer
+coordinate rounding and any explicitly requested wall simplification. Their drawings are not
+smoothed a second time.
+
 Finally, here's a more complex command which uses many of the available options
 
 ```

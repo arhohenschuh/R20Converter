@@ -1,9 +1,13 @@
 # B056 — asset extension is taken from the URL, so Foundry will not render the file
 
-**Status:** partially fixed in v1.7.7 (`downloadResource`); **completed in v1.8.1** (`copyZipFile`)
+**Status:** Fixed in v1.9.0; v1.7.7 covered `downloadResource` only
 **Severity:** high — the asset converts, is written to disk, and is silently never drawn
 **Component:** `src/entities/base.py` → `Entity.downloadResource` **and** `Entity.copyZipFile`
 **Found:** 7 Aug 2026, chasing a map that "did not import" on *Wardens of the North*
+
+Current byte-aware asset naming and deduplication are documented in
+[B097](B097-dedup-assets-keys-by-url-not-content.md). The measurements below are historical
+evidence for B056, not a current census of installed worlds or published modules.
 
 ## Symptom
 
@@ -38,7 +42,7 @@ apng, avif, bmp, gif, jpeg, jpg, png, svg, tiff, webp
 `.jfif` is not in that list. It is an ordinary JPEG container, Roll20 serves it happily, and
 Foundry drops it without a word.
 
-## Measured
+## Historical Measurements
 
 Across the 11 archived exports:
 
@@ -79,7 +83,7 @@ Browsers sniff content and would still draw it, but the name would be a lie. Any
 repairing existing worlds must read the magic bytes per file rather than trust either the
 extension or the URL.
 
-## Fix
+## Initial Fix (1.7.7)
 
 The derivation moves into `Entity.assetExtension`, which keeps only the leading alphanumeric
 run of the extension — dropping `?…` and `&…` alike — and translates the aliases Roll20
@@ -100,11 +104,11 @@ resolved — the one thing nobody asked was whether the client could actually dr
 renderability check on asset extensions belongs in Gate A; G09 proves a reference resolves, not
 that it displays.
 
-Only newly converted worlds benefit. Existing worlds need the files renamed by content and
-their documents rewritten; for Wardens that is 2 files, and Storm/Curse of Strahd carry none
-of the 52 `.svg&cb=5` (they never reached the converted worlds, which is a separate question).
+New world and module conversions receive the fix. Existing outputs require content-aware
+renaming and reference updates, or reconversion. Corrections specific to an existing output
+belong to its post-conversion workflow; the original two-world sample is not a fleet-wide scope.
 
-## The fix was half a fix (found 14 Aug 2026, shipped in v1.8.1)
+## ZIP Path Completion (1.9.0)
 
 `assetExtension` was wired into `downloadResource` only. That is the path taken when an asset
 is **missing** from the export ZIP. Every asset that is **present** — the overwhelmingly common
@@ -128,8 +132,8 @@ silent non-render into a hard `Cannot find file … in Zip` miss.
 `TestAssetsCopiedOutOfTheZip` — proved able to fail against the pre-fix derivation before
 being trusted.
 
-**Gate debt this exposes, and which is still open.** Gate A's `qa-gate.mjs` lists `jfif` in its
-`ASSET_PATH` regex as an *accepted* asset extension, so it cannot catch this class even now.
-The renderability check this record asked for in August was never added. Until it is, the only
-instrument is the offline ZIP scan and the exporter's new `renderable` flag.
+**Historical pipeline finding (14 August 2026).** At that time, Gate A's `qa-gate.mjs` listed
+`jfif` in `ASSET_PATH`, so that check did not reject the unrenderable extension. This was a
+pipeline-validation concern, separate from the converter fix. Its current status is owned by
+the pipeline and was not re-audited here; this historical observation does not reopen B056.
 

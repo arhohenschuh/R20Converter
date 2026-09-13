@@ -662,11 +662,8 @@ class Scene(Entity):
                 total_walls += len(polygon) - 1
                 for point_idx, point in enumerate(polygon):
                     # Convert x/y positions according to the scaling factor
-                    if path_type == PATH_TYPE.CIRCLE:
-                        point = self.transformPathPoint(
-                            point, path, drawing_width, drawing_height)
-                    else:
-                        point = (point[0] * path["scaleX"], point[1] * path["scaleY"])
+                    point = self.transformPathPoint(
+                        point, path, drawing_width, drawing_height)
                     if previous_point is None:
                         previous_point = point
                         previous_point_idx = point_idx
@@ -681,10 +678,12 @@ class Scene(Entity):
                         next_idx = point_idx + 1
                         # Don't skip if it's the last point of the polygon
                         if next_idx != len(polygon):
-                            next_point = polygon[next_idx]
+                            next_point = self.transformPathPoint(
+                                polygon[next_idx], path, drawing_width, drawing_height)
                             angles = []
                             for idx in range(previous_point_idx + 1, point_idx+1):
-                                old_point = (polygon[idx][0] * path["scaleX"], polygon[idx][1] * path["scaleY"])
+                                old_point = self.transformPathPoint(
+                                    polygon[idx], path, drawing_width, drawing_height)
                                 angles.append(self.getPointsAngle(previous_point, old_point, next_point))
                             if min(angles) >= min_angle:
                                 continue

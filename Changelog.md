@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.16.1
+
+- Preserve explicit NPC shared short-rest spell slots from source traits instead of conflicting
+  conventional slot fields (B111). Source-listed spells consume one shared feature resource at
+  the stated casting level; cantrips, independent resources, and free forward activities remain
+  unchanged. Ambiguous or incomplete contracts fail explicitly.
+- Flatten quadratic and cubic paths at a scale-aware tolerance instead of routing Walls through
+  control points (B059). Preserve open curves, recognize legacy ellipses structurally, and apply
+  source scale and rotation consistently to every Wall path and its simplification points.
+- Report automatic Scene enlargement with structured warnings, Scene metadata, and
+  `conversion-report.json` (B098). Reject invalid snapping increments and preserve a common
+  transform for backgrounds, Tiles, Tokens, Walls, lights, drawings, and padding.
+- Keep all fixes module agnostic. No module, NPC, page, or document identity selects a repair;
+  corrections specific to one export remain post-conversion.
+
 ## v1.16.0
 
 - Add **Compendium conversion**, disabled by default, with a conditional ZIP picker and archive

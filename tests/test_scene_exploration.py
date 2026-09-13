@@ -56,7 +56,7 @@ def light_graphic(**overrides):
 
 
 def make_scene(tmp_path, graphics=None, pins=None, journal=None, page_overrides=None, **arguments):
-    database = FakeDatabase(str(tmp_path), {"use_original_image_urls": True, **arguments})
+    database = FakeDatabase(str(tmp_path), {"use_original_image_urls": True, "maximum_wall_angle": 30, **arguments})
     database._converter = type("Converter", (), {
         "journal": journal,
         "name": "test-module",

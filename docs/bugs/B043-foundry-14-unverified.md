@@ -1,6 +1,6 @@
 # B043: Foundry 14 support — what is out of the box and what is not
 
-- **Status**: Partially addressed in 1.1.0; the pack format remains open
+- **Status**: Storage limitation resolved; a native-v14 target profile remains planned
 - **Severity**: Informational (output loads on Foundry 14)
 - **Found**: 2026-08-03, verifying 1.0.2 against the reporter's live install
 - **Component**: `src/foundry.py` (`MINIMUM_CORE_VERSION`, `VERIFIED_CORE_VERSION`,
@@ -49,22 +49,19 @@ claiming 14 makes it *skip* them — including the NeDB→LevelDB conversion the
 output depends on. A world declaring 14 while shipping NeDB files would open
 empty. The declaration is accurate, and it is load-bearing.
 
-## Still open: pack storage format
+## Storage Resolution
 
-The reference module ships its compendium packs as LevelDB directories; the
-converter writes NeDB `.db` files. Foundry converts them on import, which is the
-step the reporter described as "importing and getting autoconverted". Removing
-that step means writing LevelDB directly.
+The historical module-pack blocker was resolved by ADR-009 and the native LevelDB reader/writer.
+Current module output ships LevelDB directories, including recursive embedded-document
+relationships. B031 is also fully resolved; its old partial status must not be carried forward.
 
-That is the dependency ADR-003 rejected for the cx_Freeze build, and the same
-blocker that keeps B031 (*reading* LevelDB compendium packs) only partially
-fixed. One decision resolves both, and it needs an ADR rather than a patch —
-the question is whether a pure-Python LevelDB writer is acceptable where a
-native binding was not.
+World output deliberately retains the established NeDB migration path and core-13 document
+stamps. This is not an outstanding module-pack bug. Promoting a separate native-v14 target
+profile is a future feature governed by the roadmap's migration-parity gates, not a reason to
+change working storage declarations during this patch release.
 
 ## Residual risk
 
-Document *values* were compared against a module known to run on Foundry 14, so
-the content is evidenced. Whether any core document field changed shape between
-v13 and v14 in a way neither module exercises was not verified — the Foundry
-application source is not present on this machine, only its data directory.
+The historical document comparison above was not an exhaustive compatibility census. Current
+release acceptance must use the pinned installed Foundry and dnd5e runtime; passing a focused
+conversion does not establish full-campaign or every-version compatibility.

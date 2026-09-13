@@ -1,4 +1,25 @@
-# Bug annotations
+# Defect Register
+
+Use the [index](#index) for current implementation status, then open the linked record for
+the original reproduction, root cause, and resolution. Earlier B001-B026 findings remain in
+the [roadmap](../../ROADMAP.md); this directory continues that identifier sequence.
+
+## Scope And Status
+
+- **Fixed** means the generic converter behavior is corrected in the stated source version.
+  It does not imply that old converted outputs were repaired or that every downstream module
+  has completed acceptance. Release history is maintained in the [changelog](../../Changelog.md).
+- **Resolved** and **not a converter defect** distinguish completed infrastructure work from
+  findings attributed to old data, source exports, or post-conversion tools.
+- Reproduction inputs, affected populations, and runtime versions are historical evidence unless
+  a record explicitly identifies a newer measurement. Do not reuse a sample count as a fleet census.
+- Fixes follow the [module-agnostic boundary](../../.github/copilot-instructions.md): source
+  structure and rules control conversion, never a module name, path, hash, or document identity.
+  A correction needed only for one particular output belongs to its post-conversion workflow.
+- A real module can supply a regression fixture, but equivalent renamed input and an unaffected
+  control are required to establish a reusable converter rule.
+
+## Historical Audit Context
 
 Findings from the 2026-08-03 dnd5e-output and codebase audit, numbered
 continuing the **B0xx** sequence from `ROADMAP.md` (B001–B026, all fixed).
@@ -7,8 +28,8 @@ the actual system source, per the ADR-008 discipline), the user-visible impact,
 and a suggested fix.
 
 **B027–B035 were fixed in 1.0.1, B037–B038 in 1.0.2, and B029, B030, B036 and
-B039–B042 in 1.1.0** (F027–F042 in `ROADMAP.md`). **B031 is only partially
-fixed** — see its entry — and **B043 is an open documented limitation.** Every
+B039–B042 in 1.1.0** (F027–F042 in `ROADMAP.md`). **B031 is fully fixed** by the
+native LevelDB reader, and **B043's module-pack storage limitation is resolved.** Every
 bug found in the 2026-08-03 audit is now either fixed or explained.
 
 **B044–B046 were found on 2026-08-04**, outside that audit, starting from a live
@@ -58,7 +79,7 @@ mechanically for the physical-item class of defect.
 | [B040](B040-backpack-type-and-capacity.md) | Minor | Fixed (F040) | `"backpack"` type triggers dnd5e's source migration (`persistSourceMigration`) and the 1.5.6 capacity shape is dropped (latent — path currently unreachable). |
 | [B041](B041-npc-creature-type-not-split.md) | Minor | Fixed (F041) | `details.type.value` stores "humanoid (goblinoid)" whole instead of value + subtype; swarms unhandled. |
 | [B042](B042-short-hex-color-expansion.md) | Minor | Fixed (F042) | 3-digit hex colors expand ×16 instead of ×17 (`#fff` → `#f0f0f0`). |
-| [B043](B043-foundry-14-unverified.md) | Info | Partial | `compatibility.verified` is now 14, matching the reference module and backed by a document-level comparison against it. `coreVersion` stays 13 deliberately — claiming 14 would make Foundry skip the NeDB→LevelDB migration the output depends on. Writing LevelDB packs directly is still open. |
+| [B043](B043-foundry-14-unverified.md) | Info | Resolved (storage) | Module packs already use native LevelDB. World NeDB/core-13 declarations remain intentional; a separate native-v14 profile is roadmap work. |
 | [B044](B044-senses-not-populated-and-legacy-path.md) | Major | Fixed (F044, F047) | Senses now emit the dnd5e 5.3 `senses.ranges.*` mapping instead of the flat pre-5.3 keys (394/394 verified), and NPC parsing is unaffected (215/371). Player-character darkvision is derived from a hand-verified race-name table (F047), not a compendium lookup (ADR-007 already rejected that) and not the token's night-vision radius (F044's first attempt, measured unsound the same day). |
 | [B045](B045-zero-sight-angle-blinds-token.md) | Critical | Fixed (F045) | `sightAngle`/`lightAngle` returned **0** for Roll20's "no field-of-vision limit", but Foundry reads `sight.angle: 0` as a **zero-degree cone** (schema default 360). The token was blind whatever its senses said. 394 of 394 prototype tokens affected in the reference world. |
 | [B046](B046-passive-perception-and-list-mutation.md) | Minor | Fixed (F046) | NPC `senses.special` kept `passive Perception NN`: the guard compared case-sensitively against Roll20's capitalised text, and the loop called `pop(i)` while enumerating, skipping the following entry. Found by a B044 regression test, not by reading. |
@@ -69,12 +90,12 @@ mechanically for the physical-item class of defect.
 | [B051](B051-properties-boolean-map-breaks-migration.md) | High | Not a defect in 1.7.3 | `system.properties` as a boolean map fails item validation. Legacy data in packs built by older converters; current output is correct. |
 | [B052](B052-line-separator-breaks-nedb-world.md) | Critical (where it occurs) | Not a converter defect | A raw U+2028 makes a NeDB world unloadable. Traced to a post-conversion repair tool — the converter's `json.dumps` escapes it. Gated by the pipeline suite (G19). |
 | [B053](B053-pdf-in-journal-shifts-zip-paths.md) | High | Fixed | Roll20 allows PDFs in the journal tree; `addToFolder` skipped them without advancing its index, so every later sibling was numbered one below the zip. Cost 116 assets on *Dragoncoast Danger* and was misattributed to the exporter. The root cause behind B049. **Blast radius initially understated:** the first sweep scored only journal *folders* and cleared *Storm over Savage Frontier*, whose handout directories were 397/448 correct. |
-| [B054](B054-ac-bonus-overwrites-base-armor-value.md) | High | Fixed | Roll20 emits `AC: 15` and `AC +2` as separate `itemmodifiers` entries; `addInventoryItem` parses them into a flat dict, so the bonus **overwrites the base** and a Half Plate +2 converts with `armor.value = 2`. Invisible until the armour is equipped. Also turns rings/cloaks granting +1 AC into `clothing` items that grant nothing. |
-| [B055](B055-item-folder-numbering-ignores-siblings.md) | High | Fixed | `Items.addToFolder` advanced its index only for sub-folders — the handout/character branches sat behind `elif is_items_folder`, and there was no `pdf` branch at all. Storm derived `029 - Magic Items` against a real `074`; Wardens `005` against `083`. Third instance of a fallback hiding its own cause: the 1.7.4 manifest lookup resolved the assets by URL, so no shipped world is damaged. |
-| [B056](B056-asset-extension-not-renderable.md) | High | Fixed | The stored extension came from the Roll20 URL, not the content. A cache-buster after `&` survived (`….svg&cb=5`), and `.jfif` is absent from Foundry's `IMAGE_FILE_EXTENSIONS`, so the *Lakeside* map converted to the correct path and was never drawn. Every existing check passed — the file existed, was non-empty and resolved; nothing asked whether the client could render it. Re-measured at **139 members across 5 campaigns**, and the 1.7.7 fix reached only `downloadResource`; `copyZipFile`, the path every bundled asset takes, was completed in 1.9.0. |
-| [B057](B057-walls-do-not-restrict-movement.md) | High | Fixed | `move` came from Roll20's page-level `lightrestrictmove`, which is `true` on 52 pages, `null` on 616, and **never `false`** — an "off" state indistinguishable from "never set", on a legacy field Jumpgate stopped maintaining. **136,884 of 248,169 wall segments (55%)** converted with `move: 0`: purple in Foundry, and tokens walk through them. Nothing in Gate A or Gate B reads `move`, so 21 conversions shipped this way. |
+| [B054](B054-ac-bonus-overwrites-base-armor-value.md) | High | Fixed (v1.7.5) | Roll20 emits `AC: 15` and `AC +2` as separate `itemmodifiers` entries; `addInventoryItem` parses them into a flat dict, so the bonus **overwrites the base** and a Half Plate +2 converts with `armor.value = 2`. Invisible until the armour is equipped. Also turns rings/cloaks granting +1 AC into `clothing` items that grant nothing. |
+| [B055](B055-item-folder-numbering-ignores-siblings.md) | High | Fixed (v1.7.6) | `Items.addToFolder` advanced its index only for sub-folders — the handout/character branches sat behind `elif is_items_folder`, and there was no `pdf` branch at all. Storm derived `029 - Magic Items` against a real `074`; Wardens `005` against `083`. Third instance of a fallback hiding its own cause: the 1.7.4 manifest lookup resolved the assets by URL, so no shipped world is damaged. |
+| [B056](B056-asset-extension-not-renderable.md) | High | Fixed (v1.9.0) | The stored extension came from the Roll20 URL, not the content. A cache-buster after `&` survived (`….svg&cb=5`), and `.jfif` is absent from Foundry's `IMAGE_FILE_EXTENSIONS`, so the *Lakeside* map converted to the correct path and was never drawn. Every existing check passed — the file existed, was non-empty and resolved; nothing asked whether the client could render it. Re-measured at **139 members across 5 campaigns**, and the 1.7.7 fix reached only `downloadResource`; `copyZipFile`, the path every bundled asset takes, was completed in 1.9.0. |
+| [B057](B057-walls-do-not-restrict-movement.md) | High | Fixed (v1.9.0) | `move` came from Roll20's page-level `lightrestrictmove`, which is `true` on 52 pages, `null` on 616, and **never `false`** — an "off" state indistinguishable from "never set", on a legacy field Jumpgate stopped maintaining. **136,884 of 248,169 wall segments (55%)** converted with `move: 0`: purple in Foundry, and tokens walk through them. Nothing in Gate A or Gate B reads `move`, so 21 conversions shipped this way. |
 | [B058](B058-legacy-dl-doors-become-walls.md) | High | Fixed (v1.10.1; v1.10.0 superseded) | Legacy DL doors are wall-layer paths distinguished by colour. The GUI enabled detection while the CLI disabled it, so doors became walls. The first fix then ranked colours by frequency and swept rank 3+ into secret doors; immutable controls proved it could invert blue walls/orange doors and turn `transparent` into secrets. The hash-pinned official baseline is **155 of 314 walled pages** and 3,929 minority segments. v1.10.1 normalizes colours, infers only canonical orange ordinary doors on non-native pages, never infers secrets, reports native-page residue, refuses unknown palettes, and asserts post-cleanup conservation. Existing world repair remains separate. |
-| [B059](B059-quadratic-paths-use-control-point-as-vertex.md) | Minor | Open documented limitation | Quadratic Bézier control points are emitted as wall vertices rather than used to flatten the curve, so one `Q` attempts two straight Walls through an off-curve point and source/converter segment units diverge. |
+| [B059](B059-quadratic-paths-use-control-point-as-vertex.md) | Minor | Fixed (v1.16.1) | Quadratic/cubic paths are flattened at a scale-aware tolerance; open curves stay open, and all Wall paths honor source rotation and scale. |
 | [B060](B060-scenes-migrate-with-exploration-disabled.md) | High | Fixed (v1.11.1) | Scenes emitted removed `fog.exploration`, which Foundry 14 migrated to `fog.mode: 0` (None); Token Vision was also conditional on legacy lighting flags. Current output defaults every Scene to Token Vision plus Individual exploration. |
 | [B061](B061-token-name-display-varies-by-roll20-flags.md) | Minor | Fixed (v1.11.2) | Actor prototype and placed Token names inherited inconsistent Roll20 visibility flags. Both now serialize Foundry's Always for Owner mode (`displayName: 40`). |
 | [B062](B062-compendium-overwrite-discards-spell-state.md) | High | Fixed (v1.11.2) | `--no-compendium-overwrite` replaced source spell method, preparation, uses, and consumption with compendium defaults, making innate/at-will/ritual spells demand slots or lose availability. |
@@ -113,7 +134,7 @@ mechanically for the physical-item class of defect.
 | [B095](B095-same-template-placement-alternatives-rejected.md) | High | Fixed (v1.15.7) | Same-template placement choices now remain valid when their explicit names and complete template geometry are distinct. |
 | [B096](B096-grouped-orange-geometry-inferred-as-doors.md) | High | Fixed (v1.15.8) | Automatic canonical-orange inference now retains grouped moving-wall assemblies as walls while explicit color overrides remain authoritative. |
 | [B097](B097-dedup-assets-keys-by-url-not-content.md) | Major | Fixed (v1.15.9) | Byte-aware placement deduplicates equal bodies across URLs and corrects stored image extensions from signatures without transcoding. |
-| [B098](B098-fine-roll20-grid-expands-foundry-canvas.md) | Moderate | Open request | Sub-0.5 Roll20 snapping automatically expands all Scene coordinates but emits no scale telemetry for RC review. |
+| [B098](B098-fine-roll20-grid-expands-foundry-canvas.md) | Moderate | Fixed (v1.16.1) | Automatic Scene scaling now emits structured warnings, metadata, and a conversion report; invalid snapping is rejected and targeted overrides remain post-conversion. |
 | [B099](B099-create-named-placement-alternative-rejected.md) | High | Fixed (v1.15.10) | Limited innate Wall of Force preserves its complete Place Panels and Create Dome/Globe alternatives on one use pool. |
 | [B100](B100-npc-actions-collide-with-class-features.md) | High | Fixed (v1.15.9) | NPC components remain source-authored instead of being replaced by same-name class features; PC enrichment is unchanged. |
 | [B101](B101-deduplicated-scene-thumbnail-overwrites-source.md) | Critical | Fixed (v1.15.10) | Scene thumbnails receive separate content-addressed bodies without mutating shared acquired art. |
@@ -126,7 +147,7 @@ mechanically for the physical-item class of defect.
 | [B108](B108-limited-innate-blindness-deafness-primary-rejected.md) | High | Fixed (v1.15.16) | Explicit title-labelled initial-save choices with identical mechanics and distinct effects share the source casting quota; recurring saves remain free. |
 | [B109](B109-wildcard-module-assets-not-internalized.md) | High | Fixed (v1.15.16) | Complete module wildcard families are copied to isolated local patterns with all members, original bytes, random-image settings, and fail-closed checks preserved. |
 | [B110](B110-world-macros-resolve-compendium-links-before-items.md) | High | Fixed (v1.15.17) | World Items now exist before Macro/chat compendium-link resolution; imported Items survive saving and UUIDs retain the correct IDs. Source and packaged world regressions pass. |
-| [B111](B111-npc-pact-trait-loses-shared-short-rest-slots.md) | High | Open | Narrak's explicit two-slot, 2nd-level, short-rest pact trait loses to conflicting conventional 4/3/2 sheet fields; source-bound module restoration and native verification are recorded for owner triage. |
+| [B111](B111-npc-pact-trait-loses-shared-short-rest-slots.md) | High | Fixed (v1.16.1) | Explicit source shared-slot traits control casting capacity, fixed level, and short-rest recovery without module/NPC identity exceptions; unrelated resources and free follow-ups are preserved. |
 
 ## Cross-cutting observations
 
@@ -173,3 +194,19 @@ mechanically for the physical-item class of defect.
 - Folder sorting is already manual in R20Converter: every emitted Folder carries `sorting: "m"`,
   including Journal and Scene folders, and the pack/Adventure tests enforce it. A later alphabetical
   Adventure root was introduced by the post-conversion builder rather than this emitter.
+
+## Recording A Defect
+
+Keep each record focused on one reusable failure mechanism:
+
+1. State the ID, current disposition, severity, affected component, and observed or fixed version.
+2. Separate expected behavior from the observed failure and identify the bounded source evidence.
+3. Give a reproducible minimal case and distinguish converter attribution from source-data or
+  post-conversion problems.
+4. Explain the generic root cause and resolution without introducing identity-based exceptions.
+5. Link relevant tests, earlier defects, release notes, and retained evidence. State exactly what
+  was verified and what remains outside the evidence scope.
+6. Preserve superseded measurements as clearly labelled history; do not present them as current
+  counts or overwrite the original reproduction with a module-specific workaround.
+7. Update this index in the same change. Use a fixed release version only when the release history
+  supports it, and keep pipeline acceptance separate from source implementation status.
