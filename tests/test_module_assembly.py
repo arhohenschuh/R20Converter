@@ -1,10 +1,13 @@
 """Self-contained module assembly regressions (v1.14.0)."""
 
 import copy
+import glob
 import os
 
 import pytest
 
+from conftest import FakeDatabase
+from entities.base import Entity
 from module_assembly import ModuleAssembler
 
 
@@ -324,6 +327,132 @@ class TestExecutableReferences(object):
         assert all(folder["_stats"]["coreVersion"] == "13" for folder in folders)
         assert all(folder["_stats"]["systemVersion"] == "5.3.3" for folder in folders)
         assert converter.journal.entities[0].entity["folder"] == folders[1]["_id"]
+
+
+class TestWildcardModuleArt(object):
+    def _assembler(self, tmp_path, dedup=True):
+        output = tmp_path / "test-module"
+        output.mkdir()
+        converter = Converter(output)
+        converter.fvtt_path = str(tmp_path / "foundry")
+        database = FakeDatabase(str(output), {"export_as_module": True, "dedup_assets": dedup})
+        database._converter = converter
+        helper = Entity.__new__(Entity)
+        helper._database = database
+        helper._converter = converter
+        assembler = ModuleAssembler(converter)
+        assembler._asset_helper = helper
+        return assembler, output
+
+    @pytest.mark.parametrize("dedup", [True, False])
+    def test_wildcard_family_is_local_complete_and_idempotent(self, tmp_path, dedup):
+        assembler, output = self._assembler(tmp_path, dedup)
+        source = tmp_path / "foundry/Data/modules/donor/images/tokens"
+        source.mkdir(parents=True)
+        members = {"mm24-cat-01.webp": b"first-image", "mm24-cat-02.webp": b"second-image"}
+        for filename, content in members.items():
+            (source / filename).write_bytes(content)
+        (source / "unrelated.webp").write_bytes(b"not-in-family")
+        document = Document({"_id": "actor00000000001", "type": "npc", "name": "Cat",
+                             "prototypeToken": {"randomImg": True, "texture": {
+                                 "src": "modules/donor/images/tokens/mm24-cat-*.webp"}},
+                             "items": [], "effects": []})
+        assembler.converter.actors.entities = [document]
+
+        assembler.internalizeAssets()
+
+        texture = document.entity["prototypeToken"]["texture"]["src"]
+        assert document.entity["prototypeToken"]["randomImg"] is True
+        assert texture.startswith("modules/test-module/") and "*" in texture
+        local = texture[len("modules/test-module/"):]
+        matched = sorted(glob.glob(str(output / local)))
+        assert len(matched) == 2
+        assert sorted(open(filename, "rb").read() for filename in matched) == sorted(members.values())
+        assert all((source / filename).read_bytes() == content for filename, content in members.items())
+        assert assembler._copyExternalAsset("modules/donor/images/tokens/mm24-cat-*.webp") == texture
+        assembler.internalizeAssets()
+        assert sorted(str(filename) for filename in output.rglob("*") if filename.is_file()) == matched
+
+    def test_wildcard_directories_preserve_same_names_and_duplicate_bodies(self, tmp_path):
+        assembler, output = self._assembler(tmp_path)
+        source = tmp_path / "foundry/Data/modules/donor"
+        for folder in ("first", "second"):
+            directory = source / folder
+            directory.mkdir(parents=True)
+            (directory / "token-01.webp").write_bytes(b"same-image")
+        texture = assembler._copyExternalAsset("modules/donor/*/token-*.webp")
+
+        matches = sorted(glob.glob(str(output / texture[len("modules/test-module/"):])))
+
+        assert len(matches) == 2
+        assert all(open(filename, "rb").read() == b"same-image" for filename in matches)
+
+    def test_wildcard_families_do_not_match_each_other(self, tmp_path):
+        assembler, output = self._assembler(tmp_path)
+        textures = []
+        for module in ("first-donor", "second-donor"):
+            directory = tmp_path / "foundry/Data/modules" / module
+            directory.mkdir(parents=True)
+            (directory / "token-01.webp").write_bytes(module.encode("ascii"))
+            textures.append(assembler._copyExternalAsset("modules/%s/token-*.webp" % module))
+
+        assert textures[0] != textures[1]
+        for texture, module in zip(textures, ("first-donor", "second-donor")):
+            matches = glob.glob(str(output / texture[len("modules/test-module/"):]))
+            assert len(matches) == 1
+            assert open(matches[0], "rb").read() == module.encode("ascii")
+
+    @pytest.mark.parametrize("invalid", ["missing", "empty", "directory", "placeholder"])
+    def test_invalid_wildcard_family_fails_before_writing(self, tmp_path, monkeypatch, invalid):
+        assembler, output = self._assembler(tmp_path)
+        source = tmp_path / "foundry/Data/modules/donor"
+        source.mkdir(parents=True)
+        if invalid == "empty":
+            (source / "token-01.webp").write_bytes(b"")
+        elif invalid == "directory":
+            (source / "token-01.webp").mkdir()
+        elif invalid == "placeholder":
+            (source / "token-01.webp").write_bytes(b"dead-placeholder")
+            monkeypatch.setattr("module_assembly.isRoll20Placeholder", lambda body: body == b"dead-placeholder")
+
+        with pytest.raises(ValueError):
+            assembler._internalizeString("modules/donor/token-*.webp")
+        assert not any(entry.is_file() for entry in output.rglob("*"))
+
+    @pytest.mark.parametrize("drift", ["output-content", "source-members"])
+    def test_wildcard_reuse_rejects_collisions_and_stale_members(self, tmp_path, drift):
+        assembler, output = self._assembler(tmp_path)
+        source = tmp_path / "foundry/Data/modules/donor"
+        source.mkdir(parents=True)
+        (source / "token-01.webp").write_bytes(b"first")
+        (source / "token-02.webp").write_bytes(b"second")
+        value = "modules/donor/token-*.webp"
+        texture = assembler._copyExternalAsset(value)
+        matches = sorted(glob.glob(str(output / texture[len("modules/test-module/"):])))
+        if drift == "output-content":
+            with open(matches[0], "wb") as stream:
+                stream.write(b"different")
+        else:
+            (source / "token-02.webp").unlink()
+
+        with pytest.raises(ValueError, match="collision|stale members"):
+            assembler._copyExternalAsset(value)
+
+    def test_wildcard_donor_traversal_is_rejected(self, tmp_path):
+        assembler, output = self._assembler(tmp_path)
+        with pytest.raises(ValueError, match="Unsupported module wildcard"):
+            assembler._copyExternalAsset("modules/donor/../other/token-*.webp")
+        assert not any(entry.is_file() for entry in output.rglob("*"))
+
+    def test_wildcard_respects_output_path_limit(self, tmp_path):
+        assembler, output = self._assembler(tmp_path)
+        assembler._asset_helper._database._arguments["max_path"] = 20
+        source = tmp_path / "foundry/Data/modules/donor"
+        source.mkdir(parents=True)
+        (source / "token-01.webp").write_bytes(b"first")
+        with pytest.raises(ValueError, match="output path limit"):
+            assembler._copyExternalAsset("modules/donor/token-*.webp")
+        assert not any(entry.is_file() for entry in output.rglob("*"))
 
 
 class TestEmbeddedHtmlArt(object):

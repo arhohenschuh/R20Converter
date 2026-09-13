@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.15.16
+
+- Preserve a compendium spell's generated supply pool when the source has no casting-use quota
+  (B107). Structural producer/consumer evidence identifies the pool; no spell-name exception is
+  used. Source casting method and preparation remain authoritative.
+- Keep production, follow-up consumption, initial spent state, capacity, and recovery intact.
+  Reject a separate source casting quota explicitly instead of combining casts and supplies in
+  one counter. Ordinary limited-innate and double-consumption validation remain enforced.
+- Preserve explicit initial-save alternatives for limited-innate Blindness/Deafness (B108).
+  Each title-labelled choice must have identical save mechanics and a distinct single effect;
+  both initial casts share the source daily-use pool, while recurring saves stay free.
+- Internalize complete wildcard module-image families instead of treating their patterns as
+  literal filenames (B109). Preserve native random-image selection, all matching members and
+  their bytes, isolate families, and reject empty, invalid, stale, or colliding output.
+- Add regressions across all three fixes for casting state, shared quotas, initial-save choices,
+  wildcard multiplicity, family isolation, input preservation, and fail-closed resource/asset checks.
+
+Compendium character-state suite: **56 passed**. Module-assembly suite: **35 passed**.
+Complete shipping Python 3.8 suite: **1,015 passed**. The real pinned two-image wildcard now copies
+successfully with native random-image and Adventure data preserved; 1.15.15 rejects the same input.
+The owner waived Opus review for this release and assigned full conversion-pipeline testing to
+the downstream workflow. No final full-campaign or live wildcard acceptance is claimed here.
+
 ## v1.15.15
 
 - Use Foundry's native `icons/svg/dice-target.svg` for converted Macros instead of downloading

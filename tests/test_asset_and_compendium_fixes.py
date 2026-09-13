@@ -528,6 +528,59 @@ def _multi_activity_spell_document():
     return document
 
 
+def _generated_resource_spell_document():
+    document = _spell_document()
+    document["_id"] = "HeroesFeast14III"
+    document["name"] = "Heroes' Feast"
+    document["system"]["uses"] = {
+        "spent": 12, "max": "12",
+        "recovery": [{"period": "sr", "type": "loseAll", "formula": ""}],
+    }
+    document["system"]["activities"] = {
+        "utilityHeroeFeas": {
+            "_id": "utilityHeroeFeas", "name": "Create Feast", "type": "utility",
+            "consumption": {"spellSlot": True, "targets": [
+                {"type": "itemUses", "target": "", "value": "-12"},
+            ]},
+        },
+        "healHealing1IIII": {
+            "_id": "healHealing1IIII", "name": "Consume Feast", "type": "heal",
+            "consumption": {"spellSlot": False, "targets": [
+                {"type": "itemUses", "target": "", "value": "1"},
+            ]},
+        },
+    }
+    return document
+
+
+def _initial_save_choices_document():
+    document = _spell_document()
+    document["name"] = "Blindness/Deafness"
+    document["effects"] = []
+    document["system"]["activities"] = {}
+    for label, initial_id, recurring_id, effect_id, status in [
+        ("Blindness", "utilityBlindness", "7bc5e6f921351e68", "3GzNc5pZhZ6A5qXu", "blinded"),
+        ("Deafness", "utilityBlindnclo", "c1863d48a72a52c6", "B8xnaLnMVk2ypVkn", "deafened"),
+    ]:
+        activity = {
+            "_id": initial_id, "name": label + ": Initial Save", "type": "save",
+            "activation": {"type": "action", "value": 1, "override": True, "condition": ""},
+            "consumption": {"spellSlot": True, "targets": []},
+            "save": {"ability": ["con"], "dc": {"calculation": "spellcasting", "formula": ""}},
+            "damage": {"parts": [], "onSave": "none"},
+            "effects": [{"_id": effect_id, "onSave": False}],
+        }
+        document["system"]["activities"][initial_id] = activity
+        recurring = copy.deepcopy(activity)
+        recurring.update({"_id": recurring_id, "name": label + ": Recurring Save", "effects": []})
+        recurring["activation"]["type"] = "turnEnd"
+        recurring["consumption"]["spellSlot"] = False
+        document["system"]["activities"][recurring_id] = recurring
+        document["effects"].append({"_id": effect_id, "name": label, "statuses": [status],
+                                    "transfer": False})
+    return document
+
+
 class TestCompendiumKeepsCharacterState(object):
     """B050 -- ``--no-compendium-overwrite`` protects template data, but must not
     discard state that describes one character."""
@@ -597,6 +650,144 @@ class TestCompendiumKeepsCharacterState(object):
         assert item.entity["system"]["prepared"] == prepared
         assert item.entity["system"]["uses"] == uses
         assert item.entity["system"]["description"]["value"] == "<p>Compendium description.</p>"
+
+    @pytest.mark.parametrize("method,spell_slot", [
+        ("spell", True), ("innate", False), ("atwill", False), ("ritual", False),
+    ])
+    def test_generated_resource_pool_survives_empty_source_casting_uses(
+            self, entity, method, spell_slot):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        donor = _generated_resource_spell_document()
+        original = copy.deepcopy(donor)
+        items_module._validateResourceContract("spell", donor["name"], donor["system"])
+        custom = {
+            "method": method, "prepared": 1,
+            "uses": {"spent": 0, "max": "", "recovery": []},
+            "activities": {},
+        }
+        source = copy.deepcopy(custom)
+
+        item = self._build(entity._database, custom, donor)
+        system = item.entity["system"]
+
+        assert system["uses"] == original["system"]["uses"]
+        assert system["method"] == method
+        assert system["prepared"] == 1
+        expected_activities = copy.deepcopy(original["system"]["activities"])
+        expected_activities["utilityHeroeFeas"]["consumption"]["spellSlot"] = spell_slot
+        assert system["activities"] == expected_activities
+        items_module._validateResourceContract("spell", donor["name"], system)
+        assert donor == original
+        assert custom == source
+
+    @pytest.mark.parametrize("method", ["spell", "innate"])
+    def test_generated_resource_pool_rejects_a_separate_source_casting_quota(self, entity, method):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        donor = _generated_resource_spell_document()
+        original = copy.deepcopy(donor)
+        custom = {
+            "method": method, "prepared": 1,
+            "uses": {"spent": 0, "max": "2", "recovery": [
+                {"period": "day", "type": "recoverAll"},
+            ]},
+            "activities": {
+                "source": {"type": "utility", "consumption": {"targets": [
+                    {"type": "itemUses", "target": "", "value": "1"},
+                ]}},
+            },
+        }
+
+        with pytest.raises(ValueError, match="source casting uses conflict with donor-generated resource pool"):
+            self._build(entity._database, custom, donor)
+        assert donor == original
+
+    @pytest.mark.parametrize("capacity", [None, "", "0", 0])
+    def test_generated_resource_pool_missing_capacity_still_fails(self, entity, capacity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        donor = _generated_resource_spell_document()
+        donor["system"]["uses"]["max"] = capacity
+        custom = {
+            "method": "spell", "prepared": 1,
+            "uses": {"spent": 0, "max": "", "recovery": []},
+            "activities": {},
+        }
+
+        with pytest.raises(ValueError, match="consumes item uses without a usable pool"):
+            self._build(entity._database, custom, donor)
+
+    def test_generated_resource_pool_is_name_independent_and_allows_supply_followups(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        donor = _generated_resource_spell_document()
+        donor["name"] = "Generated Supplies"
+        followup = copy.deepcopy(donor["system"]["activities"]["healHealing1IIII"])
+        followup["_id"] = "secondFollowup"
+        donor["system"]["activities"]["secondFollowup"] = followup
+        custom = {
+            "method": "innate", "prepared": 1,
+            "uses": {"spent": 0, "max": "", "recovery": []},
+            "activities": {},
+        }
+
+        item = self._build(entity._database, custom, donor)
+
+        assert item.entity["system"]["uses"] == donor["system"]["uses"]
+        assert len(item.entity["system"]["activities"]) == 3
+        for activity in item.entity["system"]["activities"].values():
+            assert activity["consumption"]["spellSlot"] is False
+        items_module._validateResourceContract("spell", donor["name"], item.entity["system"])
+
+    def test_generated_resource_pool_cannot_hide_a_standard_double_consumer(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        donor = _generated_resource_spell_document()
+        donor["system"]["activities"]["doubleConsumer"] = {
+            "_id": "doubleConsumer", "type": "heal",
+            "consumption": {"spellSlot": True, "targets": [
+                {"type": "itemUses", "target": "", "value": "1"},
+            ]},
+        }
+        custom = {
+            "method": "spell", "prepared": 1,
+            "uses": {"spent": 0, "max": "", "recovery": []},
+            "activities": {},
+        }
+
+        with pytest.raises(ValueError, match="consumes item uses and a standard spell slot"):
+            self._build(entity._database, custom, donor)
+
+    def test_generated_resource_pool_rejects_source_consumer_without_capacity(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        donor = _generated_resource_spell_document()
+        custom = {
+            "method": "innate", "prepared": 1,
+            "uses": {"spent": 0, "max": "", "recovery": []},
+            "activities": {
+                "source": {"type": "utility", "consumption": {"targets": [
+                    {"type": "itemUses", "target": "", "value": "1"},
+                ]}},
+            },
+        }
+
+        with pytest.raises(ValueError, match="source casting uses conflict with donor-generated resource pool"):
+            self._build(entity._database, custom, donor)
+
+    def test_source_casting_quota_still_overrides_non_generated_donor_pool(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        donor = _generated_resource_spell_document()
+        donor["system"]["activities"].pop("utilityHeroeFeas")
+        target = {"type": "itemUses", "target": "", "value": "1"}
+        custom = {
+            "method": "innate", "prepared": 1,
+            "uses": {"spent": 0, "max": "2", "recovery": [
+                {"period": "day", "type": "recoverAll"},
+            ]},
+            "activities": {"source": {"type": "heal", "consumption": {"targets": [target]}}},
+        }
+
+        item = self._build(entity._database, custom, donor)
+
+        assert item.entity["system"]["uses"] == custom["uses"]
+        assert item.entity["system"]["activities"]["healHealing1IIII"]["consumption"] == {
+            "spellSlot": True, "targets": [target]}
 
     def test_limited_innate_use_merges_into_matching_compendium_activity(self, entity):
         entity._database._arguments = {"no_compendium_overwrite": True}
@@ -674,6 +865,106 @@ class TestCompendiumKeepsCharacterState(object):
             "spellSlot": True, "targets": [target]}
         assert activities["followup"]["consumption"] == {
             "spellSlot": False, "targets": []}
+
+    @pytest.mark.parametrize("source_type", ["save", "utility"])
+    def test_limited_innate_preserves_initial_save_choices(self, entity, source_type):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        donor = _initial_save_choices_document()
+        original = copy.deepcopy(donor)
+        target = {"type": "itemUses", "target": "", "value": "1"}
+        custom = {
+            "method": "innate", "prepared": 1,
+            "uses": {"spent": 0, "max": "1", "recovery": [
+                {"period": "day", "type": "recoverAll", "formula": ""},
+            ]},
+            "activities": {"source": {"type": source_type, "consumption": {"targets": [target]}}},
+        }
+        source = copy.deepcopy(custom)
+
+        item = self._build(entity._database, custom, donor)
+
+        expected = copy.deepcopy(original["system"]["activities"])
+        for activity_id in ("utilityBlindness", "utilityBlindnclo"):
+            expected[activity_id]["consumption"]["targets"] = [target]
+        assert item.entity["system"]["activities"] == expected
+        assert item.entity["system"]["uses"] == custom["uses"]
+        assert item.entity["system"]["method"] == "innate"
+        assert item.entity["system"]["prepared"] == 1
+        assert item.entity["effects"] == original["effects"]
+        items_module._validateResourceContract("spell", donor["name"], item.entity["system"])
+        assert donor == original
+        assert custom == source
+
+    @pytest.mark.parametrize("defect", [
+        "title", "label", "duplicate-label", "effect", "duplicate-effect", "on-save",
+        "save", "activation", "damage", "flags", "effect-level",
+    ])
+    def test_limited_innate_rejects_mismatched_initial_save_choices(self, entity, defect):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        donor = _initial_save_choices_document()
+        activities = donor["system"]["activities"]
+        first = activities["utilityBlindness"]
+        second = activities["utilityBlindnclo"]
+        if defect == "title":
+            donor["name"] = "Unrelated Spell"
+        elif defect == "label":
+            second["name"] = "Deafness: Recurring Save"
+        elif defect == "duplicate-label":
+            second["name"] = first["name"]
+        elif defect == "effect":
+            second["effects"] = []
+        elif defect == "duplicate-effect":
+            second["effects"] = copy.deepcopy(first["effects"])
+        elif defect == "on-save":
+            second["effects"][0]["onSave"] = True
+        elif defect == "save":
+            second["save"]["ability"] = ["wis"]
+        elif defect == "activation":
+            second["activation"]["type"] = "turnEnd"
+        elif defect == "damage":
+            second["damage"]["parts"] = [{"formula": "1d6"}]
+        elif defect == "flags":
+            second["flags"] = {"triggeredActivity": "anotherActivity"}
+        elif defect == "effect-level":
+            second["effects"][0]["level"] = {"min": 5}
+        target = {"type": "itemUses", "target": "", "value": "1"}
+        custom = {"method": "innate", "prepared": 1,
+                  "uses": {"spent": 0, "max": "1", "recovery": []},
+                  "activities": {"source": {"type": "save", "consumption": {"targets": [target]}}}}
+
+        with pytest.raises(ValueError, match="Cannot select one primary donor activity"):
+            self._build(entity._database, custom, donor)
+
+    def test_initial_save_choices_do_not_require_a_specific_spell_name(self, entity):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        donor = _initial_save_choices_document()
+        donor["name"] = " Slumber / FEAR "
+        donor["system"]["activities"]["utilityBlindness"]["name"] = "Slumber: Initial Save"
+        donor["system"]["activities"]["utilityBlindnclo"]["name"] = " fear: INITIAL SAVE "
+        target = {"type": "itemUses", "target": "", "value": "1"}
+        custom = {"method": "innate", "prepared": 1,
+                  "uses": {"spent": 1, "max": "2", "recovery": []},
+                  "activities": {"source": {"type": "save", "consumption": {"targets": [target]}}}}
+
+        item = self._build(entity._database, custom, donor)
+
+        assert item.entity["system"]["uses"] == custom["uses"]
+        for activity_id in ("utilityBlindness", "utilityBlindnclo"):
+            assert item.entity["system"]["activities"][activity_id]["consumption"]["targets"] == [target]
+
+    def test_initial_save_choices_cannot_hide_duplicate_consumption(self):
+        donor = _initial_save_choices_document()
+        system = donor["system"]
+        system["method"] = "innate"
+        system["uses"] = {"spent": 0, "max": "2", "recovery": []}
+        for activity_id in ("utilityBlindness", "utilityBlindnclo"):
+            system["activities"][activity_id]["consumption"]["targets"] = [
+                {"type": "itemUses", "target": "", "value": "1"},
+                {"type": "itemUses", "target": "", "value": "1"},
+            ]
+
+        with pytest.raises(ValueError, match="multiple positive item-use consumers"):
+            items_module._validateResourceContract("spell", donor["name"], system)
 
     def test_limited_innate_rejects_ambiguous_slot_consuming_activities(self, entity):
         entity._database._arguments = {"no_compendium_overwrite": True}

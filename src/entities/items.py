@@ -2,6 +2,7 @@ from .base import DatabaseFile, Entity
 from slugify import slugify
 import os
 import copy
+import math
 
 import dnd5e
 
@@ -132,6 +133,66 @@ def _alternativePlacementActivities(candidates):
     return len(activity_types) == 1
 
 
+def _alternativeInitialSaveActivities(candidates, item_name):
+    """Recognize title-labelled effect choices with otherwise identical initial saves."""
+    choices = [choice.strip().lower() for choice in item_name.split("/")]
+    if (len(candidates) < 2 or len(choices) != len(candidates)
+            or not all(choices) or len(set(choices)) != len(choices)):
+        return False
+    expected_names = {choice + ": initial save" for choice in choices}
+    names = set()
+    effect_ids = set()
+    profiles = []
+    for _activity_id, activity in candidates:
+        name = str(activity.get("name") or "").strip().lower()
+        consumption = activity.get("consumption") or {}
+        activation = activity.get("activation") or {}
+        damage = activity.get("damage") or {}
+        effects = activity.get("effects") or []
+        if (name not in expected_names or name in names or activity.get("type") != "save"
+                or consumption.get("spellSlot") is not True
+                or activation.get("type") != "action" or activation.get("value") != 1
+                or activation.get("override") is not True
+                or not (activity.get("save") or {}).get("ability")
+                or damage.get("parts") or damage.get("onSave") != "none"
+                or len(effects) != 1 or not effects[0].get("_id")
+                or effects[0]["_id"] in effect_ids or effects[0].get("onSave") is not False):
+            return False
+        profile = {key: value for key, value in activity.items()
+                   if key not in ("_id", "name", "img", "sort", "effects")}
+        profile["effects"] = [{key: value for key, value in effects[0].items() if key != "_id"}]
+        if profiles and profile != profiles[0]:
+            return False
+        profiles.append(profile)
+        names.add(name)
+        effect_ids.add(effects[0]["_id"])
+    return names == expected_names
+
+
+def _hasGeneratedSpellPool(system):
+    """Identify a supply pool with separate production and non-slot consumption."""
+    if (system.get("uses") or {}).get("max") in (None, "", 0, "0"):
+        return False
+    producers = set()
+    consumers = set()
+    for activity_id, activity in (system.get("activities") or {}).items():
+        consumption = activity.get("consumption") or {}
+        for target in consumption.get("targets", []):
+            if target.get("type") != dnd5e.CONSUMPTION_ITEM_USES or target.get("target"):
+                continue
+            try:
+                amount = float(target.get("value", 1))
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(amount):
+                continue
+            if amount < 0:
+                producers.add(activity_id)
+            elif amount > 0 and consumption.get("spellSlot") is False:
+                consumers.add(activity_id)
+    return bool(producers and consumers - producers)
+
+
 def _mergeSpellConsumption(system, custom_data, item_name="spell"):
     """Keep source casting resources while retaining compendium activities (B062)."""
     method = custom_data.get("method", "spell")
@@ -161,7 +222,8 @@ def _mergeSpellConsumption(system, custom_data, item_name="spell"):
                            if candidate[1].get("type") != "transform"]
         if len(cast_activities) == 1:
             return cast_activities
-        if _alternativePlacementActivities(slot_consumers):
+        if (_alternativePlacementActivities(slot_consumers)
+            or _alternativeInitialSaveActivities(slot_consumers, item_name)):
             return slot_consumers
         return candidates if len(candidates) == 1 else []
 
@@ -225,12 +287,14 @@ def _validateResourceContract(item_type, item_name, system):
                 and consumption.get("spellSlot") is not False):
             raise ValueError("%s / %s consumes item uses and a standard spell slot" %
                              (item_name, activity_id))
-    if method == "innate" and uses_max not in (None, "", 0, "0"):
+    if (method == "innate" and uses_max not in (None, "", 0, "0")
+            and not _hasGeneratedSpellPool(system)):
         if positive_self_consumers == 0:
             raise ValueError("%s: limited innate spell has no positive item-use consumer" %
                              item_name)
         alternatives = (positive_self_consumers == len(positive_consumer_activities)
-                        and _alternativePlacementActivities(positive_consumer_activities))
+                and (_alternativePlacementActivities(positive_consumer_activities)
+                     or _alternativeInitialSaveActivities(positive_consumer_activities, item_name)))
         if positive_self_consumers > 1 and not alternatives:
             raise ValueError("%s: limited innate spell has multiple positive item-use consumers" %
                              item_name)
@@ -632,7 +696,21 @@ class Item(Entity):
                 # `update()` is all-or-nothing, so it was also discarding state that
                 # describes this one character and can never come from a template --
                 # a class's levels, a weapon's proficiency. Those always win.
+                generated_pool = (item.entity["type"] == "spell"
+                                  and _hasGeneratedSpellPool(item.entity["system"]))
+                if generated_pool:
+                    source_quota = (custom_data.get("uses") or {}).get("max")
+                    source_self_consumers = any(
+                        target.get("type") == dnd5e.CONSUMPTION_ITEM_USES
+                        and not target.get("target") and _positiveConsumptionTarget(target)
+                        for activity in (custom_data.get("activities") or {}).values()
+                        for target in (activity.get("consumption") or {}).get("targets", []))
+                    if source_quota not in (None, "", 0, "0") or source_self_consumers:
+                        raise ValueError("%s: source casting uses conflict with donor-generated resource pool" %
+                                         item.entity["name"])
                 for key in Item.CHARACTER_STATE_KEYS.get(item.entity["type"], ()):
+                    if key == "uses" and generated_pool:
+                        continue
                     if key in custom_data:
                         item.entity["system"][key] = custom_data[key]
                 if item.entity["type"] == "spell":

@@ -1,6 +1,8 @@
 """Self-contained Foundry module assembly (v1.14.0)."""
 
 import copy
+import glob
+import hashlib
 import html
 import json
 import os
@@ -282,6 +284,57 @@ class ModuleAssembler(object):
             return decoded if len(parts) > 2 else ""
         return ""
 
+    def _copyExternalAssetFamily(self, source, root):
+        parts = source.replace("\\", "/").split("/")
+        extension = os.path.splitext(parts[-1])[1]
+        if (any(part in ("", ".", "..") for part in parts[1:])
+                or glob.has_magic(parts[1])
+                or not re.fullmatch(r"\.[A-Za-z0-9]{2,5}", extension)):
+            raise ValueError("Unsupported module wildcard asset: %s" % source)
+        module_root = os.path.realpath(os.path.join(root, "Data", "modules", parts[1]))
+        pattern = os.path.join(glob.escape(module_root), *parts[2:])
+        members = sorted(filename for filename in glob.glob(pattern) if os.path.isfile(filename))
+        if not members:
+            raise ValueError("No files match module wildcard asset: %s" % source)
+        helper = self._assetHelper()
+        prefix = "family-" + hashlib.sha256(source.encode("utf-8")).hexdigest()
+        assets = helper.getArgument("assets_directory", "assets")
+        directory = os.path.join(self.converter.path, assets, "external")
+        longest_name = "%s-%08d%s" % (prefix, len(members) - 1, extension)
+        max_path = helper.getArgument("max_path", 256)
+        if len(os.path.abspath(os.path.join(directory, longest_name))) >= max_path:
+            directory = os.path.join(self.converter.path, assets)
+        if len(os.path.abspath(os.path.join(directory, longest_name))) >= max_path:
+            raise ValueError("Module wildcard asset exceeds output path limit: %s" % source)
+        local_pattern = os.path.join(directory, prefix + "-*" + extension)
+        helper._assertWithinOutputDirectory(local_pattern)
+        planned = []
+        for index, filename in enumerate(members):
+            if os.path.commonpath([module_root, os.path.realpath(filename)]) != module_root:
+                raise ValueError("Module wildcard asset escapes donor module: %s" % filename)
+            with open(filename, "rb") as stream:
+                content = stream.read()
+            if not content:
+                raise ValueError("Empty module wildcard asset member: %s" % filename)
+            if isRoll20Placeholder(content):
+                raise Roll20PlaceholderError("Roll20 placeholder in module wildcard asset: %s" % filename)
+            destination = os.path.join(directory, "%s-%08d%s" % (prefix, index, extension))
+            helper._assertWithinOutputDirectory(destination)
+            if os.path.exists(destination):
+                with open(destination, "rb") as stream:
+                    if stream.read() != content:
+                        raise ValueError("Module wildcard asset collision: %s" % destination)
+            planned.append((destination, content))
+        existing = set(glob.glob(os.path.join(glob.escape(directory), prefix + "-*" + extension)))
+        if existing - {destination for destination, _content in planned}:
+            raise ValueError("Module wildcard asset has stale members: %s" % source)
+        os.makedirs(directory, exist_ok=True)
+        for destination, content in planned:
+            if not os.path.exists(destination):
+                with open(destination, "xb") as stream:
+                    stream.write(content)
+        return helper._configPathForOutputFile(local_pattern)
+
     def _copyExternalAsset(self, value):
         source = self._externalAsset(value)
         if not source:
@@ -294,6 +347,8 @@ class ModuleAssembler(object):
             if parts[1] == self.converter.name:
                 return source
             root = getattr(self.converter, "fvtt_path", None)
+            if root and "*" in source:
+                return self._copyExternalAssetFamily(source, root)
             path = os.path.join(root or "", "Data", "modules", *parts[1:])
             if not root or not os.path.isfile(path):
                 return ""

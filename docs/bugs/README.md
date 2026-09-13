@@ -122,6 +122,9 @@ mechanically for the physical-item class of defect.
 | [B104](B104-map-pin-runtime-invalid-flag-scope.md) | High | Fixed (v1.15.13) | The Map Pin runtime reads its structured payload directly instead of passing a non-package mixed-case scope to Foundry's validated `getFlag` API. |
 | [B105](B105-map-pins-obscure-tokens-and-cannot-be-moved.md) | High | Fixed (v1.15.14) | Converted Map Pins render below Tokens and gain a GM-only unlock/move mode while preserving click navigation and player invisibility. |
 | [B106](B106-macros-download-roll20-brand-icon.md) | Moderate | Fixed (v1.15.15) | Converted Macros use Foundry's native dice-target icon without downloading or shipping the Roll20 Android logo. |
+| [B107](B107-source-spell-uses-overwrite-donor-serving-pool.md) | High | Fixed (v1.15.16) | Structurally identified donor supplies survive empty source casting uses; separate source quotas fail explicitly. Frozen conversion, native resource workflows, persistence, and cleanup pass. |
+| [B108](B108-limited-innate-blindness-deafness-primary-rejected.md) | High | Fixed (v1.15.16) | Explicit title-labelled initial-save choices with identical mechanics and distinct effects share the source casting quota; recurring saves remain free. |
+| [B109](B109-wildcard-module-assets-not-internalized.md) | High | Fixed (v1.15.16) | Complete module wildcard families are copied to isolated local patterns with all members, original bytes, random-image settings, and fail-closed checks preserved. |
 
 ## Cross-cutting observations
 
@@ -132,7 +135,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B107**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B110**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent
