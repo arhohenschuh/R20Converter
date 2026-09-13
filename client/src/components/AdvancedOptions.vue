@@ -243,7 +243,7 @@
                 label="Disable Journal Conversion"
                 description="Disable conversion of Journal entries in the compendium module"
                 v-model="form.disableModuleJournal"
-                v-if="exportAsModule"
+                v-if="exportAsModule && !convertCompendium"
               />
               <boolean-option
                 label="Disable Actors Conversion"
@@ -370,6 +370,9 @@ export default {
     };
   },
   computed: {
+    convertCompendium() {
+      return this.$store.state.options.convertCompendium;
+    },
     exportAsModule() {
       return this.$store.state.options.exportAsModule;
     }
@@ -418,7 +421,7 @@ export default {
         : null,
       customCompendiumMode: this.form.customCompendiumMode,
       customCompendiumPrecedence: this.form.customCompendiumPrecedence,
-      disableModuleJournal: this.form.disableModuleJournal,
+      disableModuleJournal: this.convertCompendium ? false : this.form.disableModuleJournal,
       disableModuleActors: this.form.disableModuleActors,
       disableModuleScenes: this.form.disableModuleScenes,
       sceneFolders: this.form.sceneFolders.trim() || null,

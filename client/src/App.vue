@@ -78,13 +78,14 @@ export default {
     },
     nextDisabled() {
       if (this.step === 0) return !this.fileType;
-      if (this.step === 1) return Boolean(this.error || !this.folder);
-      return false;
+      if (this.step === 1) return Boolean(this.error || !this.folder || !this.compendiumReady);
+      return !this.compendiumReady;
     },
-    ...mapGetters(["fileType"])
+    ...mapGetters(["fileType", "compendiumReady"])
   },
   methods: {
     next() {
+      if (this.nextDisabled) return;
       this.goingBack = false;
       this.step++;
     },

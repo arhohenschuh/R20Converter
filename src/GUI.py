@@ -12,6 +12,7 @@ from slugify import slugify
 from io import StringIO
 from contextlib import redirect_stdout, redirect_stderr
 from R20Converter import R20Converter
+from compendium_export import CompendiumExport
 
 if platform.system() == 'Darwin':
     import wx
@@ -145,11 +146,13 @@ def getVersion():
 
 
 @eel.expose
-def ask_file():
+def ask_file(compendium=False):
     """ Ask the user to select a file """
+    title = "Browse Compendium ZIP" if compendium else "Browse Campaign"
     if useWx:
         app = wx.App(None)
-        dialog = wx.FileDialog(None, 'Browse Campaign', wildcard="Campaign File(*.json; *.zip)|*.json;*.zip", style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
+        wildcard = "ZIP File (*.zip)|*.zip" if compendium else "Campaign File(*.json; *.zip)|*.json;*.zip"
+        dialog = wx.FileDialog(None, title, wildcard=wildcard, style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
         app.SetTopWindow(dialog)
         style = dialog.GetWindowStyle()
         dialog.SetWindowStyle(style | wx.STAY_ON_TOP)
@@ -164,9 +167,27 @@ def ask_file():
         root = Tk()
         root.wm_attributes('-topmost', 1)
         root.withdraw()
-        file_path = askopenfilename(parent=root)
+        file_path = askopenfilename(parent=root, title=title,
+                                    filetypes=(("ZIP File", "*.zip"),) if compendium
+                                    else (("Campaign File", "*.json *.zip"), ("All files", "*")))
         path = None if file_path == "" else file_path
+        root.destroy()
     return path
+
+@eel.expose
+def ask_compendium_zip():
+    return ask_file(compendium=True)
+
+@eel.expose
+def validateCompendiumExport(path):
+    try:
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("A compendium ZIP path is required")
+        archive = CompendiumExport(path.strip())
+        return {"valid": True, "error": None, "title": archive.source["title"],
+                "pages": len(archive.pages), "images": len(archive.assets)}
+    except (OSError, ValueError) as error:
+        return {"valid": False, "error": str(error)}
 
 @eel.expose
 def ask_scene_folders():

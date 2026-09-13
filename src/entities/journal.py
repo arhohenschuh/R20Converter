@@ -104,6 +104,9 @@ class Handout(Entity):
                        "pages": self.genPages(name, content, avatar_filename),
                        "_stats": self.documentStats(),
                        }
+        if handout.get("r20_compendium"):
+            self.entity["flags"]["R20Converter"]["compendium"] = handout["r20_compendium"]
+            self.entity["pages"][0]["_id"] = handout["r20_compendium_page_id"]
 
     def genPages(self, name, content, img):
         """Build the v13 `pages` array for a handout.

@@ -22,6 +22,8 @@ eel.makeCB("loadCampaign", (file_type, path) => {eel.__exposed.logInfo("Campaign
 eel.makeCB("getCampaignTitle", (file_type, path) => {return "Lost Mine of Phandelver"})
 eel.makeCB("getCampaignSlug", (file_type, path) => {return "lmop"})
 eel.makeCB("ask_file", "lmop.json")
+eel.makeCB("ask_compendium_zip", "test-compendium.zip")
+eel.makeCB("validateCompendiumExport", path => ({valid: /\.zip$/i.test(path || ""), error: /\.zip$/i.test(path || "") ? null : "A compendium ZIP file is required."}))
 eel.makeCB("ask_folder", "C:/Foo/Bar/Data")
 eel.makeCB("does_file_exist", (p) => p && p.endsWith(".json"))
 eel.makeCB("does_folder_exist", (p) => {

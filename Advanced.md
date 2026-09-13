@@ -40,6 +40,20 @@ art on Roll20. Executable Actor/Item references from `--custom-compendium` are c
 they resolve; unresolved executable references abort conversion rather than producing a broken
 module. Non-executable prose links remain recommendations in `module.json`.
 
+To convert the campaign and its exported Roll20 compendium together:
+
+```powershell
+R20Converter-cli.exe "C:\FoundryData\Data\modules\my-adventure" `
+  "C:\Exports\Campaign.zip" --export-as-module `
+  --convert-compendium --compendium-zip "C:\Exports\Book-compendium.zip"
+```
+
+`--convert-compendium` defaults to disabled. `--compendium-zip` is ignored unless that flag is
+enabled. The ZIP must be a complete R20Compendium 1.0 export, not a Foundry donor module or a
+second campaign archive. Reference Journals, captured-page links, and bundled images are added
+to the same output. Omit `--export-as-module` for a world conversion. Do not combine enabled
+compendium conversion with `--disable-module-journal`.
+
 Finally, here's a more complex command which uses many of the available options
 
 ```

@@ -16,6 +16,9 @@ bottle-websocket==0.2.9
 requests==2.32.4
 Pillow==10.4.0
 matplotlib==3.7.5
+beautifulsoup4==4.13.4
+bleach==6.1.0
+tinycss2==1.2.1
 
 # LevelDB compendium packs for module exports (ADR-009). Optional at runtime:
 # src/leveldb_pack.py falls back to NeDB when it is missing, so a source install

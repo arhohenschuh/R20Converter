@@ -74,6 +74,18 @@ class TestSceneFolders(object):
         assert args.scene_folders == "chapters.json"
 
 
+class TestCompendiumExportOptions(object):
+    def test_conversion_is_disabled_by_default(self, parser):
+        args = parse(parser)
+        assert args.convert_compendium is False
+        assert args.compendium_zip is None
+
+    def test_enabled_conversion_keeps_the_separate_zip_path(self, parser):
+        args = parse(parser, "--convert-compendium", "--compendium-zip", "Test Book-compendium.zip")
+        assert args.convert_compendium is True
+        assert args.compendium_zip == "Test Book-compendium.zip"
+
+
 class TestDefaults(object):
     def test_conversion_defaults_are_conservative(self, parser):
         args = parse(parser)

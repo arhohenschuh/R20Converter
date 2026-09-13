@@ -69,10 +69,13 @@ Adopt this incrementally rather than rewriting the converter:
   conversion-pipeline testing downstream and waived Opus review for this release.
 21. **Done in v1.15.17:** initialize world Items before Macro/chat link resolution and preserve
   imported Item IDs and entries through the final save (B110).
-22. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+22. **Done in v1.16.0:** optionally convert a complete R20Exporter compendium ZIP alongside
+  the campaign into reference Journals, with local images, captured-page links and index categories.
+  The GUI exposes a separate enabled/disabled switch and ZIP path; existing donor enrichment is unchanged.
+23. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-23. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+24. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 ## Future module-policy enhancements

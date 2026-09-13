@@ -1,4 +1,10 @@
 export default {
+    compendiumReady(state) {
+        if (!state.options.convertCompendium) return true;
+        const path = (state.options.compendiumZip || "").trim();
+        const result = state.compendiumValidation;
+        return Boolean(path && result.path === path && result.valid && !result.pending);
+    },
     fileType(state, getters) {
         if (!state.file) return null;
         if (getters.mimetype === "application/json")

@@ -56,13 +56,13 @@ Open the R20Converter application and follow the instructions.
 
 ### Linux
 
-If using Linux, you will need `Python 3.6` or later to use R20Converter.
+If using Linux, you will need `Python 3.8` or later to use R20Converter.
 
 You can run it with `python3 src/main.py` in a terminal. Use the --help option to see which options are available to you during conversion.
 
 Required dependencies are listed in `requirements.txt`; install them with
 `pip3 install -r requirements.txt`. At minimum you need `requests`, `pillow`,
-`python-slugify`, `matplotlib` and, for the GUI, `eel`.
+`python-slugify`, `matplotlib`, `beautifulsoup4`, `bleach`, `tinycss2` and, for the GUI, `eel`.
 
 If you are running raspbian on a Raspberry Pi, you may also need to run the command `sudo apt-get install libopenjp2-7` to install one of the dependencies.
 In order to run the Graphics User Interface, you will also need to have python-tk installed. That one can be installed from your distribution's package manager using `sudo apt install python3-tk` or `sudo dnf install python3-tkinter`.
@@ -78,6 +78,27 @@ To convert a campaign, you first need to have your Roll 20 campaign exported. To
 Once you have your campaign exported as a ZIP file or a JSON file, you can start the conversion process. Note that you do not need to extract the campaign's zip file; R20Converter will work directly with the zip file itself to do the conversion.
 
 You need to select your output directory. This should ideally be your existing local Foundry VTT installation. If you do not have Foundry installed locally, you can select any empty directory instead.
+
+## Compendium Conversion
+
+To include the companion book exported by R20Exporter, enable **Compendium conversion** in the
+main options and select its **Compendium ZIP**. The campaign ZIP or JSON remains the first input.
+The switch defaults to Disabled; disabling it ignores the saved compendium path.
+
+The companion ZIP must contain the R20Compendium 1.0 manifest and a complete export report.
+Partial captures, missing files, hash mismatches, and unsafe archive paths are rejected. The
+converter uses only the captured index and its direct pages; it does not crawl additional links.
+
+Captured pages, attributes, and illustrations become reference Journals under a
+**Book Title (Compendium)** folder, grouped by the exported index categories. Bundled images are
+copied into the same output, and captured-page links become local Foundry UUID links. Module
+outputs include these Journals in both the Journal pack and Complete Adventure; world outputs
+include them in the world's Journal collection. Existing campaign content is retained.
+
+This option is separate from **Use a custom compendium**, which enriches game Items and Actors
+from an installed Foundry module. Captured stat blocks and attributes remain reference content;
+they are not guessed into additional playable Actors or Items. Compendium conversion requires
+dnd5e output and, in module mode, enabled Journal conversion.
 
 ## Final steps
 

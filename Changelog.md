@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.16.0
+
+- Add **Compendium conversion**, disabled by default, with a conditional ZIP picker and archive
+  validation in the main GUI options. The separate CLI options are `--convert-compendium` and
+  `--compendium-zip`.
+- Convert R20Exporter compendium pages, ordered attribute content, illustrations, and bundled
+  images into reference Journals alongside the campaign. Retain index categories, stable page
+  IDs, local captured-page links, and native Journal/Adventure relationships.
+- Verify archive identities, counts, member paths, sizes and hashes; reject partial captures and
+  missing media rather than silently dropping content. Sanitize captured HTML and copy images
+  without network fetching or modifying either input archive.
+- Preserve disabled-mode behavior and existing Foundry donor enrichment. Captured reference
+  pages do not become guessed game mechanics or inventory Items.
+
 ## v1.15.17
 
 - Initialize the world Items collection before converting Macros or chat, so compendium links

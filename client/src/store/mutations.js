@@ -12,6 +12,9 @@ export default {
     setError(state, value) {
         state.error = value;
     },
+    setCompendiumValidation(state, value) {
+        state.compendiumValidation = value;
+    },
     setFoundryDirectory(state, value) {
         state.foundryDirectory = value;
     },

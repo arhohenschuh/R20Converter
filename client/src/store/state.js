@@ -7,9 +7,12 @@ export default {
     form: {},
     foundryDirectory: null,
     debugLog: "",
+    compendiumValidation: { path: "", valid: false, pending: false, error: null },
     options: {
         srdEdition: "2014",
-        sceneFolders: null
+        sceneFolders: null,
+        convertCompendium: false,
+        compendiumZip: ""
     },
     conversionDone: false,
     conversionError: false

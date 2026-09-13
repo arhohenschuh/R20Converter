@@ -434,6 +434,9 @@ class Entity(object):
         return re.sub(r'(?<!!)\[([^\]\n]+)\]\(([^)\n]+)\)', replace, content)
 
     def replaceCompendiumLinks(self, content):
+        reference = getattr(getattr(self, "_converter", None), "compendium_export", None)
+        if reference is not None:
+            content = reference.rewrite_links(content, self._converter)
         return re.sub('<a ([^>]*)href=[\'"]https?://roll20.net/compendium/dnd5e/([^\'"]+)(?:(?:%3[aA])|:)([^\'"]+)[\'"]([^>]*)>(.*?)</a>', self._foundCompendium, content)
 
     def _foundCompendium(self, match):

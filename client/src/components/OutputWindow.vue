@@ -49,6 +49,8 @@ export default {
         zip_file: state.file,
         json: getters.fileType === "JSON",
         export_as_module: opt.exportAsModule,
+        convert_compendium: Boolean(opt.convertCompendium),
+        compendium_zip: opt.convertCompendium ? (opt.compendiumZip || "").trim() : null,
         campaign_title: opt.title,
         description: opt.description,
 

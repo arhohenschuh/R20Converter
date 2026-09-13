@@ -8,7 +8,7 @@
   >
     <div>
       <b-badge @click="toggle()" :variant="this.value ? 'primary' : 'secondary'" pill>{{ badge || (value ? enabled : disabled) }}</b-badge>
-      <b-form-checkbox switch v-model="boolValue" class="float-right"></b-form-checkbox>
+    <b-form-checkbox switch v-model="boolValue" :aria-label="label" class="float-right"></b-form-checkbox>
     </div>
   </b-form-group>
 </template>

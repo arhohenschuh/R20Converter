@@ -112,6 +112,10 @@ parser.add_argument("--custom-compendium-precedence", default=foundry.DEFAULT_CU
                     choices=list(foundry.CUSTOM_COMPENDIUM_PRECEDENCE),
                     help="Which source answers first when both hold a document of the same name "
                          "(Default: %s)" % foundry.DEFAULT_CUSTOM_PRECEDENCE)
+parser.add_argument("--convert-compendium", action="store_true",
+                    help="Convert an R20Exporter compendium ZIP into reference Journals alongside the campaign")
+parser.add_argument("--compendium-zip", default=None,
+                    help="Path to the exported compendium ZIP; used only with --convert-compendium")
 parser.add_argument("--no-compendium-overwrite", action="store_true", help="If enabled, items, feats and spells found in the Compendium will not be overwritten with custom description/damage/etc.. from the Roll20 data")
 parser.add_argument("--images-as-drawings", action="store_true", help="Set all images on the scene as textured drawings instead of tiles (requires Furnace to function properly)")
 parser.add_argument("--disable-module-journal", action="store_true", help="Disable conversion of Journal entries in the module (requires --export-as-module)")

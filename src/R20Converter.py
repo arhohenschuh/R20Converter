@@ -10,6 +10,7 @@ import platform
 from slugify import slugify
 from collections import OrderedDict
 
+from compendium_export import CompendiumExport
 import utils
 import foundry
 import leveldb_pack
@@ -64,6 +65,16 @@ class R20Converter(object):
         self.game_system_version = foundry.DEFAULT_SYSTEM_VERSION
         if (self.game_system == ""):
             self.game_system = foundry.DEFAULT_GAME_SYSTEM
+        self.compendium_export = None
+        if self.getArgument("convert_compendium", False):
+            compendium_zip = self.getArgument("compendium_zip", None)
+            if not isinstance(compendium_zip, str) or not compendium_zip.strip():
+                raise ValueError("Compendium conversion requires a compendium ZIP path")
+            if self.game_system != "dnd5e":
+                raise ValueError("Compendium conversion currently supports dnd5e exports only")
+            if self.getArgument("export_as_module", False) and self.getArgument("disable_module_journal", False):
+                raise ValueError("Compendium conversion requires module Journals to be enabled")
+            self.compendium_export = CompendiumExport(compendium_zip.strip())
         self.fvtt_path = self.getArgument("fvtt_data_path", None)
         if self.fvtt_path is not None:
             # Accept an installation directory as well as the data directory:
@@ -547,6 +558,8 @@ class R20Converter(object):
 
             self.macros = Macros(self)
 
+            if getattr(self, "compendium_export", None):
+                self.compendium_export.install(self)
             # Module will add the packs that are not empty and save them to file
             self.module = Module(self).save()
         else:
@@ -573,6 +586,9 @@ class R20Converter(object):
             self.cards = self.items
             self.tables = Tables(self).save()
 
+            if getattr(self, "compendium_export", None):
+                self.compendium_export.install(self)
+                self.journal.save()
             self.sessions = EmptyDB(self, "sessions").save()
             # Could get modified by the journal or rollable tables
             self.folders.save()

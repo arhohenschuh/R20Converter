@@ -26,6 +26,39 @@
         v-model="exportAsModule"
       />
 
+      <boolean-option label="Compendium conversion" v-model="convertCompendium" />
+
+      <b-form-group
+        v-if="convertCompendium"
+        label="Compendium ZIP"
+        label-for="compendium-zip"
+        label-cols-sm="6"
+        label-align="right"
+      >
+        <b-input-group class="compendium-zip-input">
+          <b-form-input
+            id="compendium-zip"
+            v-model="compendiumZip"
+            :state="compendiumReady ? true : (compendiumValidation.error ? false : null)"
+            :aria-busy="compendiumValidation.pending"
+            required
+            @change="validateCompendium"
+          ></b-form-input>
+          <b-input-group-append>
+            <b-button @click="browseCompendium" aria-label="Browse compendium ZIP" title="Browse compendium ZIP">
+              <b-icon-folder aria-hidden="true" />
+            </b-button>
+            <b-button @click="compendiumZip = ''" :disabled="!compendiumZip" aria-label="Clear compendium ZIP" title="Clear compendium ZIP">
+              <b-icon-x aria-hidden="true" />
+            </b-button>
+          </b-input-group-append>
+        </b-input-group>
+        <b-spinner v-if="compendiumValidation.pending" small label="Validating compendium ZIP" class="mt-2" />
+        <b-form-invalid-feedback :state="!compendiumValidation.error">
+          {{ compendiumValidation.error }}
+        </b-form-invalid-feedback>
+      </b-form-group>
+
       <b-form-group
         label="D&amp;D 5e SRD edition"
         label-align="right"
@@ -82,12 +115,15 @@
 </template>
 
 <script>
-import { mapState } from "vuex";
+import { mapGetters, mapState } from "vuex";
+import { BIconFolder, BIconX } from "bootstrap-vue";
 import BooleanOption from "./BooleanOption.vue";
 
 export default {
   components: {
-    BooleanOption
+    BooleanOption,
+    BIconFolder,
+    BIconX
   },
   data() {
     return {
@@ -98,6 +134,7 @@ export default {
       gmPassword: "",
       playerPassword: "",
       gameSystemInput: "dnd5e",
+      compendiumRequest: 0,
       srdEditions: [
         { value: "2014", text: "2014 (Legacy)" },
         { value: "2024", text: "2024 (Modern)" }
@@ -105,6 +142,34 @@ export default {
     };
   },
   methods: {
+    async browseCompendium() {
+      const path = await eel.ask_compendium_zip()();
+      if (path) {
+        this.compendiumZip = path;
+        await this.validateCompendium();
+      }
+    },
+    async validateCompendium() {
+      const path = this.compendiumZip.trim();
+      const request = ++this.compendiumRequest;
+      if (!this.convertCompendium) return;
+      if (!path || !/\.zip$/i.test(path)) {
+        this.$store.commit("setCompendiumValidation", {
+          path, valid: false, pending: false, error: "A compendium ZIP file is required."
+        });
+        return;
+      }
+      this.$store.commit("setCompendiumValidation", { path, valid: false, pending: true, error: null });
+      let result;
+      try {
+        result = await eel.validateCompendiumExport(path)();
+      } catch (error) {
+        result = { valid: false, error: "The compendium ZIP could not be validated." };
+      }
+      if (request === this.compendiumRequest && this.convertCompendium && path === this.compendiumZip.trim()) {
+        this.$store.commit("setCompendiumValidation", { ...result, path, pending: false });
+      }
+    },
     async browse() {
       this.folder = await eel.ask_folder()();
     },
@@ -129,6 +194,10 @@ export default {
     }
   },
   watch: {
+      convertCompendium(enabled) {
+        this.compendiumRequest++;
+        if (enabled) this.validateCompendium();
+      },
       async finalPath() {
           await this.checkDestinationFolder();
           if (this.error === null)
@@ -144,6 +213,24 @@ export default {
       }
   },
   computed: {
+    convertCompendium: {
+      get() {
+        return this.$store.state.options.convertCompendium;
+      },
+      set(value) {
+        this.$store.dispatch("setOption", { convertCompendium: value });
+      }
+    },
+    compendiumZip: {
+      get() {
+        return this.$store.state.options.compendiumZip || "";
+      },
+      set(value) {
+        this.compendiumRequest++;
+        this.$store.dispatch("setOption", { compendiumZip: value });
+        this.$store.commit("setCompendiumValidation", { path: "", valid: false, pending: false, error: null });
+      }
+    },
     folder: {
       get() {
         return this.$store.state.folder;
@@ -185,14 +272,16 @@ export default {
     gameSystem() {
       return this.gameSystemInput || "dnd5e";
     },
-    ...mapState(["foundryDirectory", "error"]),
+    ...mapGetters(["compendiumReady"]),
+    ...mapState(["foundryDirectory", "error", "compendiumValidation"]),
     ...mapState({
       defaultSlug: "slug",
       defaultTitle: "title"
     })
   },
   mounted() {
-    this.checkDestinationFolder()
+    this.checkDestinationFolder();
+    if (this.convertCompendium && !this.compendiumReady) this.validateCompendium();
   },
   destroyed() {
     this.$store.dispatch("setOption", {
@@ -206,3 +295,12 @@ export default {
   }
 };
 </script>
+
+<style scoped>
+.compendium-zip-input {
+  flex-wrap: nowrap;
+}
+.compendium-zip-input .form-control {
+  min-width: 0;
+}
+</style>
