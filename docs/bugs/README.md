@@ -148,6 +148,13 @@ mechanically for the physical-item class of defect.
 | [B109](B109-wildcard-module-assets-not-internalized.md) | High | Fixed (v1.15.16) | Complete module wildcard families are copied to isolated local patterns with all members, original bytes, random-image settings, and fail-closed checks preserved. |
 | [B110](B110-world-macros-resolve-compendium-links-before-items.md) | High | Fixed (v1.15.17) | World Items now exist before Macro/chat compendium-link resolution; imported Items survive saving and UUIDs retain the correct IDs. Source and packaged world regressions pass. |
 | [B111](B111-npc-pact-trait-loses-shared-short-rest-slots.md) | High | Fixed (v1.16.1) | Explicit source shared-slot traits control casting capacity, fixed level, and short-rest recovery without module/NPC identity exceptions; unrelated resources and free follow-ups are preserved. |
+| [B112](B112-ogl-npc-bonus-actions-dropped.md) | High | Open | OGL NPC `repeating_npcbonusaction` rows are never read; every NPC bonus action is silently dropped (13 rows / 9 NPCs in Dragoncoast Danger). |
+| [B113](B113-redirected-console-output-unicode-crash.md) | High | Open | With redirected stdout the Windows CLI aborts on any non-cp1252 character in a log line (U+2060 in a Macro link); environment encoding overrides are ignored. |
+| [B114](B114-limited-innate-alternative-scaling-activities-abort.md) | High | Open | Limited innate spells abort when the donor has alternative complete casting activities (Beyond5e 1.6.x Flame Strike Fire/Radiant Scaling; 8 donor spells affected). |
+| [B115](B115-malformed-npc-hp-formula-fails-actor-init.md) | High | Open | An unparseable source NPC HP formula is emitted verbatim; dnd5e 6.x then rejects the whole Actor at world load. |
+| [B116](B116-compendium-matched-npc-weapons-lose-printed-attack-damage.md) | High | Open | Compendium-matched OGL NPC weapons keep donor dice/type/ability; printed to-hit and damage parts are lost (25 of 150 NPC attacks in Dragoncoast Danger). |
+| [B117](B117-npc-printed-saves-skills-passive-not-preserved.md) | Moderate | Open | Printed OGL NPC saves, skills and passive Perception that differ from the derivation are lost; `npc_pb = 0` yields fractional skill totals. |
+| [B118](B118-duplicate-pc-skill-attribute-selects-stale-row.md) | Moderate | Open | Duplicate PC attribute rows resolve to the stale last row (Stealth +7 converted as +1). |
 
 ## Cross-cutting observations
 
@@ -158,7 +165,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B112**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B119**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent
