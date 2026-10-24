@@ -1,7 +1,7 @@
 # B115: Malformed NPC HP formula makes the Actor fail to initialize
 
 - Severity: High
-- Status: Open
+- Status: Fixed in v1.16.2 for NPC HP formula emission
 - Observed release: R20Converter 1.16.1, commit cbb0d0e7a9665c43f780c26d3f31ef98f853454d
 - Reported: 24 October 2026, Dragoncoast Danger played-world reconversion (`dcd/v130`)
 
@@ -37,3 +37,12 @@ guessing.
 
 Dragoncoast Danger corrected the single source value to `22d8 + 22` post-conversion. Its
 average, 121, equals the source HP maximum.
+
+## Generic Resolution
+
+The existing dice/reference arithmetic validator now checks expression structure without
+evaluating it. NPC HP emission clears an invalid formula and logs its source field/value, while
+retaining the explicit HP maximum. It does not guess the missing punctuation or recalculate HP.
+Valid dice, arithmetic, and supported dynamic references remain supported. This resolution is
+bounded to the reported HP field; it is not a claim that every possible third-party formula
+language has been implemented. See [test_actor_hp.py](../../tests/test_actor_hp.py).

@@ -310,6 +310,93 @@ def _slots(**levels):
     return attributes
 
 
+class TestNPCPrintedScalars(object):
+    @pytest.mark.parametrize("ability,score,challenge,printed", [
+        ("dexterity", 16, 1, 4), ("charisma", 14, 1, 3), ("intelligence", 14, 5, 6),
+        ("wisdom", 12, 5, 4), ("strength", 16, 1, 5),
+    ])
+    def test_printed_saves_include_explicit_residual_bonus(self, ability, score, challenge, printed):
+        actor = SlotActor(attributes={ability: score, "npc_challenge": challenge,
+            "npc_saving_flag": "1", "npc_" + ability[:3] + "_save": str(printed)})
+        actor._save_bonus = 0
+        result = actor.createActorAbility(ability)
+        computed = (score - 10) // 2 + result["proficient"] * actor.getProficiencyBonus()
+        assert computed + int(result["bonuses"]["save"] or 0) == printed
+        if computed == printed:
+            assert result["bonuses"]["save"] == ""
+
+    @pytest.mark.parametrize("name,ability,score,printed", [
+        ("acrobatics", "dexterity", 14, 4), ("deception", "charisma", 10, 2),
+        ("perception", "wisdom", 10, 2), ("stealth", "dexterity", 16, 5),
+    ])
+    def test_npc_skills_have_integer_proficiency_and_exact_totals(self, name, ability, score, printed):
+        actor = SlotActor(attributes={ability: score, "npc_challenge": 5, "npc_pb": "0",
+            "npc_" + name: str(printed), "npc_" + name + "_flag": "1"})
+        result = actor.createActorSkill(name.title(), name, ability)
+        assert result["value"] in (0, 1, 2)
+        computed = (score - 10) // 2 + actor.getProficiencyBonus() * result["value"]
+        assert computed + int(result["bonuses"]["check"] or 0) == printed
+
+    def test_visible_printed_skill_takes_precedence_over_derived_sheet_field(self):
+        actor = SlotActor(attributes={"dexterity": 14, "npc_challenge": 5,
+            "npc_acrobatics": "4", "npc_acrobatics_flag": "1", "npcd_acrobatics": "3"})
+        skill = actor.createActorSkill("Acrobatics", "acrobatics", "dexterity")
+        assert 2 + 3 * skill["value"] + float(skill["bonuses"]["check"] or 0) == 4
+
+    @pytest.mark.parametrize("senses,expected", [("darkvision 60 ft., passive Perception 12", 12),
+                                               ("Passive Perception 10", 10)])
+    def test_printed_passive_perception_is_preserved(self, senses, expected):
+        actor = SlotActor(attributes={"wisdom": 14, "npc_perception": "2", "npc_senses": senses})
+        skill = actor.createActorSkill("Perception", "perception", "wisdom")
+        assert 12 + int(skill["bonuses"]["passive"] or 0) == expected
+
+
+class TestDuplicateSourceAttributes(object):
+    @pytest.mark.parametrize("actor_id,name", [("source-id", "First Reader"), ("other-id", "Other Reader")])
+    def test_first_source_row_controls_pc_skill_and_conflicts_are_reported(self, monkeypatch, actor_id, name):
+        actor = Actor.__new__(Actor)
+        actor._character = {"id": actor_id, "name": name, "attributes": [
+            {"name": "npc", "current": "0", "max": "", "id": "npc"},
+            {"name": "dexterity", "current": "16", "max": "", "id": "dex"},
+            {"name": "pb", "current": "2", "max": "", "id": "pb"},
+            {"name": "stealth_type", "current": "2", "max": "", "id": "type"},
+            {"name": "stealth_bonus", "current": "7", "max": "", "id": "live-row"},
+            {"name": "stealth_bonus", "current": "0", "max": "", "id": "stale-row"},
+        ]}
+        warnings = []
+        monkeypatch.setattr(actor, "logWarning", warnings.append)
+        actor.parseAttributes()
+        assert actor.getAttribute("stealth_bonus") == ("7", "", "live-row")
+        skill = actor.createActorSkill("Stealth", "stealth", "dexterity")
+        assert skill["value"] == 2
+        assert 3 + 2 * skill["value"] + int(skill["bonuses"]["check"] or 0) == 7
+        assert any("stealth_bonus" in warning and "live-row" in warning and "stale-row" in warning for warning in warnings)
+
+    @pytest.mark.parametrize("attribute", ["other_languages", "repeating_npcbonusaction_row_desc"])
+    def test_duplicate_empty_rows_do_not_erase_source_text(self, monkeypatch, attribute):
+        actor = Actor.__new__(Actor)
+        actor._character = {"id": "generic", "name": "Generic", "attributes": [
+            {"name": attribute, "current": "Source text", "max": "", "id": "first"},
+            {"name": attribute, "current": "", "max": "", "id": "second"},
+        ]}
+        warnings = []
+        monkeypatch.setattr(actor, "logWarning", warnings.append)
+        actor.parseAttributes()
+        result = actor.getRepeatingAttributes("npcbonusaction")["row"]["desc"] if attribute.startswith("repeating_") else actor.getAttribute(attribute)
+        assert result == ("Source text", "", "first")
+        assert len(warnings) == 1
+
+    def test_single_row_is_unchanged(self, monkeypatch):
+        actor = Actor.__new__(Actor)
+        actor._character = {"id": "single", "name": "Single", "attributes": [
+            {"name": "stealth_bonus", "current": "0", "max": "", "id": "only"}]}
+        warnings = []
+        monkeypatch.setattr(actor, "logWarning", warnings.append)
+        actor.parseAttributes()
+        assert actor.getAttribute("stealth_bonus") == ("0", "", "only")
+        assert warnings == []
+
+
 class TestSpellSlotShape(object):
     """B030: every leveled NPC caster arrived with no slots at all."""
 
@@ -390,6 +477,60 @@ class TestSpellSlotShape(object):
         spells = SlotActor(npc=False, attributes=_slots(l3=(4, 2))).createActorSpells()
         assert spells["spell3"]["override"] is None
         assert spells["spell3"]["value"] == 2
+
+
+class TestPCPactMagic(object):
+    def fixture(self, level=4, remaining=2, module=False):
+        actor = SlotActor(npc=False, attributes=_slots(l2=(2, remaining)), export_as_module=module)
+        items = [{"_id": "genericclass0001", "name": "Renamed Pact Class", "type": "class",
+                  "system": {"levels": level, "spellcasting": {"progression": "pact"}}}]
+        for index, method in enumerate(("spell", "spell", "innate", "atwill", "ritual")):
+            items.append({"_id": "genericspell%04d" % index, "name": "Spell %d" % index, "type": "spell",
+                          "system": {"level": 0 if index == 0 else 1, "method": method, "prepared": 1,
+                                     "activities": {"cast": {"consumption": {"spellSlot": method == "spell", "targets": []}}}}})
+        return actor, items
+
+    @pytest.mark.parametrize("remaining,module,expected", [(2, False, 2), (1, False, 1), (0, False, 0), (0, True, 2)])
+    def test_single_pact_class_preserves_the_correct_pool_and_grants(self, remaining, module, expected):
+        actor, items = self.fixture(remaining=remaining, module=module)
+        slots = actor.createActorSpells()
+        untouched = copy.deepcopy(items[3:])
+        actor.applyPCPactMagic(items, slots)
+        assert slots["pact"] == {"value": expected, "override": None}
+        assert all(slots["spell%d" % level] == {"value": 0, "override": None} for level in range(1, 10))
+        assert [item["system"]["method"] for item in items[1:3]] == ["pact", "pact"]
+        assert items[3:] == untouched
+
+    def test_source_feat_prose_preserves_an_explicit_at_will_grant(self):
+        actor, items = self.fixture()
+        items.append({"_id": "genericgrant0001", "name": "Renamed Invocation", "type": "feat",
+                      "system": {"description": {"value": "<p>You can cast <em>Spell 1</em> at will, without expending a spell slot.</p>"}}})
+        actor.applyPCPactMagic(items, actor.createActorSpells())
+        assert items[2]["system"]["method"] == "atwill"
+        assert items[2]["system"]["activities"]["cast"]["consumption"]["spellSlot"] is False
+
+    @pytest.mark.parametrize("progression", ["full", "half", "third", "artificer"])
+    def test_mixed_caster_pool_is_rejected_without_inventing_availability(self, progression):
+        actor, items = self.fixture()
+        items.append({"type": "class", "system": {"levels": 4, "spellcasting": {"progression": progression}}})
+        with pytest.raises(ValueError, match="mixed pact and ordinary"):
+            actor.applyPCPactMagic(items, actor.createActorSpells())
+
+    def test_noncasting_multiclass_is_not_an_ambiguous_pool(self):
+        actor, items = self.fixture()
+        items.append({"type": "class", "system": {"levels": 4, "spellcasting": {"progression": "none"}}})
+        slots = actor.createActorSpells()
+        actor.applyPCPactMagic(items, slots)
+        assert slots["pact"]["value"] == 2
+
+    @pytest.mark.parametrize("progression", ["full", "half", "none"])
+    def test_non_pact_caster_is_unchanged(self, progression):
+        actor, items = self.fixture()
+        items[0]["system"]["spellcasting"]["progression"] = progression
+        slots = actor.createActorSpells()
+        before = copy.deepcopy((items, slots))
+        actor.applyPCPactMagic(items, slots)
+        assert (items, slots) == before
 
 
 class TestNPCSharedSpellSlots(object):

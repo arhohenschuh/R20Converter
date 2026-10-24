@@ -1,7 +1,7 @@
 # B120: Usage limits in NPC feature names are not converted into uses
 
 - Severity: Moderate
-- Status: Open
+- Status: Fixed in v1.16.2
 - Observed release: R20Converter 1.16.1, commit cbb0d0e7a9665c43f780c26d3f31ef98f853454d
 - Reported: 24 October 2026, Dragoncoast Danger played-world reconversion (`dcd/v130`)
 
@@ -49,3 +49,15 @@ Keep the printed name unchanged. When a compendium match already has uses, do no
 
 Dragoncoast Danger 1.3.0 leaves these features without uses, as in 1.2.2, and documents the
 disposition in its FIXLOG. No post-conversion repair is applied.
+
+## Generic Resolution
+
+One shared NPC helper parses the printed daily, recharge-die, and rest suffixes before Item
+activities are built. It covers traits, ordinary actions, bonus actions, and reactions, preserving
+the existing activation when present. A limited trait without specified timing uses `special`,
+not an invented action cost. Dash variants are normalized for parsing only; names are retained.
+
+Existing resource pools are not overwritten. `(N/Day each)` spellcasting quotas remain owned by
+the spell-level converter. Every generated use-consuming activity points to its own native Item
+use pool. Tests for all sections, dash variants, unaffected features, and preserved pools are in
+[test_asset_and_compendium_fixes.py](../../tests/test_asset_and_compendium_fixes.py).

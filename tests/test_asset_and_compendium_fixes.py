@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import dnd5e
 import entities.base as base
 import entities.journal as journal
 import entities.items as items_module
@@ -489,6 +490,165 @@ class TestNPCClassFeatureBoundary(object):
         assert actor._converter.items.replacements == 1
 
 
+class NPCActionItems(FeatBoundaryItems):
+    def createItemInventory(self, identifier, name, description, inventory_type, attributes,
+                            activation, attack, specific, **kwargs):
+        return items_module.Items.createItemInventory(self.database, identifier, name, description,
+            inventory_type, attributes, activation, attack, specific, **kwargs)
+
+
+class NPCActionActor(FeatBoundaryActor):
+    def __init__(self, database, donor=None):
+        super(NPCActionActor, self).__init__(database, donor, True)
+        self._converter.items = NPCActionItems(database)
+        self._shaped = False
+
+    def getAttribute(self, name, default=None, from_dict=None):
+        return ((from_dict or {}).get(name, default), None, None)
+
+    def getProficiencyBonus(self):
+        return 3
+
+    def abilityMods(self):
+        return {"str": 3, "dex": 2, "con": 1, "int": 0, "wis": 0, "cha": 1}
+
+    def abilityDerived(self, ability, field, default=0):
+        return self.abilityMods().get(ability, default)
+
+
+class TestNPCPrintedWeaponMechanics(object):
+    @pytest.mark.parametrize("name,donor_id", [("Bite", "genericDonor0001"), ("Arc Strike", "otherDonor000001")])
+    @pytest.mark.parametrize("matched", [False, True])
+    @pytest.mark.parametrize("to_hit", [6, 9])
+    def test_source_attack_and_all_damage_parts_survive(self, tmp_path, name, donor_id, matched, to_hit):
+        donor = _inventory_donor(name, "weapon")
+        donor.entity["_id"] = donor_id
+        donor.entity["system"].update({"type": {"value": "natural"},
+            "damage": {"base": dnd5e.damageData(1, 6, types=["slashing"])},
+            "activities": {"donorAttack00001": dnd5e.attackActivity("donorAttack00001", "dex")}})
+        actor = NPCActionActor(FakeDatabase(str(tmp_path), {"no_compendium_overwrite": True}), donor if matched else None)
+        source = {"name": name, "attack_flag": "on", "attack_tohit": str(to_hit),
+                  "attack_damage": "2d8 + 3", "attack_damagetype": "piercing",
+                  "attack_damage2": "2d6", "attack_damagetype2": "poison", "attack_range": "5 ft."}
+        items = []
+        actor.addNPCAction(items, source, ItemActivation.ACTION)
+        item, = items
+        damage = item["system"]["damage"]["base"]
+        assert (damage["number"], damage["denomination"], damage["types"]) == (2, 8, ["piercing"])
+        activity, = item["system"]["activities"].values()
+        extra, = activity["damage"]["parts"]
+        assert (extra["number"], extra["denomination"], extra["types"]) == (2, 6, ["poison"])
+        ability = activity["attack"]["ability"]
+        assert actor.abilityMods()[ability] + actor.getProficiencyBonus() + int(activity["attack"]["bonus"] or 0) == to_hit
+        assert int(damage["bonus"] or 0) + actor.abilityMods()[ability] == 3
+        assert item["img"] == ("icons/donor.webp" if matched else "source.webp")
+        assert actor._converter.items.replacements == 0
+
+    def test_bonus_attack_keeps_source_mechanics(self, tmp_path):
+        actor = NPCActionActor(FakeDatabase(str(tmp_path)))
+        items = []
+        actor.addNPCAction(items, {"name": "Quick Attack", "attack_flag": "on", "attack_tohit": "9",
+            "attack_damage": "2d8 + 3", "attack_damagetype": "piercing"}, ItemActivation.BONUS_ACTION)
+        activity, = items[0]["system"]["activities"].values()
+        assert activity["activation"]["type"] == "bonus"
+        assert activity["type"] == "attack"
+        assert activity["damage"]["parts"][0]["number"] == 2
+
+    @pytest.mark.parametrize("activation", [ItemActivation.ACTION, ItemActivation.BONUS_ACTION])
+    @pytest.mark.parametrize("name,description,count,period", [
+        ("Brief Flash (2/Day)", "A printed effect.", "2", "day"),
+        ("Shimmer (Recharge 5\u20136)", "A printed effect.", "1", "recharge"),
+        ("Reserve (Recharges after a Short or Long Rest)", "A printed effect.", "1", "sr"),
+        ("Brief Recovery", "Once it uses this feature, it must finish a short or long rest before it can use it again.", "1", "sr"),
+    ])
+    def test_printed_action_resource_limits_are_preserved(self, tmp_path, activation, name, description, count, period):
+        actor = NPCActionActor(FakeDatabase(str(tmp_path)))
+        items = []
+        actor.addNPCAction(items, {"name": name, "description": description}, activation)
+        item, = items
+        assert item["system"]["uses"]["max"] == count
+        assert item["system"]["uses"]["spent"] == 0
+        assert any(recovery["period"] == period for recovery in item["system"]["uses"]["recovery"])
+        activity, = item["system"]["activities"].values()
+        assert activity["activation"]["type"] == activation
+        target, = activity["consumption"]["targets"]
+        assert target["type"] == "itemUses" and target["target"] == "" and target["value"] == "1"
+
+
+class TestNPCFeatureLimits(object):
+    @pytest.mark.parametrize("section", ["npctrait", "npcreaction", "npcaction", "npcbonusaction"])
+    @pytest.mark.parametrize("suffix,maximum,period,formula", [
+        ("(2/Day)", "2", "day", None),
+        ("(Recharge 5-6).", "1", "recharge", "5"),
+        ("(Recharge 4\u20136)", "1", "recharge", "4"),
+        ("(Recharge 4\u00e2\u20ac\u201c6)", "1", "recharge", "4"),
+        ("(Recharge 6)", "1", "recharge", "6"),
+        ("(Recharges after a Short or Long Rest)", "1", "sr", None),
+    ])
+    def test_limit_suffix_is_shared_by_every_npc_section(self, tmp_path, section, suffix, maximum, period, formula):
+        actor = NPCActionActor(FakeDatabase(str(tmp_path)))
+        name = "Unrelated Capability " + suffix
+        sections = {section: {"renamed-source-row": {"name": name, "description": "Printed rule."}}}
+        actor.getRepeatingAttributes = lambda key: sections.get(key, {})
+        items = []
+        actor.addTraits(items)
+        actor.addActions(items)
+        item, = items
+        assert item["name"] == name
+        assert item["system"]["uses"]["max"] == maximum
+        assert item["system"]["uses"]["spent"] == 0
+        recovery, = item["system"]["uses"]["recovery"]
+        assert recovery["period"] == period
+        if formula:
+            assert recovery["formula"] == formula
+        activity, = item["system"]["activities"].values()
+        assert activity["consumption"]["targets"] == [dnd5e.consumptionTarget()]
+        assert activity["consumption"]["spellSlot"] is False
+        expected_activation = {"npctrait": "special", "npcreaction": "reaction",
+                               "npcaction": "action", "npcbonusaction": "bonus"}
+        assert activity["activation"]["type"] == expected_activation[section]
+
+    def test_existing_use_pool_is_not_overwritten(self, tmp_path):
+        actor = NPCActionActor(FakeDatabase(str(tmp_path)))
+        activation = ItemActivation(ItemActivation.REACTION, 1)
+        activation.uses = items_module.ItemUses(3, 7, "lr")
+        item = actor.createItemFeat([], "Stored Pool (2/Day)", "Rule", activation)
+        assert item["system"]["uses"]["max"] == "7"
+        assert item["system"]["uses"]["spent"] == 4
+
+    @pytest.mark.parametrize("name", ["Unlimited Ability", "Innate Spellcasting (3/Day each)"])
+    def test_unlimited_or_spell_level_quota_traits_are_unchanged(self, tmp_path, name):
+        actor = NPCActionActor(FakeDatabase(str(tmp_path)))
+        item = actor.createItemFeat([], name, "Rule")
+        assert item["system"]["uses"]["max"] == ""
+        assert item["system"]["activities"] == {}
+
+
+class TestNPCActionSections(object):
+    @pytest.mark.parametrize("row_id,name", [("first-row", "Quick Step"), ("unrelated-row", "Swift Aid")])
+    def test_ogl_bonus_actions_are_dispatched_with_bonus_activation(self, monkeypatch, row_id, name):
+        actor = Actor.__new__(Actor)
+        actor._shaped = False
+        sections = {"npcaction": {"ordinary": {"name": "Strike"}},
+                    "npcbonusaction": {row_id: {"name": name}, "empty": {}}}
+        monkeypatch.setattr(actor, "isNPC", lambda: True)
+        monkeypatch.setattr(actor, "getRepeatingAttributes", lambda key: sections.get(key, {}))
+        monkeypatch.setattr(actor, "addNPCAction", lambda items, row, activation: items.append((row, activation)))
+        items = []
+        actor.addActions(items)
+        assert items == [(sections["npcaction"]["ordinary"], ItemActivation.ACTION),
+                         (sections["npcbonusaction"][row_id], ItemActivation.BONUS_ACTION)]
+
+    def test_missing_bonus_section_adds_no_items(self, monkeypatch):
+        actor = Actor.__new__(Actor)
+        actor._shaped = False
+        monkeypatch.setattr(actor, "isNPC", lambda: True)
+        monkeypatch.setattr(actor, "getRepeatingAttributes", lambda key: {})
+        items = []
+        actor.addActions(items)
+        assert items == []
+
+
 def _class_document():
     return {
         "_id": "compendiumid00000",
@@ -579,6 +739,90 @@ def _initial_save_choices_document():
         document["effects"].append({"_id": effect_id, "name": label, "statuses": [status],
                                     "transfer": False})
     return document
+
+
+def _complete_cast_choices(kind="scaling"):
+    document = _spell_document()
+    document["name"] = "Generic Choice Spell"
+    first = dnd5e.saveActivity("firstChoice00001", "dex", dc=15,
+        damage_parts=[dnd5e.damageData(4, 6, types=["fire"], scaling_mode="whole"),
+                      dnd5e.damageData(4, 6, types=["radiant"])])
+    first["activation"] = {"type": "action", "override": False}
+    first["consumption"] = {"spellSlot": True, "targets": []}
+    second = copy.deepcopy(first)
+    second["_id"] = "otherChoice00001"
+    if kind == "scaling":
+        first["damage"]["parts"][0]["scaling"]["mode"] = "whole"
+        second["damage"]["parts"][0]["scaling"]["mode"] = ""
+        second["damage"]["parts"][1]["scaling"]["mode"] = "whole"
+    elif kind == "type":
+        second["damage"]["parts"][1]["types"] = ["necrotic"]
+    elif kind == "die":
+        second["damage"]["parts"][0]["denomination"] = 12
+        second["damage"]["parts"][0]["custom"].pop("formula", None)
+        first["description"] = {"chatFlavor": ""}
+        second["description"] = {"chatFlavor": None}
+    else:
+        for index, activity in enumerate((first, second)):
+            activity["type"] = "utility"
+            activity.pop("save")
+            activity.pop("damage")
+            activity["effects"] = [{"_id": "effectChoice000%d" % index}]
+    document["system"]["activities"] = {activity["_id"]: activity for activity in (first, second)}
+    return document
+
+
+class TestCompleteCastingChoices(object):
+    def build(self, entity, document):
+        entity._database._arguments = {"no_compendium_overwrite": True}
+        source_type = next(iter(document["system"]["activities"].values()))["type"]
+        source = {"method": "innate", "prepared": 1,
+            "uses": {"spent": 0, "max": "1", "recovery": [{"period": "day", "type": "recoverAll"}]},
+            "activities": {"source": {"type": source_type, "consumption": {"targets": [
+                {"type": "itemUses", "target": "", "value": "1"}]}}}}
+        return Item.createItemFromCompendium(entity._database, None, FakeCompendiumItem(document), source)
+
+    @pytest.mark.parametrize("kind", ["scaling", "type", "die", "effects"])
+    @pytest.mark.parametrize("name", ["First Choice Spell", "Unrelated Renamed Spell"])
+    def test_complete_choices_share_one_quota_without_slots(self, entity, kind, name):
+        donor = _complete_cast_choices(kind)
+        donor["name"] = name
+        before = copy.deepcopy(donor)
+        result = self.build(entity, donor).entity["system"]
+        assert result["uses"]["max"] == "1"
+        assert len(result["activities"]) == 2
+        for activity in result["activities"].values():
+            assert activity["consumption"]["spellSlot"] is False
+            assert activity["consumption"]["targets"] == [{"type": "itemUses", "target": "", "value": "1"}]
+        assert donor == before
+        items_module._validateResourceContract("spell", name, result)
+
+    @pytest.mark.parametrize("change", ["missing-save", "different-save", "different-target", "duplicate", "mixed-type"])
+    def test_ambiguous_or_incomplete_choices_still_fail(self, entity, change):
+        donor = _complete_cast_choices()
+        first, second = donor["system"]["activities"].values()
+        if change == "missing-save":
+            second.pop("save")
+        elif change == "different-save":
+            second["save"]["ability"] = ["wis"]
+        elif change == "different-target":
+            second["target"] = {"override": True, "affects": {"type": "self"}}
+        elif change == "duplicate":
+            second["damage"] = copy.deepcopy(first["damage"])
+        else:
+            donor = _complete_cast_choices("effects")
+            extra = copy.deepcopy(next(iter(donor["system"]["activities"].values())))
+            extra.update({"_id": "extraMixed000001", "type": "heal", "effects": [{"_id": "otherEffect00001"}]})
+            donor["system"]["activities"][extra["_id"]] = extra
+        with pytest.raises(ValueError):
+            self.build(entity, donor)
+
+    def test_free_followup_is_not_given_a_casting_quota(self, entity):
+        donor = _complete_cast_choices()
+        donor["system"]["activities"]["freeFollowup0001"] = {"type": "damage",
+            "consumption": {"spellSlot": False, "targets": []}}
+        result = self.build(entity, donor).entity["system"]
+        assert result["activities"]["freeFollowup0001"]["consumption"] == {"spellSlot": False, "targets": []}
 
 
 class TestCompendiumKeepsCharacterState(object):

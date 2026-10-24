@@ -1,7 +1,7 @@
 # B118: Duplicate PC skill attributes select the stale row
 
 - Severity: Moderate
-- Status: Open
+- Status: Fixed in v1.16.2
 - Observed release: R20Converter 1.16.1, commit cbb0d0e7a9665c43f780c26d3f31ef98f853454d
 - Reported: 24 October 2026, Dragoncoast Danger played-world reconversion (`dcd/v130`)
 
@@ -32,3 +32,11 @@ conflict with both IDs.
 - Duplicate `stealth_bonus` 7/0 with `stealth_type = 2` converts to expertise with total +7.
 - A different character/module with the same duplicate shape behaves identically.
 - Control: a character with a single row is unchanged.
+
+## Generic Resolution
+
+Attribute ingestion retains the first occurrence of a name, matching the source sheet's lookup
+order. Conflicting later rows are reported with both attribute IDs rather than silently replacing
+the first value. Identical duplicates and single-row controls retain their values. This applies
+to source attributes generally, not to a particular PC or skill. See
+[test_dnd5e_schema_diff.py](../../tests/test_dnd5e_schema_diff.py).

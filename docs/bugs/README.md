@@ -148,15 +148,15 @@ mechanically for the physical-item class of defect.
 | [B109](B109-wildcard-module-assets-not-internalized.md) | High | Fixed (v1.15.16) | Complete module wildcard families are copied to isolated local patterns with all members, original bytes, random-image settings, and fail-closed checks preserved. |
 | [B110](B110-world-macros-resolve-compendium-links-before-items.md) | High | Fixed (v1.15.17) | World Items now exist before Macro/chat compendium-link resolution; imported Items survive saving and UUIDs retain the correct IDs. Source and packaged world regressions pass. |
 | [B111](B111-npc-pact-trait-loses-shared-short-rest-slots.md) | High | Fixed (v1.16.1) | Explicit source shared-slot traits control casting capacity, fixed level, and short-rest recovery without module/NPC identity exceptions; unrelated resources and free follow-ups are preserved. |
-| [B112](B112-ogl-npc-bonus-actions-dropped.md) | High | Open | OGL NPC `repeating_npcbonusaction` rows are never read; every NPC bonus action is silently dropped (13 rows / 9 NPCs in Dragoncoast Danger). |
-| [B113](B113-redirected-console-output-unicode-crash.md) | High | Open | With redirected stdout the Windows CLI aborts on any non-cp1252 character in a log line (U+2060 in a Macro link); environment encoding overrides are ignored. |
-| [B114](B114-limited-innate-alternative-scaling-activities-abort.md) | High | Open | Limited innate spells abort when the donor has alternative complete casting activities (Beyond5e 1.6.x Flame Strike Fire/Radiant Scaling; 8 donor spells affected). |
-| [B115](B115-malformed-npc-hp-formula-fails-actor-init.md) | High | Open | An unparseable source NPC HP formula is emitted verbatim; dnd5e 6.x then rejects the whole Actor at world load. |
-| [B116](B116-compendium-matched-npc-weapons-lose-printed-attack-damage.md) | High | Open | Compendium-matched OGL NPC weapons keep donor dice/type/ability; printed to-hit and damage parts are lost (25 of 150 NPC attacks in Dragoncoast Danger). |
-| [B117](B117-npc-printed-saves-skills-passive-not-preserved.md) | Moderate | Open | Printed OGL NPC saves, skills and passive Perception that differ from the derivation are lost; `npc_pb = 0` yields fractional skill totals. |
-| [B118](B118-duplicate-pc-skill-attribute-selects-stale-row.md) | Moderate | Open | Duplicate PC attribute rows resolve to the stale last row (Stealth +7 converted as +1). |
-| [B119](B119-pact-caster-spells-written-as-spell-method-pact-slot-zero.md) | High | Open | Pact-magic PC spells get `method: "spell"`, and the available slots land on `spell<N>` while the pact slot reads 0; warlocks cannot cast leveled spells. |
-| [B120](B120-npc-feature-name-usage-limits-not-converted.md) | Moderate | Open | `(N/Day)`, `(Recharge X–6)` and `(Recharges after a Short or Long Rest)` in NPC feature names are not turned into uses and recovery (16 features in Dragoncoast Danger). |
+| [B112](B112-ogl-npc-bonus-actions-dropped.md) | High | Fixed (v1.16.2) | OGL bonus-action rows use the shared NPC action converter, preserving activation and printed mechanics. |
+| [B113](B113-redirected-console-output-unicode-crash.md) | High | Fixed (v1.16.2) | Redirected stdout/stderr are configured as UTF-8 before application imports; GUI fallback streams accept text. |
+| [B114](B114-limited-innate-alternative-scaling-activities-abort.md) | High | Fixed (v1.16.2, bounded) | Complete same-kind casting choices share the innate quota; mixed, incomplete and sequential activity shapes remain fail-closed. The eight-name scan was a candidate list, not eight equivalent defects. |
+| [B115](B115-malformed-npc-hp-formula-fails-actor-init.md) | High | Fixed (v1.16.2) | Invalid NPC HP expressions are omitted with a source warning while explicit HP totals are retained. |
+| [B116](B116-compendium-matched-npc-weapons-lose-printed-attack-damage.md) | High | Fixed (v1.16.2) | NPC action mechanics remain source-authored through donor matching, preserving printed attack bonuses and all damage parts/types. |
+| [B117](B117-npc-printed-saves-skills-passive-not-preserved.md) | Moderate | Fixed (v1.16.2) | Native residual bonuses preserve printed NPC saves, skills and passive Perception without fractional NPC proficiency. |
+| [B118](B118-duplicate-pc-skill-attribute-selects-stale-row.md) | Moderate | Fixed (v1.16.2) | Source attribute lookup retains the first row and reports conflicting duplicate IDs. |
+| [B119](B119-pact-caster-spells-written-as-spell-method-pact-slot-zero.md) | High | Fixed (v1.16.2, bounded) | Single-pact PCs use pact methods and availability while explicit grants stay free; ambiguous mixed pact/ordinary pools are rejected rather than guessed. |
+| [B120](B120-npc-feature-name-usage-limits-not-converted.md) | Moderate | Fixed (v1.16.2) | One suffix parser supplies native uses and recovery for all NPC feature sections while preserving existing pools and printed names. |
 
 ## Cross-cutting observations
 

@@ -1,7 +1,7 @@
 # B117: OGL NPC printed saves, skills and passive Perception are not preserved
 
 - Severity: Moderate
-- Status: Open
+- Status: Fixed in v1.16.2
 - Observed release: R20Converter 1.16.1, commit cbb0d0e7a9665c43f780c26d3f31ef98f853454d
 - Reported: 24 October 2026, Dragoncoast Danger played-world reconversion (`dcd/v130`)
 
@@ -46,3 +46,11 @@ passive bonus). Never emit fractional proficiency.
 
 Dragoncoast Danger repairs 5 saves, 4 skills, and 3 passive scores post-conversion (rules R-SAVE,
 R-SKL, R-PAS).
+
+## Generic Resolution
+
+Printed NPC saves and skills now retain residual native bonuses after proficiency is selected.
+NPC proficiency choices do not create fractional totals. Passive Perception is recognized
+case-insensitively and represented by a separate passive bonus when necessary. Legitimate PC
+half-proficiency remains supported. Standard and nonstandard scalar controls are in
+[test_dnd5e_schema_diff.py](../../tests/test_dnd5e_schema_diff.py).

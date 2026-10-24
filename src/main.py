@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
+import io
 import json
 import zipfile
 import sys
@@ -11,15 +12,16 @@ import argparse
 # If we're in windowed mode, we need to have stdout/stderr because the
 # GUI/argparse/anything will try to write to stderr/stdout whenever it feels
 # like it and will cause a crash on import
-if sys.stdout is None:
-    try:
-        sys.stdout = open('stdout.log', 'w')
-        sys.stderr = open('stderr.log', 'w')
-    except:
-        # Installing to C:\Program Files (for example) or other permission error could cause this to fail
-        import io
-        sys.stdout = io.BytesIO()
-        sys.stderr = io.BytesIO()
+for stream_name in ("stdout", "stderr"):
+    stream = getattr(sys, stream_name)
+    if stream is None:
+        try:
+            stream = open(stream_name + ".log", "w", encoding="utf-8", errors="backslashreplace")
+        except OSError:
+            stream = io.StringIO()
+        setattr(sys, stream_name, stream)
+    elif hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 import messages
 import foundry

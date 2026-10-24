@@ -1,7 +1,7 @@
 # B114: Limited innate spell aborts on alternative scaling donor activities
 
 - Severity: High
-- Status: Open
+- Status: Fixed in v1.16.2 for complete casting alternatives; ambiguous shapes remain fail-closed
 - Observed release: R20Converter 1.16.1, commit cbb0d0e7a9665c43f780c26d3f31ef98f853454d
 - Reported: 24 October 2026, Dragoncoast Danger played-world reconversion (`dcd/v130`)
 
@@ -53,3 +53,20 @@ ambiguous shapes.
 Dragoncoast Danger used a hash-bound converter-input donor shim (Radiant Scaling
 `spellSlot: false` for selection only) and restored the converted item afterwards so both
 alternatives spend the 1/day use.
+
+## Triage And Generic Resolution
+
+The eight-name scan was a candidate list, not proof of eight equivalent defects. The converter
+now recognizes complete same-kind save choices with matching activation, targeting, duration,
+save rules, and resource behavior but differing damage type/die/scaling. Complete utility choices
+may differ by distinct applied effects. Labels and donor identities do not choose the rule.
+
+This covers the measured Flame Strike, Destructive Wave, Fire Shield, and Toll the Dead shapes.
+Each accepted choice spends the shared source Item use and no spell slot; free follow-ups remain
+free. Mixed activity kinds, incomplete activities, and sequential weapon/damage operations are
+not reclassified as casting alternatives merely because they occur on one spell. The other
+candidate shapes require separate evidence before support can be broadened.
+
+Regression cases use renamed spells and donor IDs, plus single-cast, free-follow-up, incomplete,
+and mixed-shape controls in
+[test_asset_and_compendium_fixes.py](../../tests/test_asset_and_compendium_fixes.py).

@@ -1,5 +1,34 @@
 # Changelog
 
+## v1.16.2
+
+- Preserve OGL NPC bonus-action rows and their printed action mechanics (B112), and parse daily,
+  recharge, and rest limits consistently across NPC traits, actions, bonus actions, and reactions
+  without replacing existing resources (B120).
+- Configure redirected Windows stdout/stderr as UTF-8 before application imports, and use text
+  buffers when GUI log streams cannot be opened (B113).
+- Accept structurally complete alternative innate casts that vary damage type, scaling, or
+  effects; each choice spends the same source quota without a spell slot (B114). Incomplete,
+  mixed, or sequential activities are not assumed to be interchangeable casts.
+- Omit malformed NPC HP formulas with a source-specific warning while preserving explicit HP
+  totals (B115). Preserve source NPC attack bonuses, every damage part, and damage types even
+  when a weapon donor matches by name (B116).
+- Preserve printed NPC saves, skills, and passive Perception through native residual bonuses
+  (B117). Resolve duplicate source attributes to the first row and report conflicting IDs (B118).
+- Route single-pact PC spells and available slots to Pact Magic, preserving explicit innate and
+  at-will grants (B119). Mixed pact/ordinary casters with one ambiguous source slot row fail
+  explicitly rather than duplicating or inventing availability.
+
+All fixes use generic source structure and rules. Campaign-specific corrections remain outside
+R20Converter. Existing world storage and the declared dnd5e output schema are unchanged.
+
+Source validation: **1,210 tests pass**. Foundry 14.369 / dnd5e 6.0.6 native checks match all
+88 source Actors, 150 printed attacks, 46 saves, 167 skills, 68 passive scores, 13 bonus actions,
+16 feature limits, and both pact casters. Native resource tests cover alternative casts,
+exhaustion, free grants, pact slots, short/long rests, and recharge failure/success boundaries.
+The resource-only probes intentionally disable interactive template placement. This is focused
+converter validation, not acceptance of every campaign workflow or third-party donor shape.
+
 ## v1.16.1
 
 - Preserve explicit NPC shared short-rest spell slots from source traits instead of conflicting

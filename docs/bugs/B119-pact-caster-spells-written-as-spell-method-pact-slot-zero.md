@@ -1,7 +1,7 @@
 # B119: Pact-magic PC spells are written as ordinary spellcasting and the pact slot reads 0
 
 - Severity: High
-- Status: Open
+- Status: Fixed in v1.16.2 for unambiguous single-pact casting; mixed pools fail explicitly
 - Observed release: R20Converter 1.16.1, commit cbb0d0e7a9665c43f780c26d3f31ef98f853454d
 - Reported: 24 October 2026, Dragoncoast Danger played-world reconversion (`dcd/v130`)
 
@@ -57,3 +57,22 @@ rest. The previous 1.2.2 world, re-levelled through the advancement UI, had ever
 Dragoncoast Danger repairs this after conversion as phase 6: C5 sets 26 spells to `pact` and one
 to `atwill`, and C6 moves 2 slots from `spell2` to `pact` for each warlock. The record is
 `Reports/phase6-apply-002.json`.
+
+## Generic Resolution And Split Rule
+
+After class and spell creation, emitted class progression identifies pact-only PCs. Class spells
+use `pact`; explicit innate/at-will/ritual methods remain unchanged. An explicit source trait
+grant of the form "You can cast [spell] at will" also preserves the free cast without a name
+lookup. Available slots at the class-derived pact level move to `spells.pact.value`, and ordinary
+slot values are cleared. Class progression still derives capacity; worlds preserve current
+availability and module sources start with the class-derived capacity.
+
+A noncasting multiclass does not introduce another pool. A PC combining pact and ordinary
+casting is rejected with `Cannot split mixed pact and ordinary spellcasting from one source
+slot row`. OGL's merged row and absent class provenance cannot establish two independent
+current-use counts; the converter neither credits the count twice nor guesses a distribution.
+This is an explicit unsupported-input boundary, not a module-specific exception.
+
+Renamed class/spell fixtures, current/exhausted/module pools, explicit grants, ordinary-caster
+controls, and mixed-progression rejection are in
+[test_dnd5e_schema_diff.py](../../tests/test_dnd5e_schema_diff.py).

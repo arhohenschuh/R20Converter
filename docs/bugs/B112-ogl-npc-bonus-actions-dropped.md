@@ -1,7 +1,7 @@
 # B112: OGL NPC bonus actions are never converted
 
 - Severity: High
-- Status: Open
+- Status: Fixed in v1.16.2
 - Observed release: R20Converter 1.16.1, commit cbb0d0e7a9665c43f780c26d3f31ef98f853454d
 - Reported: 24 October 2026, Dragoncoast Danger played-world reconversion (`dcd/v130`)
 
@@ -39,7 +39,7 @@ unaffected by this report.
 
 Each `npcbonusaction` row becomes an NPC feature with a bonus-action activation, carrying the
 same name/description/attack/save/damage handling that `addNPCAction` applies to ordinary
-actions (equivalently: call `addNPCAction(items, action, ItemActivation.BONUS)` for every
+actions (equivalently: call `addNPCAction(items, action, ItemActivation.BONUS_ACTION)` for every
 non-empty row). Usage limits printed in the name ("(2/Day)", "(Recharge 5–6)", "Recharges
 after a Short or Long Rest") follow the same rules as ordinary NPC actions.
 
@@ -55,3 +55,11 @@ after a Short or Long Rest") follow the same rules as ordinary NPC actions.
 
 Dragoncoast Danger 1.3.0-rc.1 repairs the 13 rows post-conversion, outside the converter,
 from the immutable source rows.
+
+## Generic Resolution
+
+The OGL dispatcher now passes every non-empty `npcbonusaction` row to `addNPCAction` with bonus
+activation. The shared path preserves printed attack/save/damage fields; feature-use parsing is
+also shared across all NPC sections under [B120](B120-npc-feature-name-usage-limits-not-converted.md).
+No actor name, source ID, or module identity selects the fix. Regression coverage is in
+[test_asset_and_compendium_fixes.py](../../tests/test_asset_and_compendium_fixes.py).

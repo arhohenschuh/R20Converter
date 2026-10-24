@@ -1,7 +1,7 @@
 # B116: Compendium-matched OGL NPC weapons lose the printed attack and damage
 
 - Severity: High
-- Status: Open
+- Status: Fixed in v1.16.2
 - Observed release: R20Converter 1.16.1, commit cbb0d0e7a9665c43f780c26d3f31ef98f853454d
 - Reported: 24 October 2026, Dragoncoast Danger played-world reconversion (`dcd/v130`)
 - Related: B090, B100 (same "source-authored NPC component" principle, not yet applied to weapons)
@@ -55,3 +55,11 @@ or damage mechanics.
 Dragoncoast Danger 1.3.0-rc.1 restores the 27 affected actions post-conversion from the immutable
 printed statblocks (rule R-ATK). Post-repair parity is 150/150 damage and 498 printed scalar
 checks with 2 explicitly dispositioned differences.
+
+## Generic Resolution
+
+Source-authored NPC attacks bypass donor mechanics replacement. The converter retains the
+computed printed to-hit and all source damage parts/types; a matching donor may supply artwork.
+Ordinary PC inventory enrichment is unchanged. The decision is tied to the NPC action creation
+path, not an actor/action/module name. Renamed matched/unmatched controls and bonus attacks are
+covered by [test_asset_and_compendium_fixes.py](../../tests/test_asset_and_compendium_fixes.py).

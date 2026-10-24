@@ -54,6 +54,22 @@ second campaign archive. Reference Journals, captured-page links, and bundled im
 to the same output. Omit `--export-as-module` for a world conversion. Do not combine enabled
 compendium conversion with `--disable-module-journal`.
 
+### Casting resources
+
+NPC traits, actions, bonus actions, and reactions share generic parsing of printed daily,
+recharge, and rest limits. Existing explicit resources are retained. Limited innate spell
+alternatives are supported when their complete structures establish interchangeable casts;
+ambiguous or sequential activities are not guessed from labels.
+
+A PC whose only casting progression is Pact Magic uses the pact spell method and the source's
+available count at the pact slot level. Explicit innate and at-will grants retain their methods.
+A noncasting multiclass is supported. Mixed pact/ordinary casting with one merged OGL slot row
+fails explicitly because that row cannot establish two independent availability counts.
+
+Invalid NPC HP formulas are omitted with a warning while explicit HP totals are kept. Conflicting
+duplicate attributes use the first source row and log both IDs. These rules do not correct
+module-specific content; such corrections must run separately after conversion.
+
 ### Scene scale diagnostics
 
 The converter preserves Roll20's snapping increment and enlarges coordinates automatically when

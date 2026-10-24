@@ -76,10 +76,14 @@ Adopt this incrementally rather than rewriting the converter:
   quadratic/cubic paths and honor generic Wall rotation (B059), and expose automatic Scene scale
   changes with structured diagnostics (B098). Equivalent source structures receive equivalent
   behavior regardless of module or document identity; targeted repairs remain post-conversion.
-24. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+24. **Done in v1.16.2:** preserve OGL NPC bonus actions, printed mechanics/scalars and feature
+  limits; make redirected logging Unicode-safe; reject invalid HP formulas without losing Actors;
+  support complete alternative innate casts; resolve source duplicate attributes consistently;
+  and route unambiguous single-pact PC casting to the correct method and pool (B112-B120).
+25. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-25. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+26. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 ## Future module-policy enhancements

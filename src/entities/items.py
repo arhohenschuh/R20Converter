@@ -169,6 +169,49 @@ def _alternativeInitialSaveActivities(candidates, item_name):
     return names == expected_names
 
 
+def _completeCastingChoices(candidates, require_slot=True):
+    if len(candidates) < 2:
+        return False
+    profiles = []
+    payloads = []
+    effect_ids = set()
+    for activity_id, activity in candidates:
+        kind = activity.get("type")
+        consumption = activity.get("consumption") or {}
+        if kind not in ("save", "utility") or (require_slot and consumption.get("spellSlot") is not True):
+            return False
+        if (activity.get("activation") or {}).get("type") not in ("action", "bonus", "reaction", "minute", "hour"):
+            return False
+        if (activity.get("uses") or {}).get("max") not in (None, "", 0, "0"):
+            return False
+        damage = activity.get("damage") or {}
+        effects = activity.get("effects") or []
+        if kind == "save":
+            if not (activity.get("save") or {}).get("ability") or not damage.get("parts"):
+                return False
+        else:
+            identifiers = {effect.get("_id") for effect in effects}
+            if not identifiers or None in identifiers or identifiers & effect_ids:
+                return False
+            effect_ids.update(identifiers)
+        profile = {key: value for key, value in activity.items()
+                   if key not in ("_id", "name", "img", "sort", "description", "damage", "effects", "consumption")}
+        profile["consumption"] = {key: value for key, value in consumption.items() if key != "spellSlot"}
+        if kind == "save":
+            profile["damage"] = {key: value for key, value in damage.items() if key != "parts"}
+            profile["damage"]["parts"] = [{key: value for key, value in part.items()
+                if key not in ("types", "denomination", "scaling")} for part in damage["parts"]]
+            for part in profile["damage"]["parts"]:
+                if not (part.get("custom") or {}).get("enabled"):
+                    part["custom"] = {"enabled": False}
+        payload = (damage, effects)
+        if (profiles and profile != profiles[0]) or payload in payloads:
+            return False
+        profiles.append(profile)
+        payloads.append(payload)
+    return True
+
+
 def _hasGeneratedSpellPool(system):
     """Identify a supply pool with separate production and non-slot consumption."""
     if (system.get("uses") or {}).get("max") in (None, "", 0, "0"):
@@ -193,7 +236,7 @@ def _hasGeneratedSpellPool(system):
     return bool(producers and consumers - producers)
 
 
-def _selectPrimarySpellActivities(candidates, item_name):
+def _selectPrimarySpellActivities(candidates, item_name, allow_complete=True):
     canonical = [candidate for candidate in candidates
                  if candidate[0] == "dnd5eactivity000"]
     if canonical:
@@ -211,7 +254,8 @@ def _selectPrimarySpellActivities(candidates, item_name):
     if len(cast_activities) == 1:
         return cast_activities
     if (_alternativePlacementActivities(slot_consumers)
-        or _alternativeInitialSaveActivities(slot_consumers, item_name)):
+        or _alternativeInitialSaveActivities(slot_consumers, item_name)
+        or (allow_complete and _completeCastingChoices(slot_consumers))):
         return slot_consumers
     return candidates if len(candidates) == 1 else []
 
@@ -258,16 +302,20 @@ def _mergeSpellConsumption(system, custom_data, item_name="spell"):
             source_consumers.append((source.get("type"), self_targets))
 
     primary = set()
+    complete_choices = set()
     for source_type, targets in source_consumers:
         available = [(activity_id, activity) for activity_id, activity in activities.items()
                      if activity_id not in primary]
         candidates = _selectPrimarySpellActivities([
-            candidate for candidate in available if candidate[1].get("type") == source_type], item_name)
+            candidate for candidate in available if candidate[1].get("type") == source_type], item_name,
+            allow_complete=False)
         if not candidates:
             candidates = _selectPrimarySpellActivities(available, item_name)
         if not candidates:
             raise ValueError("Cannot select one primary donor activity for limited innate spell '%s'" %
                              item_name)
+        if _completeCastingChoices(candidates):
+            complete_choices.update(activity_id for activity_id, activity in candidates)
         for activity_id, activity in candidates:
             primary.add(activity_id)
             consumption = activity.setdefault("consumption", {})
@@ -279,7 +327,7 @@ def _mergeSpellConsumption(system, custom_data, item_name="spell"):
     limited = bool(custom_data.get("uses", {}).get("max"))
     for activity_id, activity in activities.items():
         consumption = activity.setdefault("consumption", {})
-        consumption["spellSlot"] = limited and activity_id in primary
+        consumption["spellSlot"] = limited and activity_id in primary and activity_id not in complete_choices
 
 
 def _validateResourceContract(item_type, item_name, system):
@@ -324,7 +372,8 @@ def _validateResourceContract(item_type, item_name, system):
                              item_name)
         alternatives = (positive_self_consumers == len(positive_consumer_activities)
                 and (_alternativePlacementActivities(positive_consumer_activities)
-                     or _alternativeInitialSaveActivities(positive_consumer_activities, item_name)))
+                     or _alternativeInitialSaveActivities(positive_consumer_activities, item_name)
+                     or _completeCastingChoices(positive_consumer_activities, require_slot=False)))
         if positive_self_consumers > 1 and not alternatives:
             raise ValueError("%s: limited innate spell has multiple positive item-use consumers" %
                              item_name)

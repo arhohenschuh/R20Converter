@@ -6,6 +6,9 @@ so a finished world carried no record of what was skipped during its conversion.
 
 import json
 import os
+from pathlib import Path
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -127,6 +130,24 @@ class TestConversionLog(object):
         c.logInfo("one")
         c.logInfo("two")
         assert collector.lines == ["one", "two"]
+
+
+class TestConsoleEncoding(object):
+    @pytest.mark.parametrize("logger", ["logInfo", "logWarning", "logError"])
+    @pytest.mark.parametrize("message", ["ASCII warning", "Warning: \u2060 joined \u2028 line"])
+    def test_startup_makes_redirected_streams_unicode_safe(self, tmp_path, logger, message):
+        source = str(Path(__file__).resolve().parents[1] / "src")
+        program = (
+            "import io,sys\n"
+            "sys.stdout=io.TextIOWrapper(sys.stdout.buffer,encoding='cp1252',errors='strict')\n"
+            "sys.stderr=io.TextIOWrapper(sys.stderr.buffer,encoding='cp1252',errors='strict')\n"
+            "sys.path.insert(0,%r)\nimport main,utils\n"
+            "getattr(utils,%r)(%r)\nsys.stderr.write(%r+'\\n')\n"
+        ) % (source, logger, message, message)
+        result = subprocess.run([sys.executable, "-c", program], cwd=str(tmp_path), capture_output=True)
+        assert result.returncode == 0, result.stderr.decode("utf-8", errors="replace")
+        assert result.stdout.decode("utf-8").strip() == message
+        assert result.stderr.decode("utf-8").strip() == message
 
 
 class TestWorldInitialization(object):

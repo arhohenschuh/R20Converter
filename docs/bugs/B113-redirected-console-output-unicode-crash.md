@@ -1,7 +1,7 @@
 # B113: Redirected console output crashes on non-cp1252 characters
 
 - Severity: High
-- Status: Open
+- Status: Fixed in v1.16.2
 - Observed release: R20Converter 1.16.1 Windows build (`R20Converter-cli.exe`)
 - Reported: 24 October 2026, Dragoncoast Danger played-world reconversion (`dcd/v130`)
 
@@ -42,3 +42,11 @@ logger encode safely, and keep the complete log text.
 - Running the CLI with redirected output on a fixture whose warning contains U+2060 and
   U+2028 completes and writes both characters (or explicit escapes) to the log.
 - A run with only ASCII warnings is unchanged.
+
+## Generic Resolution
+
+Startup configures text stdout and stderr as UTF-8 with `backslashreplace` before loading the
+application. GUI fallback streams use `StringIO`, not binary buffers. The existing UTF-8
+conversion log remains intact. Strict CP1252 subprocess controls reproduce the old failure;
+Unicode and ASCII tests cover all three logger levels in
+[test_conversion_log.py](../../tests/test_conversion_log.py).

@@ -626,6 +626,7 @@ class Actor(Entity):
             self.addTraits(owned_items)
             self.addSpells(owned_items)
             self.applyNPCSharedSpellSlots(owned_items)
+            self.applyPCPactMagic(owned_items, actor_data["spells"])
             # Add actions before inventory so attack items get added first
             self.addActions(owned_items)
             self.addInventory(owned_items)
@@ -754,12 +755,20 @@ class Actor(Entity):
         self._attributes = OrderedDict()
         self._repeating = OrderedDict()
         self._shaped = False
+        first_attributes = {}
         for attr in self._character["attributes"]:
             try:
                 value = (attr["current"], attr["max"], attr["id"])
             except:
                 # Apparently, it's possible to have an attribute with no current value???
                 continue
+            existing = first_attributes.get(attr["name"])
+            if existing is not None:
+                if existing[:2] != value[:2]:
+                    self.logWarning("Duplicate attribute '%s' for '%s': keeping first row '%s'; ignoring conflicting row '%s'"
+                                    % (attr["name"], self.getName(), existing[2], value[2]))
+                continue
+            first_attributes[attr["name"]] = value
             if attr["name"].startswith("_reporder_repeating_"):
                 pass
             elif attr["name"].startswith("repeating_"):
@@ -871,10 +880,12 @@ class Actor(Entity):
         mod = self.abilityModifier(name)
         proficiency_bonus = self.getProficiencyBonus()
         if self.isNPC():
-            save = self.getAttributeInt("npc_" + name.lower()[0:3] + "_save", 0)
+            save = self.getAttributeInt("npc_" + name.lower()[0:3] + "_save", mod) \
+                if self.getAttributeBool("npc_saving_flag", True) else mod
         else:
             save = self.getAttributeInt(name.lower() + "_save_bonus", mod)
         proficient = (save >= mod + proficiency_bonus + self._save_bonus)
+        residual = save - mod - proficiency_bonus * proficient - self._save_bonus if self.isNPC() else 0
 
         return {
             "value": ability,
@@ -882,7 +893,7 @@ class Actor(Entity):
             "max": None,
             "bonuses": {
                 "check": "",
-                "save": ""
+                "save": str(residual) if residual else ""
             },
             # 5.x replaced the numeric `save` with a RollConfigField and computes
             # `mod` itself. Emitting the old shape puts a number where a schema
@@ -969,6 +980,8 @@ class Actor(Entity):
                 max = hp[1]
             formula = self.getAttribute("npc_hpformula", "")[0]
             if not dnd5e.isRollFormula(formula):
+                self.logWarning("Invalid npc_hpformula for '%s': %r; omitted while preserving explicit HP"
+                                % (self.getName(), formula))
                 formula = ""
         else:
             value = hp[0]
@@ -1246,9 +1259,11 @@ class Actor(Entity):
     def createActorSkill(self, label, attribute_name, ability):
         base_mod = self.abilityModifier(ability)
         if self.isNPC():
-            mod = self.getAttributeInt("npcd_" + attribute_name, -999)
-            if mod == -999:
+            printed = self.getAttribute("npc_" + attribute_name, None)[0]
+            if printed not in (None, "") and self.getAttributeBool("npc_" + attribute_name + "_flag", True):
                 mod = self.getAttributeInt("npc_" + attribute_name, base_mod)
+            else:
+                mod = self.getAttributeInt("npcd_" + attribute_name, base_mod)
         else:
             mod = self.getAttributeInt(attribute_name + "_bonus", base_mod)
         prof = self.getProficiencyBonus()
@@ -1257,19 +1272,19 @@ class Actor(Entity):
             value = 2
         elif mod >= base_mod + prof:
             value = 1
-        elif mod >= base_mod + prof // 2:
+        elif not self.isNPC() and mod >= base_mod + prof // 2:
             value = 0.5
         else:
             value = 0
 
-        bonus = mod - (base_mod + prof * value)
+        bonus = mod - (base_mod + math.floor(prof * value))
         passive = mod + 10
 
         # An NPC might have overriden the PP in its senses
         if label == "Perception" and self.isNPC():
             senses = self.getAttribute("npc_senses", "")[0]
             try:
-                match = re.search(r"passive perception (\d+)", senses)
+                match = re.search(r"\bpassive\s+perception\s+(\d+)", senses, re.IGNORECASE)
                 if match:
                     passive = int(match.group(1))
             except:
@@ -1349,12 +1364,12 @@ class Actor(Entity):
                     value = 2
                 elif mod >= base_mod + prof:
                     value = 1
-                elif mod >= base_mod + prof // 2:
+                elif not self.isNPC() and mod >= base_mod + prof // 2:
                     value = 0.5
                 else:
                     value = 0
 
-                bonus = mod - (base_mod + prof * value)
+                bonus = mod - (base_mod + math.floor(prof * value))
 
                 passive = self.getAttributeInt("passive", mod + 10, from_dict=skill)
                 if name is not None:
@@ -1365,7 +1380,7 @@ class Actor(Entity):
                     if key == "prc" and self.isNPC():
                         senses = self.getAttribute("npc_senses", "")[0]
                         try:
-                            match = re.search(r"passive perception (\d+)", senses)
+                            match = re.search(r"\bpassive\s+perception\s+(\d+)", senses, re.IGNORECASE)
                             if match:
                                 passive = int(match.group(1))
                         except:
@@ -1800,6 +1815,49 @@ class Actor(Entity):
         for item in spells:
             bindSharedSpellPool(item, pool["_id"], contract["level"])
 
+    def applyPCPactMagic(self, items, slots):
+        if self.isNPC():
+            return
+        classes = [item["system"] for item in items if item.get("type") == "class"]
+        pact_classes = [entry for entry in classes if entry.get("spellcasting", {}).get("progression") == "pact"]
+        if not pact_classes:
+            return
+        if any(entry.get("spellcasting", {}).get("progression") not in (None, "", "none", "pact") for entry in classes):
+            raise ValueError("Cannot split mixed pact and ordinary spellcasting from one source slot row")
+        pact_level = sum(int(entry.get("levels", 0)) for entry in pact_classes)
+        if not 1 <= pact_level <= 20:
+            raise ValueError("Pact class level must be between 1 and 20")
+        slot_level = min(5, (pact_level + 1) // 2)
+        capacity = 1 if pact_level == 1 else (2 if pact_level < 11 else (3 if pact_level < 17 else 4))
+        remaining = max(0, self.getAttributeInt("lvl%d_slots_expended" % slot_level, 0))
+        if remaining > capacity:
+            self.logWarning("Pact slots report %d remaining from capacity %d; clamped" % (remaining, capacity))
+        slots["pact"] = {"value": capacity if self.getArgument("export_as_module", False) else min(remaining, capacity),
+                         "override": None}
+        for level in range(1, 10):
+            slots["spell%d" % level] = {"value": 0, "override": None}
+        grant_texts = []
+        for trait in self.getRepeatingAttributes("traits").values():
+            description = (self.getAttribute("description", "", from_dict=trait)[0]
+                           or self.getAttribute("desc", "", from_dict=trait)[0])
+            grant_texts.append(self._descriptionToString(description))
+        if not grant_texts:
+            grant_texts = [item["system"].get("description", {}).get("value", "")
+                           for item in items if item.get("type") == "feat"]
+        grant_texts = [" ".join(BeautifulSoup(str(text), "html.parser").get_text(" ").lower().split())
+                       for text in grant_texts]
+        for item in items:
+            if item.get("type") != "spell" or item["system"].get("method", "spell") != "spell":
+                continue
+            spell_name = self.normalizeSpellName(item["name"])
+            grant_pattern = r"\byou can cast (?:the )?%s(?: spell)? at will\b" % re.escape(spell_name)
+            at_will = any(re.search(grant_pattern, text) for text in grant_texts)
+            item["system"]["method"] = "atwill" if at_will else "pact"
+            item["system"]["prepared"] = 1
+            if at_will:
+                for activity in item["system"].get("activities", {}).values():
+                    activity.setdefault("consumption", {})["spellSlot"] = False
+
     def createActorSpells(self):
         """Build ``system.spells``.
 
@@ -2026,16 +2084,17 @@ class Actor(Entity):
         name = self.nameOrPlaceholder(name, inventory_type)
         description = Entity.textToHtml(description)
         compendium_item = self.findCompendiumItem("Items", name)
+        source_authored = kwargs.pop("source_authored", False)
         kwargs.setdefault("ability_mods", self.abilityMods())
         item = self._converter.items.createItemInventory(None, name, description, inventory_type, attributes,
                                                         activity, attack, specific, **kwargs)
         source_type = item.entity["type"]
         donor_type = compendium_item.entity["type"] if compendium_item else None
         types_compatible = source_type == "loot" or donor_type == source_type
-        if compendium_item and types_compatible:
+        if compendium_item and types_compatible and not source_authored:
             item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
-            if compendium_item:
+            if compendium_item and not types_compatible:
                 self.logWarning("Compendium Item '%s' has incompatible type '%s' for source type '%s'; keeping source mechanics."
                                 % (name, donor_type, source_type))
             item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
@@ -2212,8 +2271,38 @@ class Actor(Entity):
                 self.createItemInventory(items, name, content, "equipment", attributes, activation, attack, equipment)
 
 
+    def applyNPCFeatureUses(self, name, description, activation=None, resource_data=None):
+        resource_data = dict(resource_data or {})
+        existing_uses = resource_data.get("uses") or {}
+        if (not self.isNPC() or existing_uses.get("max") not in (None, "", 0, "0")
+                or getattr(getattr(activation, "uses", None), "max", 0)):
+            return activation, resource_data
+        normalized = name
+        for dash in ("\u00e2\u20ac\u201c", "\u00e2\u20ac\u201d", "\u00e2\u0080\u0093", "\u2013", "\u2014"):
+            normalized = normalized.replace(dash, "-")
+        use_limit = re.search(r"\((\d+)\s*/\s*(day|short\s+rest|long\s+rest)\s*\)", normalized, re.IGNORECASE)
+        rest = re.search(r"\brecharges?\s+after\s+(?:a\s+)?(short(?:\s+or\s+long)?|long)\s+rest\b",
+                         normalized, re.IGNORECASE)
+        if not rest:
+            rest = re.search(r"\bonce\b[^.!]*?\buses?\b[^.!]*?\b(short(?:\s+or\s+long)?|long)\s+rest\b[^.!]*?\bagain\b",
+                             str(description), re.IGNORECASE)
+        recharge = re.search(r"\(\s*recharge\s+([1-6])(?:\s*-\s*6)?\s*\)", normalized, re.IGNORECASE)
+        if not (use_limit or rest or recharge):
+            return activation, resource_data
+        count = int(use_limit.group(1)) if use_limit else 1
+        cadence = use_limit.group(2).lower() if use_limit else (rest.group(1).lower() if rest else "")
+        period = "day" if cadence == "day" else ("sr" if cadence.startswith("short") else ("lr" if cadence else ""))
+        activation = activation or ItemActivation(ItemActivation.SPECIAL, 1)
+        activation.uses = ItemUses(count, count, period)
+        resource_data.update(activation.uses.getDict())
+        if recharge:
+            resource_data["uses"]["recovery"].append(dnd5e.recovery("recharge", int(recharge.group(1))))
+        return activation, resource_data
+
     def createItemFeat(self, items, name, description, activation=None, attack=None, recharge=None, **kwargs):
         name = self.nameOrPlaceholder(name, "feature")
+        if recharge is None:
+            activation, kwargs = self.applyNPCFeatureUses(name, description, activation, kwargs)
         description = self.textToHtml(description)
         # NPC actions, reactions and traits are monster components, not class
         # features. A name-only lookup turned every NPC "Multiattack" into the
@@ -2367,6 +2456,8 @@ class Actor(Entity):
         activation.cost = 1
         activation.activation = activation_type
 
+        activation, resource_data = self.applyNPCFeatureUses(name, description, activation)
+
         is_weapon = has_attack and not proficient
         is_feat = activation_type != ItemActivation.ACTION
         weapon_type = None
@@ -2385,9 +2476,9 @@ class Actor(Entity):
             weapon.proficient = proficient
             weapon.type = weapon_type if is_weapon else ItemWeapon.NATURAL
             self.createItemInventory(items, name, description_block, "weapon", attributes,
-                                    activation, attack, weapon)
+                                    activation, attack, weapon, source_authored=True, **resource_data)
         else:
-            self.createItemFeat(items, name, description_block, activation, attack, None)
+            self.createItemFeat(items, name, description_block, activation, attack, None, **resource_data)
 
     def addPCAction(self, items, action):
         # Skip attacks based on existing spells
@@ -2507,6 +2598,11 @@ class Actor(Entity):
             for action in npc_actions.values():
                 if len(action) > 0:
                     self.addNPCAction(items, action, ItemActivation.ACTION)
+
+            if not self._shaped:
+                for action in self.getRepeatingAttributes("npcbonusaction").values():
+                    if action:
+                        self.addNPCAction(items, action, ItemActivation.BONUS_ACTION)
 
             npc_legendary_actions = self.getRepeatingAttributes("npcaction-l")
             for action in npc_legendary_actions.values():

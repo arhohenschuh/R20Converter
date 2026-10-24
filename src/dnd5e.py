@@ -9,6 +9,7 @@ Every constant here was read out of the dnd5e 5.3.3 source rather than inferred:
 for ``DamageData``, ``module/documents/activity/attack.mjs`` for activity shape.
 """
 
+import ast
 import copy
 import hashlib
 import re
@@ -208,21 +209,35 @@ _FORMULA_FUNCTION_RE = re.compile(
 
 
 def isRollFormula(formula):
-    """Return whether a string is a plausible Foundry roll formula.
-
-    Roll20 sometimes stores explanatory prose in fields that dnd5e models as a
-    FormulaField. Preserve dynamic dice and ``@`` references, but reject bare
-    words that make Foundry drop the containing document during initialization.
-    """
+    """Validate supported dice/reference arithmetic without evaluating it."""
     text = str(formula or "").strip()
     if not text:
         return True
-    text = _FORMULA_DICE_RE.sub(" ", text)
-    text = _FORMULA_DIE_SUFFIX_RE.sub(" ", text)
-    text = _FORMULA_REFERENCE_RE.sub(" ", text)
-    text = _FORMULA_FUNCTION_RE.sub(" ", text)
-    return re.search(r"[A-Za-z]", text) is None \
-        and re.search(r"[^\d\s+\-*/%().,\[\]{}#|:'\"<>=]", text) is None
+    text = _FORMULA_DICE_RE.sub("1", text)
+    text = _FORMULA_REFERENCE_RE.sub("1", text)
+    text = _FORMULA_DIE_SUFFIX_RE.sub(
+        lambda match: "*1" if text[:match.start()].rstrip().endswith(tuple("0123456789)")) else "1", text)
+    text = _FORMULA_FUNCTION_RE.sub(lambda match: match.group().strip().lower(), text)
+
+    def valid(node):
+        if isinstance(node, ast.Constant):
+            return type(node.value) in (int, float)
+        if isinstance(node, ast.BinOp):
+            return isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.Pow)) \
+                and valid(node.left) and valid(node.right)
+        if isinstance(node, ast.UnaryOp):
+            return isinstance(node.op, (ast.UAdd, ast.USub)) and valid(node.operand)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and not node.keywords:
+            count = len(node.args)
+            allowed = (node.func.id in ("floor", "ceil", "round", "trunc", "abs") and count == 1) \
+                or (node.func.id in ("min", "max") and count > 0)
+            return allowed and all(valid(argument) for argument in node.args)
+        return False
+
+    try:
+        return valid(ast.parse(text, mode="eval").body)
+    except (SyntaxError, ValueError, RecursionError):
+        return False
 
 
 def normalizeDamageType(damage_type):
