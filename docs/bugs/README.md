@@ -155,6 +155,8 @@ mechanically for the physical-item class of defect.
 | [B116](B116-compendium-matched-npc-weapons-lose-printed-attack-damage.md) | High | Open | Compendium-matched OGL NPC weapons keep donor dice/type/ability; printed to-hit and damage parts are lost (25 of 150 NPC attacks in Dragoncoast Danger). |
 | [B117](B117-npc-printed-saves-skills-passive-not-preserved.md) | Moderate | Open | Printed OGL NPC saves, skills and passive Perception that differ from the derivation are lost; `npc_pb = 0` yields fractional skill totals. |
 | [B118](B118-duplicate-pc-skill-attribute-selects-stale-row.md) | Moderate | Open | Duplicate PC attribute rows resolve to the stale last row (Stealth +7 converted as +1). |
+| [B119](B119-pact-caster-spells-written-as-spell-method-pact-slot-zero.md) | High | Open | Pact-magic PC spells get `method: "spell"`, and the available slots land on `spell<N>` while the pact slot reads 0; warlocks cannot cast leveled spells. |
+| [B120](B120-npc-feature-name-usage-limits-not-converted.md) | Moderate | Open | `(N/Day)`, `(Recharge X–6)` and `(Recharges after a Short or Long Rest)` in NPC feature names are not turned into uses and recovery (16 features in Dragoncoast Danger). |
 
 ## Cross-cutting observations
 
@@ -165,7 +167,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B119**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B121**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent
