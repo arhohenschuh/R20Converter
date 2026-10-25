@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.16.3
+
+- Accept both R20Compendium 1.0 scopes: the original index/direct-links scope and the
+  catalogue/navigation scope emitted by R20Exporter 1.5.2 and later (B121).
+- Validate request aliases against captured page IDs, expansion identity, canonical URLs,
+  discovery counts, and conflicting URL mappings. Aliases resolve to the existing local
+  Journal page without duplicating Journals or images.
+- Retain the accepted scope in Journal provenance and add compendium scope/page/alias/image
+  counts to `conversion-report.json`.
+- Preserve strict rejection of partial captures, including failed `empty-compendium-entry`
+  records, unknown scopes, corrupt payloads, unsafe paths, and inconsistent metadata.
+
+The original reported archive converts without a scope-rewriting workaround: 89 reference
+pages, eight aliases, 106 image references, and 91 captured internal links are verified in
+world and module output, including Journal/Adventure parity. These tests use a minimal campaign
+fixture; they do not assert full campaign or complete-book coverage beyond the captured export.
+
 ## v1.16.2
 
 - Preserve OGL NPC bonus-action rows and their printed action mechanics (B112), and parse daily,

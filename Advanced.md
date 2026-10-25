@@ -54,6 +54,14 @@ second campaign archive. Reference Journals, captured-page links, and bundled im
 to the same output. Omit `--export-as-module` for a world conversion. Do not combine enabled
 compendium conversion with `--disable-module-journal`.
 
+The reader accepts `selected-index-and-direct-links` and
+`selected-book-catalogue-and-navigation`. For catalogue exports, request aliases must reference
+a captured canonical page with matching page/expansion identity and consistent discovery counts.
+An alias is a link to that page, not another Journal. The `compendium` section of
+`conversion-report.json` records the accepted scope, exporter version, page count, alias count,
+bundled-image count, and `emptyEntryPolicy: "reject-incomplete-capture"`. Empty failed entries
+remain a rejection; the converter does not turn partial exports into complete ones.
+
 ### Casting resources
 
 NPC traits, actions, bonus actions, and reactions share generic parsing of printed daily,

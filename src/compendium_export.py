@@ -24,6 +24,8 @@ def _require(condition, message):
 
 
 class CompendiumExport(object):
+    LEGACY_SCOPE = "selected-index-and-direct-links"
+    CATALOGUE_SCOPE = "selected-book-catalogue-and-navigation"
     MAX_TOTAL_BYTES = 544 * 1024 * 1024
     MAX_MEMBER_BYTES = 32 * 1024 * 1024
     MAX_METADATA_BYTES = 16 * 1024 * 1024
@@ -39,14 +41,14 @@ class CompendiumExport(object):
         self.source = {}
         self.pages = []
         self.assets = []
+        self.request_aliases = []
+        self._pages_by_url = {}
         self.path = path
         try:
             with zipfile.ZipFile(path) as archive:
                 self._load(archive)
         except (OSError, zipfile.BadZipFile, UnicodeError, json.JSONDecodeError, KeyError) as error:
             raise ValueError("Compendium export: cannot read archive (%s)" % error) from error
-        self._pages_by_url = {self.page_identity(page["requestUrl"], self.source["expansion"]): page
-                              for page in self.pages}
         self._installed = False
 
     @staticmethod
@@ -161,7 +163,7 @@ class CompendiumExport(object):
                        "gmnotes": "", "avatar": "", "archived": False, "inplayerjournals": [], "controlledby": [],
                        "r20_compendium": {"sourceUrl": page["requestUrl"], "pageId": page["pageId"],
                            "expansion": self.source["expansion"], "book": self.source["title"],
-                           "captureScope": "selected-index-and-direct-links"},
+                           "captureScope": self.scope},
                        "r20_compendium_page_id": self._page_id(page)}
             children.append(handout["id"])
             handouts.append((handout, parent, len(children) - 1))
@@ -178,8 +180,49 @@ class CompendiumExport(object):
         for handout, parent, index in handouts:
             converter.journal.entities.append(Handout(converter.journal, handout, index, "handout" + parent, "compendium"))
         self._installed = True
-        converter.logInfo("Compendium converted: %s; %d reference journals and %d bundled images (captured index scope)." %
-                          (self.source["title"], len(handouts), len(self.assets)))
+        converter.logInfo("Compendium converted: %s; %d reference journals and %d bundled images (scope: %s; %d aliases)." %
+                          (self.source["title"], len(handouts), len(self.assets), self.scope, len(self.request_aliases)))
+
+    def conversion_summary(self):
+        return {"scope": self.scope, "exporterVersion": self.exporter_version,
+                "pages": len(self.pages), "requestAliases": len(self.request_aliases),
+                "bundledImages": len(self.assets), "emptyEntryPolicy": "reject-incomplete-capture"}
+
+    def _load_aliases(self, manifest, report):
+        expansion = self.source["expansion"]
+        canonical_pages = {self.page_identity(page["requestUrl"], expansion): page for page in self.pages}
+        self._pages_by_url.update(canonical_pages)
+        aliases = manifest.get("requestAliases", [])
+        _require(isinstance(aliases, list) and len(self.pages) + len(aliases) <= 2000, "invalid request aliases")
+        if self.scope == self.LEGACY_SCOPE:
+            _require(not aliases, "request aliases require catalogue scope")
+            return
+        _require(len({page["pageId"] for page in self.pages}) == len(self.pages), "duplicate captured page ID")
+        excluded = manifest.get("excludedLinks")
+        discovery = report.get("discovery")
+        _require(isinstance(excluded, list) and isinstance(discovery, dict), "missing discovery metadata")
+        counts = {"pageRequests": len(self.pages) + len(aliases), "aliases": len(aliases), "excludedLinks": len(excluded)}
+        _require(all(type(discovery.get(key)) is int and discovery[key] == value for key, value in counts.items()),
+                 "discovery population mismatch")
+        request_identities = set(canonical_pages)
+        for alias in aliases:
+            _require(isinstance(alias, dict), "invalid request alias")
+            target = canonical_pages.get(self.page_identity(alias.get("canonicalRequestUrl"), expansion))
+            _require(target is not None and alias.get("pageId") == target["pageId"]
+                     and alias.get("expansion") == expansion, "alias page identity mismatch")
+            request_identity = self.page_identity(alias.get("requestUrl"), expansion)
+            response_identity = self.page_identity(alias.get("responseUrl"), expansion)
+            _require(request_identity not in request_identities, "duplicate alias request identity")
+            request_identities.add(request_identity)
+            links = alias.get("links")
+            _require(isinstance(links, list) and all(isinstance(link, dict)
+                and all(isinstance(link.get(field, ""), str) for field in ("href", "label", "category"))
+                for link in links), "invalid alias discovery links")
+            for identity in (request_identity, response_identity):
+                previous = self._pages_by_url.get(identity)
+                _require(previous is None or previous is target, "conflicting alias page identity")
+                self._pages_by_url[identity] = target
+            self.request_aliases.append(dict(alias))
 
     @staticmethod
     def _safe_path(name):
@@ -215,7 +258,7 @@ class CompendiumExport(object):
         _require(isinstance(manifest, dict) and isinstance(report, dict), "manifest and report must be objects")
         _require(manifest.get("R20Compendium_format") == "1.0", "unsupported format; expected R20Compendium 1.0")
         _require(manifest.get("capture_format") == "dom-serialized-html-and-ordered-attributes"
-                 and manifest.get("scope") == "selected-index-and-direct-links", "unsupported capture format or scope")
+                 and manifest.get("scope") in (self.LEGACY_SCOPE, self.CATALOGUE_SCOPE), "unsupported capture format or scope")
         _require(report.get("format_version") == "1.0" and report.get("status") == "complete-within-index"
                  and not report.get("issues") and not report.get("failures"),
                  "capture is incomplete; provide a complete compendium ZIP")
@@ -228,6 +271,7 @@ class CompendiumExport(object):
         _require(report.get("scope") == manifest["scope"]
                  and report.get("exporter_version") == manifest.get("exporter_version"), "capture metadata mismatch")
         self.source = dict(source)
+        self.scope = manifest["scope"]
         self.exporter_version = manifest.get("exporter_version")
         referenced = {"compendium.json", "export_report.json"}
         contents = {}
@@ -267,6 +311,7 @@ class CompendiumExport(object):
                      and all(isinstance(attribute, dict) and all(isinstance(attribute.get(field), str)
                          for field in ("name", "value", "html")) for attribute in attributes), "invalid ordered attributes")
             self.pages.append(loaded)
+        self._load_aliases(manifest, report)
         assets = manifest.get("assets")
         _require(isinstance(assets, list), "invalid assets")
         asset_counts = {"planned": len(assets), "bundled": 0, "embedded": 0, "failed": 0, "unsupported": 0, "cancelled": 0}

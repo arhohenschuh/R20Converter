@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import json
 import zipfile
@@ -69,6 +70,170 @@ def test_reads_exporter_pages_attributes_and_images(tmp_path):
     assert "Book text." in archive.pages[1]["contentHtml"]
     assert archive.pages[1]["attributes"] == [{"name": "Category", "value": "Rules", "html": "Rules"}]
     assert archive.assets[0]["content"] == IMAGE
+
+
+def catalogue_scope(manifest, report, alias_url=None):
+    for metadata in (manifest, report):
+        metadata["scope"] = "selected-book-catalogue-and-navigation"
+        metadata["exporter_version"] = "1.5.3"
+    manifest["requestAliases"] = []
+    if alias_url:
+        page = manifest["pages"][1]
+        manifest["requestAliases"].append({"requestUrl": alias_url, "responseUrl": alias_url,
+            "canonicalRequestUrl": page["requestUrl"], "pageId": page["pageId"],
+            "expansion": page["expansion"], "links": [{"href": alias_url, "label": "Alias", "category": "Rules"}],
+            "attempts": []})
+    report["discovery"] = {"pageRequests": len(manifest["pages"]) + len(manifest["requestAliases"]),
+                           "aliases": len(manifest["requestAliases"]), "excludedLinks": len(manifest["excludedLinks"])}
+
+
+@pytest.mark.parametrize("scope", ["selected-index-and-direct-links", "selected-book-catalogue-and-navigation"])
+@pytest.mark.parametrize("module", [False, True])
+def test_old_and_catalogue_scopes_preserve_reference_structure(tmp_path, scope, module):
+    from pathlib import Path
+
+    def change(manifest, report, members):
+        if scope == "selected-book-catalogue-and-navigation":
+            catalogue_scope(manifest, report)
+        else:
+            manifest["exporter_version"] = report["exporter_version"] = "1.5.1"
+
+    converter, _source = campaign_converter(tmp_path, compendium_archive(tmp_path, change), module=module)
+    try:
+        converter.convert()
+    finally:
+        converter.closeLog()
+    journals = [entry.entity for entry in converter.journal.entities]
+    assert [entry["name"] for entry in journals] == ["Campaign note", "Test Book", "Test Entry"]
+    assert all(entry["flags"]["R20Converter"]["compendium"]["captureScope"] == scope for entry in journals[1:])
+    report = json.loads((Path(converter.path) / "conversion-report.json").read_text(encoding="utf-8"))
+    assert report["compendium"]["scope"] == scope
+    assert report["compendium"]["pages"] == 2
+
+
+@pytest.mark.parametrize("alias_path", ["Rules:Other%20Request", "Appendix:Renamed%20Entry"])
+def test_catalogue_alias_resolves_to_one_captured_page(tmp_path, alias_path):
+    from compendium_export import CompendiumExport
+
+    alias_url = "https://app.roll20.net/compendium/dnd5e/%s?expansion=42" % alias_path
+    archive = CompendiumExport(str(compendium_archive(tmp_path,
+        lambda manifest, report, members: catalogue_scope(manifest, report, alias_url))))
+    converter = SimpleNamespace(name="renamed-module", getArgument=lambda _name, default=None: default)
+    assert archive._link_target(alias_url + "#details", converter) == archive._link_target(ENTRY_URL + "#details", converter)
+    assert archive._link_target(alias_url, converter) is not None
+    assert len(archive.pages) == 2 and len(archive.assets) == 1
+
+
+@pytest.mark.parametrize("defect", ["unknown-scope", "partial", "empty-entry"])
+def test_catalogue_capture_admission_stays_fail_closed(tmp_path, defect):
+    from compendium_export import CompendiumExport
+
+    def change(manifest, report, members):
+        catalogue_scope(manifest, report)
+        if defect == "unknown-scope":
+            manifest["scope"] = report["scope"] = "unbounded-web-crawl"
+        elif defect == "partial":
+            report["status"] = "partial"
+        else:
+            report["status"] = "partial"
+            report["issues"] = ["empty-compendium-entry"]
+
+    with pytest.raises(ValueError, match="unsupported capture format or scope|capture is incomplete"):
+        CompendiumExport(str(compendium_archive(tmp_path, change)))
+
+
+@pytest.mark.parametrize("defect", ["alias-list", "alias-row", "canonical", "page-id", "expansion",
+    "request-origin", "response-expansion", "response-collision", "duplicate-request", "links",
+    "request-count", "alias-count", "excluded-count", "missing-discovery"])
+def test_catalogue_alias_integrity_is_required(tmp_path, defect):
+    from compendium_export import CompendiumExport
+
+    def change(manifest, report, members):
+        catalogue_scope(manifest, report, ENTRY_URL.replace("Test%20Entry", "Alias"))
+        alias = manifest["requestAliases"][0]
+        if defect == "alias-list":
+            manifest["requestAliases"] = {}
+        elif defect == "alias-row":
+            manifest["requestAliases"][0] = "invalid"
+        elif defect == "canonical":
+            alias["canonicalRequestUrl"] = ENTRY_URL.replace("Test%20Entry", "Missing")
+        elif defect == "page-id":
+            alias["pageId"] = "999"
+        elif defect == "expansion":
+            alias["expansion"] = "99"
+        elif defect == "request-origin":
+            alias["requestUrl"] = alias["requestUrl"].replace("app.roll20.net", "example.invalid")
+        elif defect == "response-expansion":
+            alias["responseUrl"] = alias["responseUrl"].replace("expansion=42", "expansion=99")
+        elif defect == "response-collision":
+            alias["responseUrl"] = INDEX_URL
+        elif defect == "duplicate-request":
+            manifest["requestAliases"].append(copy.deepcopy(alias))
+            report["discovery"].update(pageRequests=4, aliases=2)
+        elif defect == "links":
+            alias["links"] = [{"category": []}]
+        elif defect == "request-count":
+            report["discovery"]["pageRequests"] += 1
+        elif defect == "alias-count":
+            report["discovery"]["aliases"] += 1
+        elif defect == "excluded-count":
+            report["discovery"]["excludedLinks"] += 1
+        else:
+            del report["discovery"]
+
+    with pytest.raises(ValueError, match="Compendium export"):
+        CompendiumExport(str(compendium_archive(tmp_path, change)))
+
+
+@pytest.mark.parametrize("module", [False, True])
+@pytest.mark.parametrize("expansion,title", [("42", "Test Book"), ("314", "Another Atlas")])
+def test_nested_catalogue_and_aliases_preserve_unique_journals(tmp_path, module, expansion, title):
+    from pathlib import Path
+
+    nested_url = "https://app.roll20.net/compendium/dnd5e/Appendix:Nested%20Entry?expansion=" + expansion
+    entry_url = ENTRY_URL.replace("expansion=42", "expansion=" + expansion)
+    alias_url = entry_url.replace("Test%20Entry", "Alternative%20Request")
+
+    def change(manifest, report, members):
+        manifest["source"].update(expansion=expansion, title=title,
+            indexUrl=INDEX_URL.replace("expansion=42", "expansion=" + expansion))
+        for page in manifest["pages"]:
+            page["expansion"] = expansion
+            page["requestUrl"] = page["requestUrl"].replace("expansion=42", "expansion=" + expansion)
+            page["responseUrl"] = page["requestUrl"]
+        manifest["pages"][0]["title"] = title
+        replace_fragment(manifest, members, "pages/10-example/pagecontent.html", '<a href="%s">Alias entry</a>' % alias_url)
+        replace_fragment(manifest, members, "pages/20-example/pagecontent.html",
+            '<h2 id="details">Entry</h2><a href="%s">Nested</a><img src="%s">' % (nested_url, IMAGE_URL))
+        nested = {"requestUrl": nested_url, "responseUrl": nested_url, "kind": "entry", "outcome": "captured",
+                  "title": "Nested Entry", "pageId": "30", "expansion": expansion, "attributeCount": 0,
+                  "links": [{"href": nested_url, "label": "Nested", "category": "Nested catalogue",
+                             "discoveredOn": entry_url, "source": "catalogue"}], "files": []}
+        for filename, text in (("pagecontent.html", '<a href="%s#details">Canonical entry</a>' % alias_url),
+                               ("pageattrs.html", ""), ("illustrations.html", ""), ("attributes.json", "[]")):
+            path = "pages/30-nested/" + filename
+            content = text.encode("utf-8")
+            members[path] = content
+            nested["files"].append({"path": path, "bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()})
+        manifest["pages"].append(nested)
+        report["pages"].update(planned=3, captured=3)
+        catalogue_scope(manifest, report, alias_url)
+
+    converter, _source = campaign_converter(tmp_path, compendium_archive(tmp_path, change), module=module)
+    try:
+        converter.convert()
+    finally:
+        converter.closeLog()
+    journals = [entry.entity for entry in converter.journal.entities]
+    assert [entry["name"] for entry in journals] == ["Campaign note", title, "Test Entry", "Nested Entry"]
+    target = converter.compendium_export._link_target(entry_url, converter)
+    assert "@UUID[%s]{Alias entry}" % target in journals[1]["pages"][0]["text"]["content"]
+    assert "@UUID[%s#details]{Canonical entry}" % target in journals[3]["pages"][0]["text"]["content"]
+    assert len({entry["_id"] for entry in journals}) == 4
+    assert len(list((Path(converter.path) / "assets").rglob("*.png"))) == 1
+    assert any(folder.entity["name"] == "Nested catalogue" for folder in converter.folders.entities)
+    report = json.loads((Path(converter.path) / "conversion-report.json").read_text(encoding="utf-8"))
+    assert report["compendium"]["pages"] == 3 and report["compendium"]["requestAliases"] == 1
 
 
 @pytest.mark.parametrize("defect", ["partial", "hash", "missing"])

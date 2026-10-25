@@ -86,14 +86,18 @@ main options and select its **Compendium ZIP**. The campaign ZIP or JSON remains
 The switch defaults to Disabled; disabling it ignores the saved compendium path.
 
 The companion ZIP must contain the R20Compendium 1.0 manifest and a complete export report.
-Partial captures, missing files, hash mismatches, and unsafe archive paths are rejected. The
-converter uses only the captured index and its direct pages; it does not crawl additional links.
+Both the original index/direct-links scope and the catalogue/navigation scope from R20Exporter
+1.5.2 onward are supported. Partial captures, including failed empty entries, missing files,
+hash mismatches, and unsafe archive paths are rejected. The converter imports only the captured
+pages; it does not crawl additional links or infer missing book content.
 
 Captured pages, attributes, and illustrations become reference Journals under a
 **Book Title (Compendium)** folder, grouped by the exported index categories. Bundled images are
 copied into the same output, and captured-page links become local Foundry UUID links. Module
 outputs include these Journals in both the Journal pack and Complete Adventure; world outputs
 include them in the world's Journal collection. Existing campaign content is retained.
+Verified request aliases resolve to the same local page without creating duplicate Journals or
+images. The accepted scope and page/alias counts are recorded in `conversion-report.json`.
 
 This option is separate from **Use a custom compendium**, which enriches game Items and Actors
 from an installed Foundry module. Captured stat blocks and attributes remain reference content;

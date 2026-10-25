@@ -599,6 +599,8 @@ class R20Converter(object):
                          for scene in self.scenes.entities if scene is not None]
         report = {"schema": "r20converter-conversion-report/v1", "status": "PASS",
                   "scaledScenes": [scene for scene in scaled_scenes if scene is not None]}
+        if getattr(self, "compendium_export", None):
+            report["compendium"] = self.compendium_export.conversion_summary()
         with open(os.path.join(self.path, "conversion-report.json"), "x", encoding="utf-8") as stream:
             json.dump(report, stream, indent=2, ensure_ascii=True, allow_nan=False)
             stream.write("\n")
