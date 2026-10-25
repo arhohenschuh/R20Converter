@@ -49,12 +49,12 @@ WEAPON_PROPERTIES = (
     "mgc", "rch", "rel", "ret", "sil", "spc", "thr", "two", "ver",
 )
 
-#: ``CONFIG.DND5E.weaponIds`` — legal ``system.type.baseItem`` values.
+#: ``CONFIG.DND5E.weaponIds`` plus the SRD 2014 Net's ``system.type.baseItem``.
 WEAPON_BASE_ITEMS = (
     "battleaxe", "blowgun", "club", "dagger", "dart", "flail", "glaive", "greataxe",
     "greatclub", "greatsword", "halberd", "handaxe", "handcrossbow", "heavycrossbow",
     "javelin", "lance", "lightcrossbow", "lighthammer", "longbow", "longsword", "mace",
-    "maul", "morningstar", "musket", "pike", "pistol", "quarterstaff", "rapier",
+    "maul", "morningstar", "musket", "net", "pike", "pistol", "quarterstaff", "rapier",
     "scimitar", "shortsword", "sickle", "spear", "shortbow", "sling", "trident",
     "warpick", "warhammer", "whip",
 )
@@ -182,6 +182,44 @@ def armorBaseItem(name):
         match = _ARMOR_INDEX.get(key) or _ARMOR_ALIASES.get(key)
         if match:
             return match
+    return ""
+
+
+def ammunitionSubtype(name):
+    names = {
+        "arrow": "arrow", "arrows": "arrow",
+        "crossbowbolt": "crossbowBolt", "crossbowbolts": "crossbowBolt",
+        "bolt": "crossbowBolt", "bolts": "crossbowBolt",
+        "slingbullet": "slingBullet", "slingbullets": "slingBullet",
+        "blowgunneedle": "blowgunNeedle", "blowgunneedles": "blowgunNeedle",
+        "firearmbullet": "firearmBullet", "firearmbullets": "firearmBullet",
+        "energycell": "energyCell", "energycells": "energyCell",
+    }
+    return names.get(normalizeItemName(name), "")
+
+
+TOOL_PROFICIENCY_KEYS = frozenset((
+    "alchemist", "bagpipes", "brewer", "calligrapher", "card", "carpenter", "cartographer", "chess",
+    "cobbler", "cook", "dice", "disg", "drum", "dulcimer", "flute", "forg", "glassblower", "herb",
+    "horn", "jeweler", "leatherworker", "lute", "lyre", "mason", "navg", "painter", "panflute",
+    "pois", "potter", "shawm", "smith", "thief", "tinker", "viol", "weaver", "woodcarver",
+))
+
+
+def toolProficiencyKey(name):
+    text = str(name or "").lower().replace("\u2019", "'").strip()
+    text = re.sub(r"'s\b", "", text)
+    text = re.sub(r"\s+(?:tools?|supplies|utensils|kits?|sets?|instruments?)$", "", text)
+    key = normalizeItemName(text)
+    aliases = {"playingcard": "card", "playingcards": "card", "dragonchess": "chess",
+               "disguise": "disg", "forgery": "forg", "herbalism": "herb", "navigator": "navg",
+               "poisoner": "pois", "thieves": "thief"}
+    if key in TOOL_PROFICIENCY_KEYS:
+        return key
+    if key in aliases:
+        return aliases[key]
+    if key.endswith("s") and key[:-1] in TOOL_PROFICIENCY_KEYS:
+        return key[:-1]
     return ""
 
 

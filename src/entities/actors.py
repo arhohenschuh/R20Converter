@@ -1629,19 +1629,25 @@ class Actor(Entity):
 
         proficiencies = []
         custom = []
+        def add_weapon(name, unknown):
+            base_item = dnd5e.weaponBaseItem(name)
+            if base_item:
+                proficiencies.append(base_item)
+            else:
+                self._addKnownToArray(known_profs, name, proficiencies, unknown)
         for prof in self.getRepeatingAttributes("proficiencies").values():
             #self.logInfo("Proficienty : {} = {}".format(id, prof))
             if self.getAttribute("prof_type", "", from_dict=prof)[0] == "WEAPON":
                 prof_name = self.getAttribute("name", "", from_dict=prof)[0]
                 for proficiency in prof_name.split(","):
-                    self._addKnownToArray(known_profs, proficiency, proficiencies, custom)
+                    add_weapon(proficiency, custom)
         if self._shaped:
             prof_name = self.getAttribute("proficiencies", "")[0]
             for proficiency in prof_name.split(","):
-                self._addKnownToArray(known_profs, proficiency, proficiencies, None)
+                add_weapon(proficiency, None)
 
         return {
-            "value": proficiencies,
+            "value": sorted(set(proficiencies)),
             "custom": ", ".join(custom)
         }
 
@@ -1661,21 +1667,27 @@ class Actor(Entity):
 
         proficiencies = []
         custom = []
+        def add_tool(name, unknown):
+            key = dnd5e.toolProficiencyKey(name)
+            if key:
+                proficiencies.append(key)
+            else:
+                self._addKnownToArray(known_profs, name, proficiencies, unknown)
         for prof in self.getRepeatingAttributes("proficiencies").values():
             #self.logInfo("Proficienty : {} = {}".format(id, prof))
             if self.getAttribute("prof_type", "", from_dict=prof)[0] == "TOOL":
                 prof_name = self.getAttribute("name", "", from_dict=prof)[0]
                 for proficiency in prof_name.split(","):
-                    self._addKnownToArray(known_profs, proficiency, proficiencies, custom)
+                    add_tool(proficiency, custom)
         for prof in self.getRepeatingAttributes("tool").values():
             proficiency = self.getAttribute("toolname", "", from_dict=prof)[0]
-            self._addKnownToArray(known_profs, proficiency, proficiencies, custom)
+            add_tool(proficiency, custom)
         if self._shaped:
             prof_name = self.getAttribute("proficiencies", "")[0]
             for proficiency in prof_name.split(","):
-                self._addKnownToArray(known_profs, proficiency, proficiencies, None)
+                add_tool(proficiency, None)
 
-        return (proficiencies, custom)
+        return (list(dict.fromkeys(proficiencies)), custom)
 
     def createActorTools(self):
         """Build ``system.tools`` (B037).
@@ -2182,7 +2194,14 @@ class Actor(Entity):
                             equipment.proficient = True
                             break
             self.createItemInventory(items, name, content, "equipment", attributes, activation, attack, equipment)
-        elif item_type in ["Melee Weapon", "Ranged Weapon", "Ammunition"] or len(attack.damages.damages) > 0:
+        elif str(item_type).strip().lower() == "ammunition":
+            attributes.weight = self.getAttribute("itemweight", weight, from_dict=item)[0]
+            ammunition = ItemConsumable(ItemConsumable.AMMUNITION)
+            ammunition.subtype = dnd5e.ammunitionSubtype(name)
+            if not ammunition.subtype:
+                self.logWarning("Unknown ammunition subtype for '%s'; retaining generic ammunition" % name)
+            self.createItemInventory(items, name, content, "consumable", attributes, None, None, ammunition)
+        elif item_type in ["Melee Weapon", "Ranged Weapon"] or len(attack.damages.damages) > 0:
             weapon = ItemWeapon()
             properties = self.getAttribute("itemproperties", "", from_dict=item)[0]
             for prop in properties.split(","):
@@ -2193,8 +2212,6 @@ class Actor(Entity):
                 weapon.type = _compendiumWeaponType(compendium_item)
             elif "Improvised Weapon" in properties:
                 weapon.type = ItemWeapon.IMPROVISED
-            elif item_type == "Ammunition":
-                weapon.type = ItemWeapon.AMMUNITION
             elif item_type == "Melee Weapon":
                 weapon.type = ItemWeapon.SIMPLE_MELEE
             elif item_type == "Ranged Weapon":

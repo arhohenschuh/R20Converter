@@ -795,6 +795,10 @@ class Item(Entity):
                 if item.entity["type"] == "spell":
                     _mergeSpellConsumption(item.entity["system"], custom_data,
                                            item.entity["name"])
+            if item.entity["type"] == "consumable" and (custom_data.get("type") or {}).get("value") == "ammo":
+                for key in ("type", "quantity", "weight", "description", "activities"):
+                    if key in custom_data:
+                        item.entity["system"][key] = custom_data[key]
         _validateResourceContract(item.entity["type"], item.entity["name"],
                                   item.entity["system"])
         # The compendium copy carries whatever `_stats` its pack was built with.
@@ -1413,6 +1417,7 @@ class ItemConsumableUses(ItemUses):
         return data
 
 class ItemConsumable:
+    AMMUNITION = "ammo"
     POISON = "poison"
     POTION = "potion"
     ROD = "rod"
@@ -1422,12 +1427,15 @@ class ItemConsumable:
 
     def __init__(self, _type=TRINKET, uses=None):
         self.type = _type
+        self.subtype = ""
         self.uses = uses if uses else ItemConsumableUses()
 
     def getDict(self):
         data = {
             "type": dnd5e.itemType(self.type),
         }
+        if self.type == self.AMMUNITION:
+            data["type"]["subtype"] = self.subtype
         data.update(self.uses.getDict())
         return data
 

@@ -158,9 +158,9 @@ mechanically for the physical-item class of defect.
 | [B119](B119-pact-caster-spells-written-as-spell-method-pact-slot-zero.md) | High | Fixed (v1.16.2, bounded) | Single-pact PCs use pact methods and availability while explicit grants stay free; ambiguous mixed pact/ordinary pools are rejected rather than guessed. |
 | [B120](B120-npc-feature-name-usage-limits-not-converted.md) | Moderate | Fixed (v1.16.2) | One suffix parser supplies native uses and recovery for all NPC feature sections while preserving existing pools and printed names. |
 | [B121](B121-compendium-export-scope-1-5-2-rejected.md) | High | Fixed (v1.16.3) | Both known capture scopes are supported; validated catalogue aliases resolve to existing Journal pages, actual scope is reported, and incomplete captures remain rejected. |
-| [B122](B122-pc-ammunition-converts-to-invalid-weapon-type.md) | Moderate | Open | PC `Ammunition` rows become weapons of invalid type `ammo`; ranged weapons cannot select or spend them. |
-| [B123](B123-specific-pc-tool-proficiencies-dropped.md) | Moderate | Open | Specific instruments, artisan's tools and gaming sets are dropped from `system.tools`; only category names and two kits map. |
-| [B124](B124-individual-pc-weapon-proficiencies-dropped.md) | Minor | Open | Individual weapon proficiencies (hand crossbow, longsword, ...) are dropped; only Simple/Martial map. |
+| [B122](B122-pc-ammunition-converts-to-invalid-weapon-type.md) | Moderate | Fixed (v1.16.4) | PC ammunition emits native consumables with matching subtypes, source fractional weight, quantity and no standalone attack; native selection and consumption pass. |
+| [B123](B123-specific-pc-tool-proficiencies-dropped.md) | Moderate | Fixed (v1.16.4) | Specific tools resolve to native keys with conservative name normalization; unknown tools still warn. |
+| [B124](B124-individual-pc-weapon-proficiencies-dropped.md) | Minor | Fixed (v1.16.4) | Individual weapon keys, including Legacy Net, survive alongside categories; native newly acquired weapons derive the correct proficiency. |
 
 ## Cross-cutting observations
 

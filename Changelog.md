@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.16.4
+
+- Convert PC ammunition inventory rows to native consumables with matching ammunition subtypes,
+  not weapons of invalid type `ammo` (B122). Preserve source quantity, fractional weight,
+  description and ammunition identity through donor enrichment, without adding standalone attacks.
+  Unknown ammunition remains generic and warns; price follows the existing enrichment option.
+- Preserve specific tool proficiencies, including instruments, artisan's tools and gaming sets,
+  with case, possessive and common suffix normalization (B123). Unknown tools still warn.
+- Preserve individual weapon proficiencies alongside Simple/Martial categories, including the
+  Legacy Net, and deduplicate native keys (B124). Unknown weapon names remain custom text.
+
+Source validation: **1,267 tests pass**. The published v1.16.3 CLI reproduces all three defects
+on the same bounded fixture. Source world/module conversion and Foundry 14.369 / dnd5e 6.0.6
+Legacy replay cover three reported PCs plus an independently named control. Native attacks select
+and consume ammunition, newly acquired weapons derive proficiency from Actor traits, and the
+results survive a client reload. No module or character identity selects a converter repair.
+Full campaign acceptance remains downstream; independent review was waived by the owner.
+
 ## v1.16.3
 
 - Accept both R20Compendium 1.0 scopes: the original index/direct-links scope and the

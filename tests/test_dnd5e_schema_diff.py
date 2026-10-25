@@ -270,6 +270,53 @@ class TestActorToolShape(object):
         assert "toolProf" not in actor.createActorTraits()
 
 
+class TestSpecificProficiencies(object):
+    @pytest.mark.parametrize("section", ["tool", "proficiencies", "shaped"])
+    @pytest.mark.parametrize("names,expected", [
+        (["Bagpipes", "Lute", "Woodcarver's Tools", "Dragonchess Set"], {"bagpipes", "lute", "woodcarver", "chess"}),
+        (["Smith's Tools", "Dice Set"], {"smith", "dice"}),
+        (["woodcarver tools", "SMITH'S KIT", "dragonchess", "lute instrument"], {"woodcarver", "smith", "chess", "lute"}),
+        (["Disguise Kit", "Forgery Kit"], {"disg", "forg"}),
+    ])
+    def test_specific_tool_names_resolve_for_each_input_path(self, section, names, expected):
+        actor = ShapedActor()
+        actor._shaped = section == "shaped"
+        if section == "shaped":
+            actor._proficiencies = ", ".join(names)
+        else:
+            rows = {"generic-row-%d" % index: ({"toolname": name} if section == "tool" else {"prof_type": "TOOL", "name": name})
+                    for index, name in enumerate(names)}
+            actor.getRepeatingAttributes = lambda key: rows if key == section else {}
+        result = actor.createActorTools()
+        assert set(result) == expected
+        assert all(entry["value"] == 1 for entry in result.values())
+        assert actor.warnings == []
+
+    @pytest.mark.parametrize("shaped", [False, True])
+    @pytest.mark.parametrize("names,expected", [
+        ("Simple weapons, Hand Crossbow, Longsword, Rapier, Shortsword", ["handcrossbow", "longsword", "rapier", "shortsword", "sim"]),
+        ("Martial Weapons, Net", ["mar", "net"]),
+        ("Simple Weapons", ["sim"]),
+        ("Rapier, rapier, Hand Crossbow", ["handcrossbow", "rapier"]),
+    ])
+    def test_individual_weapon_proficiencies_are_native_keys(self, shaped, names, expected):
+        actor = ShapedActor(proficiencies=names if shaped else "")
+        actor._shaped = shaped
+        if not shaped:
+            actor.getRepeatingAttributes = lambda key: {"renamed-row": {"prof_type": "WEAPON", "name": names}} if key == "proficiencies" else {}
+        result = actor.createTraitWeaponProficiencies()
+        assert result == {"value": expected, "custom": ""}
+
+    def test_unknown_weapon_remains_custom_and_unknown_tool_warns(self):
+        actor = ShapedActor(tools={"custom": {"toolname": "Smith's Unfamiliar Device"}})
+        actor._shaped = False
+        previous = actor.getRepeatingAttributes
+        actor.getRepeatingAttributes = lambda key: {"custom": {"prof_type": "WEAPON", "name": "Arc Lance"}} if key == "proficiencies" else previous(key)
+        assert actor.createTraitWeaponProficiencies() == {"value": [], "custom": "Arc Lance"}
+        assert actor.createActorTools() == {}
+        assert any("Smith's Unfamiliar Device" in message for message in actor.warnings)
+
+
 class SlotActor(Actor):
     """An actor driven by canned slot attributes and NPC traits."""
 

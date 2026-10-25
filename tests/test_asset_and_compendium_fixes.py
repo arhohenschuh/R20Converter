@@ -516,6 +516,62 @@ class NPCActionActor(FeatBoundaryActor):
         return self.abilityMods().get(ability, default)
 
 
+class PCInventoryActor(NPCActionActor):
+    def isNPC(self):
+        return False
+
+    def getRepeatingAttributes(self, name):
+        return {}
+
+
+class TestPCAmmunition(object):
+    @pytest.mark.parametrize("matched", [False, True])
+    def test_fractional_weight_and_source_ammo_identity_survive_enrichment(self, tmp_path, matched):
+        donor = _inventory_donor("Crossbow bolts", "consumable")
+        donor.entity["system"].update({"type": {"value": "ammo", "subtype": "arrow"},
+            "quantity": 1, "weight": {"value": 2, "units": "lb"}, "price": {"value": 0.05, "denomination": "gp"}})
+        actor = PCInventoryActor(FakeDatabase(str(tmp_path), {"no_compendium_overwrite": True}), donor if matched else None)
+        items = []
+        actor.addInventoryItem(items, {"itemname": "Crossbow bolts", "itemmodifiers": "Item Type: Ammunition",
+            "itemcount": "20", "itemweight": "0.075", "itemcontent": "Source ammunition"})
+        item, = items
+        assert item["system"]["quantity"] == 20
+        assert item["system"]["weight"] == {"value": 0.075, "units": "lb"}
+        assert item["system"]["type"]["subtype"] == "crossbowBolt"
+        assert item["system"]["activities"] == {}
+        assert "Source ammunition" in item["system"]["description"]["value"]
+        if matched:
+            assert item["system"]["price"] == {"value": 0.05, "denomination": "gp"}
+
+    @pytest.mark.parametrize("name,subtype", [
+        ("Crossbow bolts", "crossbowBolt"), ("Arrows", "arrow"),
+        ("Sling bullets", "slingBullet"), ("Blowgun needles", "blowgunNeedle"),
+        ("Unfamiliar Cartridges", ""),
+    ])
+    def test_source_ammunition_is_a_consumable_without_attacks(self, tmp_path, name, subtype):
+        actor = PCInventoryActor(FakeDatabase(str(tmp_path)))
+        items = []
+        actor.addInventoryItem(items, {"itemname": name, "itemmodifiers": "Item Type: Ammunition",
+                                     "itemcount": "20", "itemweight": "2", "itemcontent": "Source description"})
+        item, = items
+        assert item["type"] == "consumable"
+        assert item["system"]["type"]["value"] == "ammo"
+        assert item["system"]["type"]["subtype"] == subtype
+        assert item["system"]["quantity"] == 20
+        assert item["system"]["weight"] == {"value": 2, "units": "lb"}
+        assert "Source description" in item["system"]["description"]["value"]
+        assert item["system"]["activities"] == {}
+        if not subtype:
+            assert any("ammunition" in warning.lower() for warning in actor.warnings)
+
+    @pytest.mark.parametrize("item_type", ["Melee Weapon", "Ranged Weapon"])
+    def test_ordinary_weapon_rows_keep_weapon_type(self, tmp_path, item_type):
+        actor = PCInventoryActor(FakeDatabase(str(tmp_path)))
+        items = []
+        actor.addInventoryItem(items, {"itemname": "Other Weapon", "itemmodifiers": "Item Type: " + item_type})
+        assert items[0]["type"] == "weapon"
+
+
 class TestNPCPrintedWeaponMechanics(object):
     @pytest.mark.parametrize("name,donor_id", [("Bite", "genericDonor0001"), ("Arc Strike", "otherDonor000001")])
     @pytest.mark.parametrize("matched", [False, True])

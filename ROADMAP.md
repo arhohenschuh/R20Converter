@@ -83,10 +83,13 @@ Adopt this incrementally rather than rewriting the converter:
 25. **Done in v1.16.3:** support both known compendium capture scopes, validate catalogue
   request aliases and discovery counts, resolve aliases without duplicate references, and
   report the actual capture scope while preserving strict incomplete-export rejection (B121).
-26. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+26. **Done in v1.16.4:** emit functional PC ammunition consumables with source fractional weight,
+  preserve specific tool and individual weapon proficiencies, and verify native ammunition
+  consumption and proficiency on newly acquired weapons (B122-B124). Storage profiles are unchanged.
+27. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-27. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+28. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 ## Future module-policy enhancements

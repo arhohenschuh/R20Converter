@@ -1,7 +1,7 @@
 # B123: Specific PC tool proficiencies are dropped
 
 - Severity: Moderate
-- Status: Open
+- Status: Fixed in v1.16.4
 - Observed release: R20Converter 1.16.2, commit 9c485df; source unchanged in 1.16.3 (39d9eaf)
 - Reported: 25 October 2026, Dragoncoast Danger PC relevel (`dcd/relevel-001`), Foundry 14.369,
   dnd5e 6.0.6 Legacy
@@ -40,3 +40,19 @@ Unresolvable names keep the current warning.
 - Bagpipes, Lute, Woodcarver's Tools and Dragonchess Set convert to their dnd5e keys.
 - A different character/module with *Smith's Tools* and *Dice Set* converts to `smith` and `dice`.
 - Control: Disguise Kit / Forgery Kit are unchanged; an unknown homebrew tool still warns.
+
+## Resolution In v1.16.4
+
+Specific tool names now resolve to native tool keys before category/custom fallback. Normalization
+handles case, possessives and common Tools/Supplies/Utensils/Kit/Set/Instrument suffixes. The same
+resolver covers OGL tool rows, OGL proficiency rows and Shaped proficiency strings. Native keys
+are deduplicated; unknown OGL tools retain the existing warning.
+
+The preceding published v1.16.3 CLI reproduces the loss. Source world/module output and native
+Foundry 14.369 / dnd5e 6.0.6 Legacy preserve Bagpipes, Lute, Woodcarver's Tools and Dragonchess Set,
+plus Smith's Tools and Dice Set on an independently named control. Disguise and Forgery remain
+unchanged. Native entries retain proficiency value 1; tool ability defaults and expertise rules
+are outside this fix.
+
+Focused evidence is retained under
+`D:/Automation_Local/Work/Tooling/r20converter/v1164-b122-b124/Reports/`.
