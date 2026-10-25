@@ -157,6 +157,7 @@ mechanically for the physical-item class of defect.
 | [B118](B118-duplicate-pc-skill-attribute-selects-stale-row.md) | Moderate | Fixed (v1.16.2) | Source attribute lookup retains the first row and reports conflicting duplicate IDs. |
 | [B119](B119-pact-caster-spells-written-as-spell-method-pact-slot-zero.md) | High | Fixed (v1.16.2, bounded) | Single-pact PCs use pact methods and availability while explicit grants stay free; ambiguous mixed pact/ordinary pools are rejected rather than guessed. |
 | [B120](B120-npc-feature-name-usage-limits-not-converted.md) | Moderate | Fixed (v1.16.2) | One suffix parser supplies native uses and recovery for all NPC feature sections while preserving existing pools and printed names. |
+| [B121](B121-compendium-export-scope-1-5-2-rejected.md) | High | Open | Compendium conversion accepts only the pre-1.5.2 `selected-index-and-direct-links` scope, so every R20Exporter 1.5.2+ compendium ZIP aborts conversion. |
 
 ## Cross-cutting observations
 
