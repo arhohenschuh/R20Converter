@@ -161,6 +161,7 @@ mechanically for the physical-item class of defect.
 | [B122](B122-pc-ammunition-converts-to-invalid-weapon-type.md) | Moderate | Fixed (v1.16.4) | PC ammunition emits native consumables with matching subtypes, source fractional weight, quantity and no standalone attack; native selection and consumption pass. |
 | [B123](B123-specific-pc-tool-proficiencies-dropped.md) | Moderate | Fixed (v1.16.4) | Specific tools resolve to native keys with conservative name normalization; unknown tools still warn. |
 | [B124](B124-individual-pc-weapon-proficiencies-dropped.md) | Minor | Fixed (v1.16.4) | Individual weapon keys, including Legacy Net, survive alongside categories; native newly acquired weapons derive the correct proficiency. |
+| [B125](B125-unmatched-items-inherit-actor-portrait-icon.md) | Moderate | Open | Items, features and spells without an exact compendium match take the actor portrait as their icon; every NPC feature is affected. Existing converted modules and worlds must be checked. |
 
 ## Cross-cutting observations
 
