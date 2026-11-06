@@ -7,7 +7,9 @@ class SettingsDB(DatabaseFile):
     def __init__(self, converter):
         DatabaseFile.__init__(self, converter, "settings.db")
         self.entities = [Setting(self, "core.moduleConfiguration", {"permission_viewer":True}),
-                         Setting(self, "dnd5e.systemMigrationVersion", foundry.DEFAULT_SYSTEM_VERSION),
+                         Setting(self, "dnd5e.systemMigrationVersion",
+                                 getattr(converter, "game_system_version", None)
+                                 or foundry.DEFAULT_SYSTEM_VERSION),
                          Setting(self, "dnd5e.rulesVersion", "legacy"),
                          Setting(self, "permission_viewer.migrated", "1"),
                          Setting(self, "core.permissions", {})]

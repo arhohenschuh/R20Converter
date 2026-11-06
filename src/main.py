@@ -24,6 +24,7 @@ for stream_name in ("stdout", "stderr"):
         stream.reconfigure(encoding="utf-8", errors="backslashreplace")
 
 import messages
+import dnd5e
 import foundry
 from version import version
 from R20Converter import R20Converter
@@ -95,6 +96,12 @@ parser.add_argument("--srd-edition", default=foundry.DEFAULT_SRD_EDITION,
                          "text and mechanics, so the wrong one replaces a matched item with a "
                          "different edition of the same name. Pick the edition the campaign "
                          "was built on (Default: %s)" % foundry.DEFAULT_SRD_EDITION)
+parser.add_argument("--dnd5e-version", default=dnd5e.DEFAULT_SYSTEM_TARGET,
+                    choices=list(dnd5e.SYSTEM_TARGETS),
+                    help="Which dnd5e system generation the output is written for. Each target "
+                         "emits that generation's document schema and declares it as the minimum "
+                         "system version; match it to the dnd5e system installed in Foundry "
+                         "(Default: %s)" % dnd5e.DEFAULT_SYSTEM_TARGET)
 parser.add_argument("--npc-source", default="Roll 20", help="Source reference for NPC actors (displayed in the character sheet)")
 parser.add_argument("--package-version", default=None,
                     help="Version stamped on the generated world or module manifest. Defaults "

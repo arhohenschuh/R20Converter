@@ -8,6 +8,7 @@ are gone rather than merely accompanied by their replacements.
 
 import pytest
 
+import dnd5e
 from entities.base import Entity
 from entities.actors import Actor
 from entities.folders import Folder
@@ -50,7 +51,7 @@ class TestFolder(object):
         assert "parent" not in folder.entity
         assert "folder" in folder.entity
         assert folder.entity["_stats"]["coreVersion"] == "13"
-        assert folder.entity["_stats"]["systemVersion"] == "5.3.3"
+        assert folder.entity["_stats"]["systemVersion"] == dnd5e.SYSTEM_VERSION
 
 
 class TestTableResults(object):
@@ -76,7 +77,7 @@ class TestTableResults(object):
     def testPrimaryTableCarriesSchemaStats(self, tmp_path):
         table = self.makeTable(tmp_path)
         assert table.entity["_stats"]["coreVersion"] == "13"
-        assert table.entity["_stats"]["systemVersion"] == "5.3.3"
+        assert table.entity["_stats"]["systemVersion"] == dnd5e.SYSTEM_VERSION
 
     def testTextResult(self, tmp_path):
         table = self.makeTable(tmp_path)
@@ -148,7 +149,7 @@ class TestJournalPages(object):
         assert "img" not in handout.entity
         assert "pages" in handout.entity
         assert handout.entity["_stats"]["coreVersion"] == "13"
-        assert handout.entity["_stats"]["systemVersion"] == "5.3.3"
+        assert handout.entity["_stats"]["systemVersion"] == dnd5e.SYSTEM_VERSION
 
     def testTextOnlyHandoutHasOneTextPage(self, tmp_path):
         handout = self.makeHandout(tmp_path, notes="<p>hello</p>")
@@ -321,7 +322,7 @@ class TestMacroLinks(object):
             "@UUID[Compendium.r20-module.journal.JournalEntry.%s]{Noir}" \
             % Entity.normalizeID("-ABC")
         assert macro.entity["_stats"]["coreVersion"] == "13"
-        assert macro.entity["_stats"]["systemVersion"] == "5.3.3"
+        assert macro.entity["_stats"]["systemVersion"] == dnd5e.SYSTEM_VERSION
 
 
 class TestTextureData(object):

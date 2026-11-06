@@ -125,21 +125,20 @@ PACKAGE_TYPE_MODULE = "module"
 #: Default game system assumed when none is given.
 DEFAULT_GAME_SYSTEM = "dnd5e"
 
-#: The dnd5e system version whose data schema R20Converter writes. Used as the
-#: fallback ``systemVersion`` when the system is not installed locally and its
-#: real version cannot be read from its ``system.json``, and as the recorded
-#: ``dnd5e.systemMigrationVersion`` so the system does not migrate documents that
-#: are already current.
+#: The default dnd5e version whose data schema R20Converter writes. Used as the
+#: fallback ``systemVersion`` when no converter target is available. The
+#: converter's selected target (``--dnd5e-version``) supplies the version that is
+#: recorded as ``dnd5e.systemMigrationVersion`` so the system does not migrate
+#: documents that are already current.
 #:
-#: This must stay in step with ``dnd5e.SYSTEM_VERSION`` and with the documents we
-#: actually emit (ADR-008). Claiming an older version runs a migration against
+#: Every emitted version must stay in step with the documents we actually emit
+#: (ADR-008). Claiming an older version runs a migration against
 #: documents that have no legacy fields left to convert, which silently empties
 #: ``system.damage.base``; claiming a newer one strands any legacy field that was
 #: not ported. Both directions corrupt.
 DEFAULT_SYSTEM_VERSION = dnd5e.SYSTEM_VERSION
 
-#: Oldest dnd5e release that understands the schema we emit. Activities landed in
-#: dnd5e 4.0, and the shapes here are the 5.x generation.
+#: Oldest dnd5e release that understands the default target's schema.
 MINIMUM_SYSTEM_VERSION = dnd5e.MINIMUM_SYSTEM_VERSION
 
 
@@ -162,14 +161,14 @@ def systemRelationship(system_id, system_version=None):
     Replaces the v9 top-level ``dependencies`` array, removed in v13.
 
     For dnd5e a ``minimum`` is declared as well as a ``verified``: the documents
-    we emit use the 5.x schema and are unreadable by older releases (ADR-008), so
-    installing against one should fail loudly rather than produce a world full of
-    items the system cannot parse.
+    we emit use the selected target generation's schema and are unreadable by
+    older releases (ADR-008), so installing against one should fail loudly
+    rather than produce a world full of items the system cannot parse.
     """
     relationship = {"id": system_id, "type": "system"}
     compatibility = {}
     if system_id == DEFAULT_GAME_SYSTEM:
-        compatibility["minimum"] = MINIMUM_SYSTEM_VERSION
+        compatibility["minimum"] = dnd5e.minimumSystemVersion(system_version or DEFAULT_SYSTEM_VERSION)
     if system_version:
         compatibility["verified"] = system_version
     if compatibility:

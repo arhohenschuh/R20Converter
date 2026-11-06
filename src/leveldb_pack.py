@@ -21,6 +21,7 @@ without it falls back to NeDB (see :func:`isAvailable`).
 import json
 import os
 import shutil
+import tempfile
 
 try:
     import plyvel
@@ -249,6 +250,10 @@ def readPack(path, collection=None, strict=True):
 
     Also what replaces ``type actors.db`` when a conversion needs debugging,
     since ADR-009 gives up greppable JSON for module packs.
+
+    The pack is opened from a disposable copy, never in place (B128): opening
+    LevelDB rewrites ``CURRENT``, ``LOG``, ``MANIFEST-*`` and journal files even
+    for a read, and a source pack may belong to a live Foundry installation.
     """
     if plyvel is None:
         raise RuntimeError("plyvel is not available")
@@ -256,29 +261,36 @@ def readPack(path, collection=None, strict=True):
     documents_by_path = {}
     collections_by_path = {}
     children_by_parent = {}
-    db = plyvel.DB(path, create_if_missing=False)
+    scratch = tempfile.mkdtemp(prefix="r20converter-pack-")
     try:
-        for raw_key, raw_value in db:
-            key = raw_key.decode("utf-8")
-            try:
-                _, prefix, identifier = key.split("!", 2)
-            except ValueError:
-                continue
-            document = json.loads(raw_value.decode("utf-8"))
-            if "." in prefix:
-                documents_by_path[identifier] = document
-                collections_by_path[identifier] = prefix
-                parent_path, child_id = identifier.rsplit(".", 1)
-                field = prefix.rsplit(".", 1)[1]
-                children_by_parent.setdefault((parent_path, field), {})[child_id] = document
-            elif prefix in NON_DOCUMENT_COLLECTIONS:
-                continue
-            elif collection is None or prefix == collection:
-                primaries[identifier] = document
-                documents_by_path[identifier] = document
-                collections_by_path[identifier] = prefix
+        copy = os.path.join(scratch, "pack")
+        shutil.copytree(path, copy, ignore=shutil.ignore_patterns("LOCK"))
+        db = plyvel.DB(copy, create_if_missing=False)
+        try:
+            entries = [(raw_key, raw_value) for raw_key, raw_value in db]
+        finally:
+            db.close()
     finally:
-        db.close()
+        shutil.rmtree(scratch, ignore_errors=True)
+    for raw_key, raw_value in entries:
+        key = raw_key.decode("utf-8")
+        try:
+            _, prefix, identifier = key.split("!", 2)
+        except ValueError:
+            continue
+        document = json.loads(raw_value.decode("utf-8"))
+        if "." in prefix:
+            documents_by_path[identifier] = document
+            collections_by_path[identifier] = prefix
+            parent_path, child_id = identifier.rsplit(".", 1)
+            field = prefix.rsplit(".", 1)[1]
+            children_by_parent.setdefault((parent_path, field), {})[child_id] = document
+        elif prefix in NON_DOCUMENT_COLLECTIONS:
+            continue
+        elif collection is None or prefix == collection:
+            primaries[identifier] = document
+            documents_by_path[identifier] = document
+            collections_by_path[identifier] = prefix
 
     problems = []
     for parent_path, field in children_by_parent:

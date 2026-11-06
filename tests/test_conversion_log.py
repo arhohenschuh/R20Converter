@@ -283,3 +283,32 @@ class TestWorldInitialization(object):
             assert len(messages) == 1
             assert messages[0]["content"] == "Kept message"
         assert (output / "world.json").is_file()
+
+
+class TestExplicitDataPath(object):
+    """B128: a named path that does not resolve must not select another installation."""
+
+    def _build(self, tmp_path, monkeypatch, fvtt_data_path):
+        source = tmp_path / "campaign.json"
+        source.write_text("{}", encoding="utf-8")
+        discovered = tmp_path / "discovered"
+        (discovered / "Data" / "systems" / "dnd5e").mkdir(parents=True)
+        (discovered / "Data" / "systems" / "dnd5e" / "system.json").write_text(
+            json.dumps({"id": "dnd5e", "version": "6.0.6", "packs": []}), encoding="utf-8")
+        monkeypatch.setattr(converter_module.utils, "getFVTTDataPath", lambda: str(discovered))
+        collector = _Collector()
+        converter = R20Converter(SimpleNamespace(
+            path=str(tmp_path / "out" / "world"), zip_file=str(source), json=True,
+            fvtt_data_path=fvtt_data_path), collector)
+        return converter, collector, str(discovered)
+
+    def test_unresolved_explicit_path_skips_enrichment(self, tmp_path, monkeypatch):
+        wrong = str(tmp_path / "discovered" / "Data")
+        converter, collector, _ = self._build(tmp_path, monkeypatch, wrong)
+        assert converter.fvtt_path is None
+        assert converter.packs == {}
+        assert any("Compendium enrichment will be skipped" in line for line in collector.lines)
+
+    def test_absent_path_still_auto_detects(self, tmp_path, monkeypatch):
+        converter, _, discovered = self._build(tmp_path, monkeypatch, None)
+        assert converter.fvtt_path == discovered

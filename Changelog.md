@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.17.0
+
+- Add `--dnd5e-version {6.x,5.3.3}` and the GUI **D&D 5e system version** selector, defaulting to
+  `6.x` (ADR-013). The 6.x target stores the dnd5e 6.0 shape for AC, initiative, ability/skill/
+  tool/global bonuses, movement speeds, item rarities, small-token `lockScale`, and pre-6 effect
+  migrations. It stamps `6.0.6` and declares minimum `6.0.0`. `5.3.3` keeps the previous schema
+  and minimum `5.0.0`. Conversion warns when the installed system or donor content is newer than
+  the target.
+- Never use the actor portrait or token as item artwork. Unmatched items use donor art, an icon-only
+  compendium lookup, or the dnd5e type default (B125).
+- Parse Roll20 `"on"` checkbox values for token vision, light, mirroring, name/bar visibility, and
+  Scene global light (B126).
+- Persist initiative as an extra-bonus formula only, which removes dnd5e 6's doubled bonus (B127).
+- Skip enrichment when an explicit `--fvtt-data-path` does not resolve, and read LevelDB packs
+  from a disposable copy, never in place (B128).
+
+Source validation: **1,323 tests pass**. Exported v1.16.4 HEAD reproduces B125-B128 against the
+same regressions. The pinned Dragoncoast Danger export reduces portrait or empty item icons from
+330 of 714 to 0. Foundry 14.369 / dnd5e 6.0.6 replay of the 6.x output shows no new stored-source
+divergence. All 53 removed and 34 added migration categories are resolved. Derived values match
+HEAD for all 88 actors except the 15 corrected sight flags, with 0 invalid items. The 5.3.3
+control on dnd5e 5.3.3 likewise differs only in those sight flags. Existing converted outputs are
+not repaired; see the defect records.
+
 ## v1.16.4
 
 - Convert PC ammunition inventory rows to native consumables with matching ammunition subtypes,

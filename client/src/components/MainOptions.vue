@@ -69,6 +69,15 @@
       </b-form-group>
 
       <b-form-group
+        label="D&amp;D 5e system version"
+        label-align="right"
+        label-cols
+        description="The dnd5e system generation installed in Foundry. The output is written in that generation's data format and requires it as a minimum."
+      >
+        <b-form-select v-model="dnd5eVersion" :options="dnd5eVersions"></b-form-select>
+      </b-form-group>
+
+      <b-form-group
         :label="`${exportType} URL name :`"
         label-align="right"
         label-cols
@@ -138,6 +147,10 @@ export default {
       srdEditions: [
         { value: "2014", text: "2014 (Legacy)" },
         { value: "2024", text: "2024 (Modern)" }
+      ],
+      dnd5eVersions: [
+        { value: "6.x", text: "6.x (current)" },
+        { value: "5.3.3", text: "5.3.3" }
       ]
     };
   },
@@ -253,6 +266,14 @@ export default {
       },
       set(value) {
         this.$store.dispatch("setOption", { srdEdition: value });
+      }
+    },
+    dnd5eVersion: {
+      get() {
+        return this.$store.state.options.dnd5eVersion || "6.x";
+      },
+      set(value) {
+        this.$store.dispatch("setOption", { dnd5eVersion: value });
       }
     },
     exportType() {

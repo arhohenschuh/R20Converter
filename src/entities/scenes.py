@@ -441,7 +441,7 @@ class Scene(Entity):
                 emits_light = Token.emitsLight(graphic)
                 has_status_markers = graphic.get("statusmarkers", "") != ""
                 (dradius, lradius) = Token.getLightRadius(graphic)
-                shows_name = graphic["showname"] and graphic["name"] != ""
+                shows_name = Entity.roll20Flag(graphic["showname"]) and graphic["name"] != ""
                 
                 if emits_light:
                     if lradius == 0 and dradius == 0:
@@ -855,9 +855,9 @@ class Scene(Entity):
             (folder, sort) = assignment
 
         if release == "jumpgate":
-            globalLight = page.get("daylight_mode_enabled", False)
+            globalLight = Entity.roll20Flag(page.get("daylight_mode_enabled", False))
         else:
-            globalLight = page.get("lightglobalillum", False)
+            globalLight = Entity.roll20Flag(page.get("lightglobalillum", False))
         # A converted map is expected to be ready for token-based play. Foundry
         # ignores every token's sight settings when Scene token vision is off.
         tokenVision = True

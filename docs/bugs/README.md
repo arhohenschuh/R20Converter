@@ -161,7 +161,10 @@ mechanically for the physical-item class of defect.
 | [B122](B122-pc-ammunition-converts-to-invalid-weapon-type.md) | Moderate | Fixed (v1.16.4) | PC ammunition emits native consumables with matching subtypes, source fractional weight, quantity and no standalone attack; native selection and consumption pass. |
 | [B123](B123-specific-pc-tool-proficiencies-dropped.md) | Moderate | Fixed (v1.16.4) | Specific tools resolve to native keys with conservative name normalization; unknown tools still warn. |
 | [B124](B124-individual-pc-weapon-proficiencies-dropped.md) | Minor | Fixed (v1.16.4) | Individual weapon keys, including Legacy Net, survive alongside categories; native newly acquired weapons derive the correct proficiency. |
-| [B125](B125-unmatched-items-inherit-actor-portrait-icon.md) | Moderate | Open | Items, features and spells without an exact compendium match take the actor portrait as their icon; every NPC feature is affected. Existing converted modules and worlds must be checked. |
+| [B125](B125-unmatched-items-inherit-actor-portrait-icon.md) | Moderate | Fixed (v1.17.0) | Unmatched items take donor, icon-only compendium, or dnd5e type-default artwork, never the actor portrait or token. Existing converted modules and worlds must still be checked. |
+| [B126](B126-roll20-on-checkbox-flags-disable-token-vision.md) | Moderate | Fixed (v1.17.0) | Roll20 `"on"` checkbox strings are parsed as true; token vision, light, mirroring, name/bar visibility, and Scene global light no longer depend on Foundry casting the raw string to false. |
+| [B127](B127-dnd5e6-doubles-initiative-bonus.md) | Moderate | Fixed (v1.17.0) | Initiative persists only an extra-bonus formula string; dnd5e 6 no longer migrates `init.value` on top of `init.bonus`. |
+| [B128](B128-unresolved-data-path-reads-other-installation-in-place.md) | High | Fixed (v1.17.0) | An unresolved explicit `--fvtt-data-path` skips enrichment instead of auto-detecting another installation, and LevelDB packs are read from a disposable copy, never in place. |
 
 ## Cross-cutting observations
 
@@ -172,7 +175,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B126**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B129**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent

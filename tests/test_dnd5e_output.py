@@ -314,7 +314,7 @@ class TestStats(object):
     def testItemsCarryStats(self, db):
         stats = makeWeapon(db).entity["_stats"]
         assert stats["systemId"] == "dnd5e"
-        assert stats["systemVersion"].startswith("5.")
+        assert stats["systemVersion"] == dnd5e.SYSTEM_VERSION
 
     def testSystemVersionMatchesTheSchemaWeEmit(self):
         import foundry

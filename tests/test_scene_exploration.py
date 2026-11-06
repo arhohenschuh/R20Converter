@@ -3,6 +3,7 @@ import math
 
 import pytest
 
+import dnd5e
 from entities.base import Entity
 from entities.scenes import Scene
 
@@ -111,7 +112,7 @@ def test_scene_defaults_to_token_vision_and_individual_exploration(tmp_path):
     scene = make_scene(tmp_path)
 
     assert scene["_stats"]["coreVersion"] == "13"
-    assert scene["_stats"]["systemVersion"] == "5.3.3"
+    assert scene["_stats"]["systemVersion"] == dnd5e.SYSTEM_VERSION
     assert scene["tokenVision"] is True
     assert scene["fog"]["mode"] == 1
     assert scene["fog"]["colors"] == {"explored": None, "unexplored": None}

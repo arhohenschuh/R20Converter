@@ -23,8 +23,20 @@ import dnd5e
 class TestSystemVersion(object):
     """AD-5: the version we claim must describe the schema we emit."""
 
-    def testTargetsFivePointX(self):
-        assert dnd5e.SYSTEM_VERSION.startswith("5.")
+    def testDefaultTargetsSixPointX(self):
+        assert dnd5e.DEFAULT_SYSTEM_TARGET == "6.x"
+        assert dnd5e.SYSTEM_VERSION == "6.0.6"
+        assert dnd5e.MINIMUM_SYSTEM_VERSION == "6.0.0"
+
+    @pytest.mark.parametrize("name,version,minimum", [
+        (None, "6.0.6", "6.0.0"), ("6.x", "6.0.6", "6.0.0"), ("5.3.3", "5.3.3", "5.0.0")])
+    def testTargetsResolve(self, name, version, minimum):
+        assert dnd5e.systemTarget(name)[1:] == (version, minimum)
+        assert dnd5e.minimumSystemVersion(version) == minimum
+
+    def testUnknownTargetIsRejected(self):
+        with pytest.raises(ValueError):
+            dnd5e.systemTarget("4.4.4")
 
     def testMinimumIsTheActivitiesGeneration(self):
         # Activities landed in dnd5e 4.0; anything older cannot read our output.
@@ -450,4 +462,5 @@ class TestStats(object):
     def testSystemVersionTellsTheTruth(self):
         # Claiming an older version runs a migration over documents that have no
         # legacy fields left to convert, which empties system.damage.base.
-        assert dnd5e.stats("13")["systemVersion"].startswith("5.")
+        assert dnd5e.stats("13")["systemVersion"] == dnd5e.SYSTEM_VERSION
+        assert dnd5e.stats("13", "5.3.3")["systemVersion"] == "5.3.3"

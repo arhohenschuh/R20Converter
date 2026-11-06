@@ -79,6 +79,7 @@ export default {
         custom_compendium_mode: opt.customCompendiumMode,
         custom_compendium_precedence: opt.customCompendiumPrecedence,
         srd_edition: opt.srdEdition,
+        dnd5e_version: opt.dnd5eVersion || "6.x",
         disable_module_journal: opt.disableModuleJournal,
         disable_module_actors: opt.disableModuleActors,
         disable_module_scenes: opt.disableModuleScenes,

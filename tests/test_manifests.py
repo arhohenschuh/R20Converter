@@ -37,7 +37,7 @@ class FakeConverter(object):
         self.name = "my-campaign"
         self.campaign = {"campaign_title": "My Campaign"}
         self.game_system = "dnd5e"
-        self.game_system_version = "2.4.1"
+        self.game_system_version = "6.0.6"
         self._arguments = {"description": "Imported from Roll20"}
         self._arguments.update(arguments)
         self.chat = FakeDB()
@@ -81,14 +81,21 @@ class TestWorldManifest(object):
     def test_uses_relationships_not_dependencies(self, converter):
         manifest = World(converter).toDict()
         assert "dependencies" not in manifest
-        # The documents we emit use the dnd5e 5.x schema and are unreadable by
-        # older releases (ADR-008), so a minimum is declared as well as the
-        # verified version: installing against an older system should fail
-        # loudly rather than produce items the system cannot parse.
+        # The documents we emit use the selected dnd5e generation's schema and
+        # are unreadable by older releases (ADR-008), so a minimum is declared as
+        # well as the verified version: installing against an older system should
+        # fail loudly rather than produce items the system cannot parse.
         assert manifest["relationships"]["systems"] == [
             {"id": "dnd5e", "type": "system",
              "compatibility": {"minimum": foundry.MINIMUM_SYSTEM_VERSION,
-                               "verified": "2.4.1"}}
+                               "verified": "6.0.6"}}
+        ]
+
+    def test_five_point_three_target_declares_its_own_minimum(self, converter):
+        converter.game_system_version = "5.3.3"
+        assert World(converter).toDict()["relationships"]["systems"] == [
+            {"id": "dnd5e", "type": "system",
+             "compatibility": {"minimum": "5.0.0", "verified": "5.3.3"}}
         ]
 
     def test_title_falls_back_to_the_campaign_title(self, converter):

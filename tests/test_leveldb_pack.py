@@ -124,6 +124,24 @@ class TestEmbeddedSplit(object):
 
 
 class TestRoundTrip(object):
+    def test_reading_never_touches_the_source_pack(self, tmp_path):
+        # B128: opening LevelDB rewrites CURRENT/LOG/MANIFEST even for a read,
+        # and a source pack may belong to a live Foundry installation.
+        path = str(tmp_path / "actors")
+        leveldb_pack.writePack(path, [actorDocument(items=3)], "actors")
+
+        def snapshot():
+            state = {}
+            for name in sorted(os.listdir(path)):
+                full = os.path.join(path, name)
+                with open(full, "rb") as handle:
+                    state[name] = (os.stat(full).st_mtime_ns, handle.read())
+            return state
+
+        before = snapshot()
+        assert leveldb_pack.readPack(path, "actors")[0]["name"] == "Goblin"
+        assert snapshot() == before
+
     def test_documents_survive_a_write_and_read(self, tmp_path):
         path = str(tmp_path / "actors")
         original = actorDocument(items=3)

@@ -1,9 +1,10 @@
-# Roadmap — dnd5e 5.x native output
+# Roadmap — dnd5e native output
 
-**Goal:** R20Converter emits documents that Foundry **v13+** and dnd5e **5.x** load
-with **zero migration**.
+**Goal:** R20Converter emits documents that Foundry **v13+** and the selected dnd5e
+generation (**6.x** by default, **5.3.3** on request) load with **zero migration**.
 
-Decision record: [ADR-008](docs/adr/ADR-008-emit-dnd5e-5x-natively.md).
+Decision records: [ADR-008](docs/adr/ADR-008-emit-dnd5e-5x-natively.md),
+superseded by [ADR-013](docs/adr/ADR-013-selectable-dnd5e-output-target.md).
 
 ## Current invariant: no downstream structural repair
 
@@ -86,10 +87,13 @@ Adopt this incrementally rather than rewriting the converter:
 26. **Done in v1.16.4:** emit functional PC ammunition consumables with source fractional weight,
   preserve specific tool and individual weapon proficiencies, and verify native ammunition
   consumption and proficiency on newly acquired weapons (B122-B124). Storage profiles are unchanged.
-27. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+27. **Done in v1.17.0:** select the dnd5e output generation with
+  `--dnd5e-version`, defaulting to 6.x. The 6.x target stores the dnd5e 6.0 persisted shape,
+  proven against a native 6.0.6 replay (ADR-013).
+28. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-28. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+29. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 ## Future module-policy enhancements

@@ -167,8 +167,8 @@ class Token(Entity):
         if token:
             self.token_name = token.get("name", self.token_name)
             self.token_filename = token.get("imgsrc", self.token_filename)
-            show_name = token.get("showname", show_name)
-            all_see_name = token.get("showplayers_name", all_see_name)
+            show_name = Entity.roll20Flag(token.get("showname", show_name))
+            all_see_name = Entity.roll20Flag(token.get("showplayers_name", all_see_name))
             def parseInt(name, default):
                 try:
                     val = token.get(name, default)
@@ -187,8 +187,8 @@ class Token(Entity):
             self.bar1_max = parseInt("bar1_max", self.bar1_max)
             self.bar2_val = parseInt("bar2_value", self.bar2_val)
             self.bar2_max = parseInt("bar2_max", self.bar2_max)
-            all_see_bar1 = token.get("showplayers_bar1", all_see_bar1)
-            all_see_bar2 = token.get("showplayers_bar2", all_see_bar2)
+            all_see_bar1 = Entity.roll20Flag(token.get("showplayers_bar1", all_see_bar1))
+            all_see_bar2 = Entity.roll20Flag(token.get("showplayers_bar2", all_see_bar2))
             (ldimradius, lradius) = self.getLightRadius(token)
             self.has_vision = self.hasSight(token)
             self.light_angle = self.lightAngle(token)
@@ -196,8 +196,8 @@ class Token(Entity):
             self.light_color = self.lightColor(token)
             self.light_alpha = self.lightOpacity(token)
             self.setupLighting(lradius, ldimradius)
-            self.mirrorX = bool(token.get("fliph", self.mirrorX))
-            self.mirrorY = bool(token.get("flipv", self.mirrorY))
+            self.mirrorX = Entity.roll20Flag(token.get("fliph", self.mirrorX))
+            self.mirrorY = Entity.roll20Flag(token.get("flipv", self.mirrorY))
             self.tint = self.color(token.get("tint_color", "transparent"), None, True)
 
         if self.bar1_max > 0 or self.bar2_max > 0:
@@ -219,7 +219,7 @@ class Token(Entity):
             self.emits_light = True
             self.emits_dim_light = dim
             self.emits_bright_light = bright
-        legacy = self._token.get("legacy_lighting_enabled", defaultLegacyEnabled)
+        legacy = self.legacyLighting(self._token)
         if legacy:
             multiplier = self._token.get("light_multiplier", 1)
             try:
@@ -273,21 +273,24 @@ class Token(Entity):
         return (0, 0)
 
     @staticmethod
+    def legacyLighting(token):
+        return Entity.roll20Flag(token.get("legacy_lighting_enabled", defaultLegacyEnabled))
+
+    @staticmethod
     def hasSight(token):
-        legacy = token.get("legacy_lighting_enabled", defaultLegacyEnabled)
-        if legacy:
-            return token.get("light_hassight", False)
+        if Token.legacyLighting(token):
+            return Entity.roll20Flag(token.get("light_hassight", False))
         else:
-            return token.get("has_low_light_vision", False) or token.get("has_bright_light_vision", False)
+            return (Entity.roll20Flag(token.get("has_low_light_vision", False))
+                    or Entity.roll20Flag(token.get("has_bright_light_vision", False)))
 
     @staticmethod
     def sightAngle(token):
-        legacy = token.get("legacy_lighting_enabled", defaultLegacyEnabled)
         angle = FULL_ANGLE
-        if legacy:
+        if Token.legacyLighting(token):
             angle = token.get("light_losangle", angle)
         else:
-            if token.get("has_limit_field_of_vision", False):
+            if Entity.roll20Flag(token.get("has_limit_field_of_vision", False)):
                 angle = token.get("limit_field_of_vision_total", angle)
             else:
                 return FULL_ANGLE
@@ -304,20 +307,19 @@ class Token(Entity):
 
     @staticmethod
     def emitsLight(token):
-        legacy = token.get("legacy_lighting_enabled", defaultLegacyEnabled)
-        if legacy:
-            return token.get("light_otherplayers", False)
+        if Token.legacyLighting(token):
+            return Entity.roll20Flag(token.get("light_otherplayers", False))
         else:
-            return token.get("emits_low_light", False) or token.get("emits_bright_light", False)
+            return (Entity.roll20Flag(token.get("emits_low_light", False))
+                    or Entity.roll20Flag(token.get("emits_bright_light", False)))
 
     @staticmethod
     def lightAngle(token):
-        legacy = token.get("legacy_lighting_enabled", defaultLegacyEnabled)
         angle = FULL_ANGLE
-        if legacy:
+        if Token.legacyLighting(token):
             angle = token.get("light_angle", FULL_ANGLE)
         else:
-            if token.get("has_directional_bright_light", False):
+            if Entity.roll20Flag(token.get("has_directional_bright_light", False)):
                 angle = token.get("directional_bright_light_total", FULL_ANGLE)
             else:
                 return FULL_ANGLE
@@ -339,16 +341,15 @@ class Token(Entity):
 
     @staticmethod
     def getLightRadius(token):
-        legacy = token.get("legacy_lighting_enabled", defaultLegacyEnabled)
-        if legacy:
+        if Token.legacyLighting(token):
             lradius = token.get("light_radius", 0)
             dradius = token.get("light_dimradius", 0)
         else:
             lradius = 0
             dradius = 0
-            if token.get("emits_low_light", False):
+            if Entity.roll20Flag(token.get("emits_low_light", False)):
                 dradius = token.get("low_light_distance", 0)
-            if token.get("emits_bright_light", False):
+            if Entity.roll20Flag(token.get("emits_bright_light", False)):
                 lradius = token.get("bright_light_distance", 0)
         try:
             lradius = float(lradius)
@@ -1005,16 +1006,20 @@ class Actor(Entity):
         }
 
     def createAttributeInitiative(self):
+        """Persist only the extra initiative bonus, as a formula string (B127).
+
+        dnd5e derives the Dexterity modifier, proficiency, and total itself. A
+        numeric ``bonus`` next to a ``value`` is the pre-formula schema: dnd5e 6
+        migrates it twice (``init.bonus`` into ``init.roll.bonus``, then appends
+        ``init.value`` again), doubling the bonus.
+        """
         mod = self.abilityModifier("dexterity")
         init = self.getAttributeInt("initiative_bonus", 0)
         jack = self.getAttributeInt("jack_bonus", 0)
         bonus = init - mod - jack
         return {
-            "value": bonus,
-            "bonus": bonus,
-            "mod": mod,
-            "prof": 1 if jack != 0 else 0,
-            "total": init
+            "ability": "",
+            "bonus": str(bonus) if bonus else ""
         }
 
     def createAttributeMovement(self):
@@ -2075,6 +2080,33 @@ class Actor(Entity):
         item.entity["folder"] = folder_id
         self._converter.items.addEntity(item)
 
+    def itemIcon(self, item_type, name, compendium_item=None):
+        """Artwork for an owned item the compendium did not fully supply (B125).
+
+        The actor's portrait and token are never item artwork: on a sheet they
+        make every unmatched feature, weapon, and class look like the creature.
+        Prefer the matched donor's image, then any loaded compendium entry whose
+        name normalizes to the same key, then dnd5e's default for the type.
+        """
+        portraits = {getattr(self, "_avatar_filename", None),
+                     getattr(getattr(self, "token", None), "token_filename", None)}
+        portraits.discard(None)
+        portraits.discard("")
+        image = str(((compendium_item.entity.get("img") if compendium_item else "") or "")).strip()
+        if image and image not in portraits:
+            return image
+        index = getattr(self._converter, "itemIconIndex", None)
+        if callable(index):
+            groups = index()
+            keys = dnd5e.iconLookupKeys(name)
+            order = ("monster", "library") if self.isNPC() else ("library", "monster")
+            candidates = [groups[group][0].get((item_type, key)) for group in order for key in keys]
+            candidates += [groups[group][1].get(key) for group in order for key in keys]
+            for candidate in candidates:
+                if candidate and candidate not in portraits:
+                    return candidate
+        return dnd5e.defaultItemIcon(item_type)
+
     def nameOrPlaceholder(self, name, kind):
         """Name an entry Roll20 left blank.
 
@@ -2109,7 +2141,7 @@ class Actor(Entity):
             if compendium_item and not types_compatible:
                 self.logWarning("Compendium Item '%s' has incompatible type '%s' for source type '%s'; keeping source mechanics."
                                 % (name, donor_type, source_type))
-            item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
+            item.entity["img"] = self.itemIcon(source_type, name, compendium_item)
         owned_item = item.addToOwnedList(items)
 
         if inventory_type == "loot":
@@ -2330,7 +2362,7 @@ class Actor(Entity):
         if compendium_item and compendium_item.entity["type"] != "loot":
             item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
-            item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
+            item.entity["img"] = self.itemIcon(item.entity["type"], name, compendium_item)
         owned_item = item.addToOwnedList(items)
         self.exportItem(item, "Abilities & Feats")
         return owned_item
@@ -2671,7 +2703,7 @@ class Actor(Entity):
         if compendium_item and compendium_item.entity["type"] != "loot":
             item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
-            item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
+            item.entity["img"] = self.itemIcon(item.entity["type"], name, compendium_item)
         owned_item = item.addToOwnedList(items)
         self.exportItem(item, "Spells")
         return owned_item
@@ -3032,7 +3064,7 @@ class Actor(Entity):
             item.entity["system"].pop("spellcasting", None)
             item = self._converter.items.createItemFromCompendium(None, compendium_item, item.entity["system"])
         else:
-            item.entity["img"] = compendium_item.entity["img"] if compendium_item else self._avatar_filename
+            item.entity["img"] = self.itemIcon(item.entity["type"], name, compendium_item)
         owned_class = item.addToOwnedList(items)
         # dnd5e stopped reading `system.subclass` in 2.1: the subclass is now a
         # document of its own, linked by identifier (ADR-006).
@@ -3042,7 +3074,7 @@ class Actor(Entity):
 
     def createItemSubclass(self, items, name, class_name):
         item = self._converter.items.createItemSubclass(None, name, "", class_name)
-        item.entity["img"] = self._avatar_filename
+        item.entity["img"] = self.itemIcon(item.entity["type"], name)
         return item.addToOwnedList(items)
 
     def createItemOrigin(self, items, kind, name):
@@ -3060,7 +3092,7 @@ class Actor(Entity):
             item = self._converter.items.createItemRace(None, name)
         else:
             item = self._converter.items.createItemBackground(None, name)
-        item.entity["img"] = self._avatar_filename
+        item.entity["img"] = self.itemIcon(item.entity["type"], name)
         return item.addToOwnedList(items)["_id"]
 
     def addOrigins(self, items, details):

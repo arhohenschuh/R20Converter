@@ -220,7 +220,17 @@ options:
                         Only convert a specific page. Useful for debugging
   --fvtt-data-path FVTT_DATA_PATH
                         Path to the FVTT Data directory (used for importing
-                        items and spells from dnd5e system)
+                        items and spells from dnd5e system). Give the folder
+                        that contains Data/systems, or an installation folder
+                        with Config/options.json. A path that does not resolve
+                        skips enrichment; it never falls back to another
+                        installation. Packs are read from a temporary copy.
+  --dnd5e-version {6.x,5.3.3}
+                        Which dnd5e system generation the output is written
+                        for. Each target emits that generation's document
+                        schema and declares it as the minimum system version;
+                        match it to the dnd5e system installed in Foundry
+                        (Default: 6.x)
   --npc-source NPC_SOURCE
                         Source reference for NPC actors (displayed in the
                         character sheet)

@@ -597,7 +597,7 @@ class TestNPCPrintedWeaponMechanics(object):
         ability = activity["attack"]["ability"]
         assert actor.abilityMods()[ability] + actor.getProficiencyBonus() + int(activity["attack"]["bonus"] or 0) == to_hit
         assert int(damage["bonus"] or 0) + actor.abilityMods()[ability] == 3
-        assert item["img"] == ("icons/donor.webp" if matched else "source.webp")
+        assert item["img"] == ("icons/donor.webp" if matched else dnd5e.defaultItemIcon("weapon"))
         assert actor._converter.items.replacements == 0
 
     def test_bonus_attack_keeps_source_mechanics(self, tmp_path):

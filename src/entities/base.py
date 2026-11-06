@@ -558,6 +558,18 @@ class Entity(object):
         Entity.uuids.append(id)
         return Entity.normalizeID(str(id))
 
+    @staticmethod
+    def roll20Flag(value):
+        """Read a Roll20 checkbox flag, which may be a JSON boolean or a string.
+
+        Roll20 stores some checkboxes as ``"on"``. Foundry casts a non-``"true"``
+        string to ``false``, and Python's ``bool("off")`` is ``True``, so neither
+        side may receive the raw value (B126).
+        """
+        if isinstance(value, str):
+            return value.strip().lower() in ("on", "true", "1", "yes")
+        return bool(value)
+
     # Used to fix the sometimes broken color codes in R20
     @staticmethod
     def color(val, default="#c0c0c0", allow_transparent=False):

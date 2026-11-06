@@ -1,7 +1,7 @@
 # B125: Unmatched items inherit the actor portrait as their icon
 
 - Severity: Moderate
-- Status: Open
+- Status: Fixed in v1.17.0
 - Observed release: R20Converter 1.16.4, commit 404ef6a; the fallback predates the B0xx register
 - Reported: 6 November 2026, Dragoncoast Danger live world (`dragoncoast-danger`, Pi), Foundry 14.369,
   dnd5e 6.0.6 Legacy, Beyond5e 2014 compendium and assets installed
@@ -78,6 +78,33 @@ contain this defect and must be checked. "Fixed" for B125 will not repair existi
 Confirmed conversions in this register include Out of the Abyss (B11x Pipeline-11), The Wild
 Beyond the Witchlight (`witchlight/v120`), and the Dragoncoast Danger world. Also check every
 other publication under `Foundry_Pipeline_Publish` that came from a Roll20 conversion.
+
+## Resolution
+
+`Actor.itemIcon` replaces every avatar fallback in the six builders. It chooses artwork in this
+order:
+
+1. the matched donor's `img`, unless it equals the actor portrait or token;
+2. an icon-only lookup in the loaded `items`, `spells`, `classfeatures`, and `classes` packs
+   and in the items embedded in `monsters` donors, using `dnd5e.iconLookupKeys`;
+3. dnd5e's `CONFIG.DND5E.defaultArtwork.Item` for the document type, or core
+   `icons/svg/item-bag.svg`.
+
+The lookup uses item type first, then name. NPCs prefer monster-feature artwork; PCs prefer the
+library packs. Monster portraits and token textures are never indexed as item artwork. The
+lookup copies only `img`, so B100 still prevents content replacement. Handout items keep their
+handout image.
+
+Regression coverage (`tests/test_dnd5e_target.py::TestB125ItemArtwork`) includes type defaults,
+kept donor artwork, rejection of donor artwork equal to the portrait, a renamed
+`Variant: +1 Longsword (Silvered).`, portrait exclusion from the monster index, NPC/PC source
+order, subclass and origin defaults, and dash mojibake normalization. Exported HEAD returns
+`source.webp` for the unmatched control.
+
+Pinned Dragoncoast Danger export (`0397FED9...4639D3`), Beyond5e 2014 compendium 1.6.60 donor,
+dnd5e 6.0.6 Data copy: HEAD produces 330 of 714 owned items with a portrait or empty icon
+(264 NPC, 66 PC). The fix produces 0 of 714 for both the `6.x` and `5.3.3` targets. Native dnd5e
+6.0.6 replay keeps every actor's item set unchanged, with 0 invalid items.
 
 Check each output in Foundry by counting owned items whose image is the owner's image, token
 texture, or empty:

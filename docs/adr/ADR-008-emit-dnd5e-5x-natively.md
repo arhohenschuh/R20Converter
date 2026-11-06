@@ -1,9 +1,9 @@
 # ADR-008: Emit dnd5e 5.x documents natively
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-013](ADR-013-selectable-dnd5e-output-target.md)
 - **Date**: 2026-08-02
 - **Supersedes**: —
-- **Superseded by**: —
+- **Superseded by**: [ADR-013](ADR-013-selectable-dnd5e-output-target.md) (5.3.3 remains a selectable target)
 - **Relates to**: [ADR-002](ADR-002-target-foundry-v13.md) (Foundry core schema)
 
 ## Context

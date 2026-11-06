@@ -17,19 +17,56 @@ import re
 
 # --- Target system ---------------------------------------------------------
 
-#: The dnd5e version whose data schema R20Converter writes.
+#: Selectable dnd5e output schemas, keyed by the user-facing target name.
 #:
-#: This is not decoration. It is written to ``dnd5e.systemMigrationVersion`` and
-#: to each document's ``_stats.systemVersion``, and dnd5e reads both to decide
-#: whether to migrate. Claiming an older version than we emit runs a migration
-#: against documents that have no legacy fields left to convert — which silently
-#: empties ``system.damage.base``. Claiming a newer one strands any legacy field
-#: we did not port. It must always tell the truth about our output.
-SYSTEM_VERSION = "5.3.3"
+#: The emitted version is not decoration. It is written to
+#: ``dnd5e.systemMigrationVersion`` and to each document's
+#: ``_stats.systemVersion``, and dnd5e reads both to decide whether to migrate.
+#: Claiming an older version than we emit runs a migration against documents
+#: that have no legacy fields left to convert; claiming a newer one strands any
+#: legacy field we did not port. A target must therefore emit its own schema,
+#: not just its own version string (dnd5e 6 raised ``needsMigrationVersion`` to
+#: 6.0.0 and reads migrated fields only through deprecation shims).
+SYSTEM_TARGETS = {
+    "6.x": {"version": "6.0.6", "minimum": "6.0.0"},
+    "5.3.3": {"version": "5.3.3", "minimum": "5.0.0"},
+}
+DEFAULT_SYSTEM_TARGET = "6.x"
 
-#: Oldest dnd5e release that understands the schema we emit. Activities landed in
-#: dnd5e 4.0; 5.0.0 is the first release of the current generation.
-MINIMUM_SYSTEM_VERSION = "5.0.0"
+#: The dnd5e version whose data schema the default target writes.
+SYSTEM_VERSION = SYSTEM_TARGETS[DEFAULT_SYSTEM_TARGET]["version"]
+
+#: Oldest dnd5e release that understands the default target's schema.
+MINIMUM_SYSTEM_VERSION = SYSTEM_TARGETS[DEFAULT_SYSTEM_TARGET]["minimum"]
+
+
+def systemTarget(name=None):
+    """Resolve a target name to ``(name, version, minimum)``."""
+    name = str(name or DEFAULT_SYSTEM_TARGET).strip()
+    if name not in SYSTEM_TARGETS:
+        raise ValueError("Unknown dnd5e target '%s'; choose one of %s"
+                         % (name, ", ".join(SYSTEM_TARGETS)))
+    return name, SYSTEM_TARGETS[name]["version"], SYSTEM_TARGETS[name]["minimum"]
+
+
+def minimumSystemVersion(version):
+    """Oldest dnd5e release that reads documents stamped ``version``."""
+    for target in SYSTEM_TARGETS.values():
+        if target["version"] == version:
+            return target["minimum"]
+    return SYSTEM_TARGETS["6.x" if isGeneration6(version) else "5.3.3"]["minimum"]
+
+
+def versionParts(version):
+    parts = []
+    for part in str(version or "").split("."):
+        match = re.match(r"\d+", part)
+        parts.append(int(match.group(0)) if match else 0)
+    return tuple(parts + [0] * (3 - len(parts)))
+
+
+def isGeneration6(version):
+    return versionParts(version)[0] >= 6
 
 
 # --- Item type enumerations (config.mjs) -----------------------------------
@@ -762,6 +799,275 @@ def stats(core_version, system_version=SYSTEM_VERSION):
         "duplicateSource": None,
         "exportSource": None,
     }
+
+
+# --- Item artwork ----------------------------------------------------------
+
+#: ``CONFIG.DND5E.defaultArtwork.Item``; identical in 5.3.3 and 6.0.6.
+DEFAULT_ITEM_ARTWORK = {
+    "background": "systems/dnd5e/icons/svg/items/background.svg",
+    "class": "systems/dnd5e/icons/svg/items/class.svg",
+    "consumable": "systems/dnd5e/icons/svg/items/consumable.svg",
+    "container": "systems/dnd5e/icons/svg/items/container.svg",
+    "equipment": "systems/dnd5e/icons/svg/items/equipment.svg",
+    "facility": "systems/dnd5e/icons/svg/items/facility.svg",
+    "feat": "systems/dnd5e/icons/svg/items/feature.svg",
+    "loot": "systems/dnd5e/icons/svg/items/loot.svg",
+    "race": "systems/dnd5e/icons/svg/items/race.svg",
+    "spell": "systems/dnd5e/icons/svg/items/spell.svg",
+    "subclass": "systems/dnd5e/icons/svg/items/subclass.svg",
+    "tool": "systems/dnd5e/icons/svg/items/tool.svg",
+    "weapon": "systems/dnd5e/icons/svg/items/weapon.svg",
+}
+
+#: Foundry core's ``Item.DEFAULT_ICON`` for any type without a system default.
+DEFAULT_ICON = "icons/svg/item-bag.svg"
+
+
+def defaultItemIcon(item_type):
+    return DEFAULT_ITEM_ARTWORK.get(item_type, DEFAULT_ICON)
+
+
+def iconLookupKeys(name):
+    """Comparable keys for an icon-only lookup, most specific first.
+
+    Only artwork may be borrowed through these keys; they are deliberately looser
+    than the content-matching lookup, which stays exact.
+    """
+    text = str(name or "")
+    for broken, fixed in (("\u00e2\u20ac\u201c", "-"), ("\u00e2\u20ac\u201d", "-"),
+                          ("\u2013", "-"), ("\u2014", "-")):
+        text = text.replace(broken, fixed)
+    text = " ".join(text.split()).strip()
+    keys = [text.lower()]
+    stripped = re.sub(r"^variant\s*:\s*", "", text, flags=re.I)
+    stripped = re.sub(r"^[+-]\d+\s+", "", stripped)
+    stripped = re.sub(r"(\s*\([^()]*\))+$", "", stripped.rstrip(". "))
+    stripped = stripped.rstrip(". ").strip()
+    for candidate in (stripped.lower(), normalizeItemName(stripped)):
+        if candidate and candidate not in keys:
+            keys.append(candidate)
+    return [key for key in keys if key]
+
+
+# --- dnd5e 6.0 document schema ---------------------------------------------
+
+LEGACY_SPEEDS = ("walk", "burrow", "climb", "fly", "jump", "swim")
+PHYSICAL_ITEM_TYPES = ("consumable", "container", "equipment", "loot", "tool", "weapon")
+ITEM_RARITIES = {"common": "common", "uncommon": "uncommon", "rare": "rare",
+                 "veryrare": "veryRare", "very rare": "veryRare",
+                 "legendary": "legendary", "artifact": "artifact"}
+
+#: ``CommonTemplate.#BONUS_FIELD_PATHS`` (6.0.6 module/data/actor/templates/common.mjs).
+ACTOR_BONUS_PATHS_6 = (
+    ("attributes.concentration.bonuses.save", "attributes.concentration.roll.bonus"),
+    ("attributes.death.bonuses.save", "attributes.death.roll.bonus"),
+    ("attributes.init.bonus", "attributes.init.roll.bonus"),
+    ("bonuses.mwak.attack", "rolls.attack.mwak.bonus"),
+    ("bonuses.mwak.damage", "rolls.damage.mwak.bonus"),
+    ("bonuses.rwak.attack", "rolls.attack.rwak.bonus"),
+    ("bonuses.rwak.damage", "rolls.damage.rwak.bonus"),
+    ("bonuses.msak.attack", "rolls.attack.msak.bonus"),
+    ("bonuses.msak.damage", "rolls.damage.msak.bonus"),
+    ("bonuses.rsak.attack", "rolls.attack.rsak.bonus"),
+    ("bonuses.rsak.damage", "rolls.damage.rsak.bonus"),
+    ("bonuses.abilities.check", "rolls.ability.check.bonus"),
+    ("bonuses.abilities.save", "rolls.ability.save.bonus"),
+    ("bonuses.abilities.skill", "rolls.ability.skill.bonus"),
+)
+
+
+def _path(data, path):
+    for part in path.split("."):
+        if not isinstance(data, dict) or part not in data:
+            return None
+        data = data[part]
+    return data
+
+
+def _pop(data, path):
+    parts = path.split(".")
+    for part in parts[:-1]:
+        if not isinstance(data, dict) or part not in data:
+            return None
+        data = data[part]
+    return data.pop(parts[-1], None) if isinstance(data, dict) else None
+
+
+def _put(data, path, value):
+    parts = path.split(".")
+    for part in parts[:-1]:
+        data = data.setdefault(part, {})
+    data[parts[-1]] = value
+
+
+def _bonus(value):
+    if value in (None, "", 0, "0"):
+        return ""
+    return str(value)
+
+
+def _moveBonuses(source, paths):
+    for original, updated in paths:
+        value = _bonus(_pop(source, original))
+        if value and not _path(source, updated):
+            _put(source, updated, value)
+
+
+def _pruneEmpty(data, path):
+    """Remove the container at ``path`` once its bonuses have moved out."""
+    parts = path.split(".")
+    container = _path(data, ".".join(parts[:-1])) if len(parts) > 1 else data
+    if isinstance(container, dict) and container.get(parts[-1]) == {}:
+        del container[parts[-1]]
+
+
+def movementData6(movement):
+    """Move flat speeds into ``movement.speeds`` (``MovementField._migrate``)."""
+    if not isinstance(movement, dict):
+        return movement
+    speeds = movement.get("speeds") if isinstance(movement.get("speeds"), dict) else {}
+    for key in LEGACY_SPEEDS:
+        if key in movement:
+            value = movement.pop(key)
+            if key not in speeds:
+                speeds[key] = "" if value is None else str(value)
+    movement["speeds"] = speeds
+    return movement
+
+
+def upgradeActorSystem6(system):
+    """Rewrite a 5.x actor ``system`` into the shape dnd5e 6.0 persists."""
+    if not isinstance(system, dict):
+        return system
+    attributes = system.get("attributes") or {}
+    ac = attributes.get("ac")
+    if isinstance(ac, dict):
+        # ``AttributesFields._migrateArmorClass``; ``calc``/``formula`` are no longer persisted.
+        calc = ac.pop("calc", None)
+        formula = ac.pop("formula", None)
+        if calc == "custom":
+            ac.setdefault("formulas", []).append({"formula": "" if formula is None else formula})
+        elif calc == "flat":
+            ac["override"] = ac.get("flat")
+        elif calc == "natural":
+            ac["calcs"] = ["natural"]
+        elif calc and calc != "default":
+            ac.setdefault("calcs", ["unarmored", "armored"]).append(calc)
+        ac.setdefault("calcs", ["unarmored", "armored"])
+        ac.setdefault("formulas", [])
+    init = attributes.get("init")
+    if isinstance(init, dict):
+        for derived in ("value", "mod", "prof", "total"):
+            init.pop(derived, None)
+        init.setdefault("ability", "")
+        init.setdefault("roll", {"min": None, "max": None, "mode": 0})
+    _moveBonuses(system, ACTOR_BONUS_PATHS_6)
+    for path in ("attributes.concentration.bonuses", "attributes.death.bonuses",
+                 "bonuses.mwak", "bonuses.rwak", "bonuses.msak", "bonuses.rsak",
+                 "bonuses.abilities"):
+        _pruneEmpty(system, path)
+    system.setdefault("rolls", {})
+    for ability in (system.get("abilities") or {}).values():
+        if isinstance(ability, dict):
+            _moveBonuses(ability, (("bonuses.check", "check.roll.bonus"),
+                                   ("bonuses.save", "save.roll.bonus")))
+            _pruneEmpty(ability, "bonuses")
+    for collection in ("skills", "tools"):
+        for entry in (system.get(collection) or {}).values():
+            if isinstance(entry, dict):
+                _moveBonuses(entry, (("bonuses.check", "roll.bonus"),))
+                if collection == "tools":
+                    _pruneEmpty(entry, "bonuses")
+    if "movement" in attributes:
+        movementData6(attributes["movement"])
+    return system
+
+
+def lockSmallTokenScale(token, size):
+    """dnd5e 6.0 keeps pre-6 small creatures at their stored token scale."""
+    if size != "sm" or not isinstance(token, dict):
+        return token
+    if (token.get("ring") or {}).get("enabled"):
+        return token
+    flags = token.get("flags")
+    if not isinstance(flags, dict):
+        flags = token["flags"] = {}
+    flags.setdefault("dnd5e", {})["lockScale"] = True
+    return token
+
+
+def upgradeEffect6(effect, parent, seed):
+    """Apply dnd5e 6.0's version-gated effect migration to a pre-6 effect.
+
+    Only the effect's own stamp is trusted: the converter restamps copied parent
+    items, so a parent stamp no longer says which schema the effect was authored
+    in. An unstamped effect is treated as pre-6; every step here is idempotent.
+    """
+    if not isinstance(effect, dict):
+        return effect
+    stats_ = effect.get("_stats") or {}
+    if isGeneration6(stats_.get("systemVersion")):
+        return effect
+    system = effect.get("system")
+    if not isinstance(system, dict):
+        system = effect["system"] = {}
+    changes = system.get("changes") if isinstance(system.get("changes"), list) else effect.get("changes")
+    for index, change in enumerate(changes or []):
+        if isinstance(change, dict):
+            change.setdefault("_id", activityId("%s:change:%d" % (seed, index)))
+            if change.get("key") == "system.attributes.ac.base":
+                change["key"] = "system.attributes.ac.armor"
+    parent_system = parent.get("system") or {}
+    is_scroll = parent.get("type") == "consumable" and (parent_system.get("type") or {}).get("value") == "scroll"
+    if parent.get("type") == "spell" or is_scroll or "mgc" in (parent_system.get("properties") or []):
+        system["magical"] = True
+    origin_values = [value for value in (system.get("origin") or {}).values() if value]
+    origin = ((effect.get("flags") or {}).get("core") or {}).get("originText") or effect.get("origin")
+    if effect.get("type") == "enchantment" and not origin_values:
+        effect["transfer"] = bool(origin) and not str(origin).endswith(str(parent.get("_id")))
+    if origin and not origin_values:
+        field = ("activity" if "Activity" in origin else "effect" if "ActiveEffect" in origin
+                 else "item" if "Item" in origin else "actor" if "Actor" in origin
+                 else "behavior" if "RegionBehavior" in origin else None)
+        if field:
+            system.setdefault("origin", {})[field] = origin
+            effect["origin"] = None
+            ((effect.get("flags") or {}).get("core") or {}).pop("originText", None)
+    if stats_:
+        stats_["systemVersion"] = SYSTEM_TARGETS["6.x"]["version"]
+    return effect
+
+
+def upgradeItem6(item):
+    """Rewrite one 5.x item document into the shape dnd5e 6.0 persists."""
+    if not isinstance(item, dict):
+        return item
+    system = item.get("system")
+    if isinstance(system, dict):
+        if item.get("type") in PHYSICAL_ITEM_TYPES and "rarity" in system:
+            rarity = str(system.pop("rarity") or "").strip()
+            key = ITEM_RARITIES.get(rarity.lower()) or (rarity if rarity in ITEM_RARITIES.values() else None)
+            system.setdefault("rarities", [key] if key else [])
+        if item.get("type") == "race" and "movement" in system:
+            movementData6(system["movement"])
+    for index, effect in enumerate(item.get("effects") or []):
+        upgradeEffect6(effect, item, "%s:%s:%s" % (item.get("_id"), (effect or {}).get("_id"), index))
+    return item
+
+
+def upgradeActor6(actor):
+    """Rewrite a converter-built actor and its owned items for dnd5e 6.0."""
+    if not isinstance(actor, dict):
+        return actor
+    upgradeActorSystem6(actor.get("system"))
+    size = ((actor.get("system") or {}).get("traits") or {}).get("size")
+    lockSmallTokenScale(actor.get("prototypeToken"), size)
+    for item in actor.get("items") or []:
+        upgradeItem6(item)
+    for index, effect in enumerate(actor.get("effects") or []):
+        upgradeEffect6(effect, actor, "%s:%s:%s" % (actor.get("_id"), (effect or {}).get("_id"), index))
+    return actor
 
 
 def itemType(value, base_item=""):

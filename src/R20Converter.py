@@ -12,6 +12,7 @@ from collections import OrderedDict
 
 from compendium_export import CompendiumExport
 import utils
+import dnd5e
 import foundry
 import leveldb_pack
 from version import version
@@ -62,9 +63,11 @@ class R20Converter(object):
         self.system_manifest = None
         self.system_templates = {}
         self.game_system = self.getArgument("game_system", foundry.DEFAULT_GAME_SYSTEM)
-        self.game_system_version = foundry.DEFAULT_SYSTEM_VERSION
         if (self.game_system == ""):
             self.game_system = foundry.DEFAULT_GAME_SYSTEM
+        self.dnd5e_target, self.game_system_version, _ = \
+            dnd5e.systemTarget(self.getArgument("dnd5e_version", None))
+        self._item_icon_index = None
         self.compendium_export = None
         if self.getArgument("convert_compendium", False):
             compendium_zip = self.getArgument("compendium_zip", None)
@@ -75,7 +78,8 @@ class R20Converter(object):
             if self.getArgument("export_as_module", False) and self.getArgument("disable_module_journal", False):
                 raise ValueError("Compendium conversion requires module Journals to be enabled")
             self.compendium_export = CompendiumExport(compendium_zip.strip())
-        self.fvtt_path = self.getArgument("fvtt_data_path", None)
+        explicit_fvtt_path = self.getArgument("fvtt_data_path", None)
+        self.fvtt_path = explicit_fvtt_path
         if self.fvtt_path is not None:
             # Accept an installation directory as well as the data directory:
             # a portable install keeps Config/options.json beside the app and
@@ -90,7 +94,10 @@ class R20Converter(object):
                 self.logInfo("Using FVTT data path '%s' from '%s'."
                              % (resolved, self.fvtt_path))
             self.fvtt_path = resolved
-        if self.fvtt_path is None:
+        # An explicit path that does not resolve means "skip enrichment", as the
+        # warning says: silently enriching from another installation changes the
+        # output and reads packs the user never named (B128).
+        if self.fvtt_path is None and explicit_fvtt_path is None:
             potential_path = os.path.abspath(os.path.join(self.path, "..", "..", ".."))
             if os.path.exists(os.path.join(potential_path, "Data", "systems", self.game_system, "system.json")):
                 self.fvtt_path = potential_path
@@ -212,6 +219,8 @@ class R20Converter(object):
         return getattr(self.args, name, default)
 
     def loadSystemManifest(self):
+        if self.fvtt_path is None:
+            return
         path = os.path.join(self.fvtt_path, "Data", "systems", self.game_system, "system.json")
         try:
             with open(path, "r", encoding='utf-8') as f:
@@ -298,6 +307,95 @@ class R20Converter(object):
             self.logInfo("Loaded %d documents from %d dnd5e %s SRD compendium packs (%s)."
                          % (loaded, len(cache), edition, ", ".join(sorted(cache))))
         self.loadCustomCompendium()
+        self.warnAboutSystemGeneration(packs_dir)
+
+    def warnAboutSystemGeneration(self, packs_dir):
+        """Report donor content newer than the selected dnd5e target can read."""
+        target = dnd5e.versionParts(self.game_system_version)[0]
+        try:
+            with open(os.path.join(os.path.dirname(packs_dir), "system.json"), "r", encoding="utf-8") as handle:
+                installed = json.load(handle).get("version")
+        except (OSError, ValueError):
+            installed = None
+        if installed and dnd5e.versionParts(installed)[0] != target:
+            self.logWarning("Warning: the dnd5e %s output target was selected, but the installed dnd5e "
+                            "system is %s. Choose the matching target with --dnd5e-version."
+                            % (self.dnd5e_target, installed))
+        newer = set()
+        for database in self.packs.values():
+            for entity in getattr(database, "entities", ()):
+                version = ((entity.entity.get("_stats") or {}).get("systemVersion")
+                           if isinstance(getattr(entity, "entity", None), dict) else None)
+                if version and dnd5e.versionParts(version)[0] > target:
+                    newer.add(id(entity))
+        if newer:
+            self.logWarning("Warning: %d compendium documents were authored for a newer dnd5e generation "
+                            "than the %s target. Matched copies may be unreadable there; use the "
+                            "matching --dnd5e-version or an older compendium."
+                            % (len(newer), self.dnd5e_target))
+
+    def itemIconIndex(self):
+        """Name -> artwork from loaded compendia, for icon-only lookups (B125).
+
+        Returns ``{"library": (typed, untyped), "monster": (typed, untyped)}``;
+        ``typed`` is keyed by ``(item type, key)`` and ``untyped`` by key. A
+        monster's own portrait or token is never indexed as item artwork.
+        """
+        if getattr(self, "_item_icon_index", None) is not None:
+            return self._item_icon_index
+        index = {"library": ({}, {}), "monster": ({}, {})}
+
+        def add(group, document, excluded=()):
+            image = str(document.get("img") or "").strip()
+            if not image or image in excluded:
+                return
+            typed, untyped = index[group]
+            for key in dnd5e.iconLookupKeys(document.get("name")):
+                typed.setdefault((document.get("type"), key), image)
+                untyped.setdefault(key, image)
+
+        for role in ("items", "spells", "classfeatures", "classes", "monsters"):
+            database = getattr(self, "packs", {}).get(role)
+            for entity in getattr(database, "entities", ()):
+                document = getattr(entity, "entity", None)
+                if not isinstance(document, dict):
+                    continue
+                if role != "monsters":
+                    add("library", document)
+                    continue
+                portraits = {document.get("img"),
+                             ((document.get("prototypeToken") or {}).get("texture") or {}).get("src")}
+                for owned in document.get("items") or []:
+                    if isinstance(owned, dict):
+                        add("monster", owned, portraits)
+        self._item_icon_index = index
+        return self._item_icon_index
+
+    def isDnd5e6(self):
+        return (getattr(self, "game_system", None) == "dnd5e"
+                and dnd5e.isGeneration6(getattr(self, "game_system_version", None)))
+
+    def finalizeSystemDocuments(self, database):
+        """Write the selected dnd5e target's schema into ``database`` in place."""
+        if not self.isDnd5e6():
+            return database
+        kind = os.path.splitext(getattr(database, "_filename", ""))[0]
+        for entity in getattr(database, "entities", ()):
+            document = getattr(entity, "entity", None)
+            if not isinstance(document, dict):
+                continue
+            if kind == "actors":
+                dnd5e.upgradeActor6(document)
+            elif kind in ("items", "cards"):
+                dnd5e.upgradeItem6(document)
+            elif kind == "scenes":
+                for token in document.get("tokens") or []:
+                    actor = self.actors.getById(token.get("actorId")) if token.get("actorId") else None
+                    size = (((token.get("delta") or {}).get("system") or {}).get("traits") or {}).get("size")
+                    if size is None and actor is not None:
+                        size = ((actor.entity.get("system") or {}).get("traits") or {}).get("size")
+                    dnd5e.lockSmallTokenScale(token, size)
+        return database
 
     def resolveCustomCompendium(self, name):
         """Locate a custom compendium's ``packs`` directory.
@@ -560,6 +658,8 @@ class R20Converter(object):
 
             if getattr(self, "compendium_export", None):
                 self.compendium_export.install(self)
+            for database in (self.actors, self.items, self.cards, self.scenes):
+                self.finalizeSystemDocuments(database)
             # Module will add the packs that are not empty and save them to file
             self.module = Module(self).save()
         else:
@@ -578,8 +678,8 @@ class R20Converter(object):
             else:
                 self.chat = ChatLog(self).save()
             self.journal = Journal(self).save()
-            self.actors = Actors(self).save()
-            self.scenes = Scenes(self).save()
+            self.actors = self.finalizeSystemDocuments(Actors(self)).save()
+            self.scenes = self.finalizeSystemDocuments(Scenes(self)).save()
             self.combat = Combat(self).save()
             self.playlists = Playlists(self).save()
             # Use items database for deck cards
@@ -592,7 +692,7 @@ class R20Converter(object):
             self.sessions = EmptyDB(self, "sessions").save()
             # Could get modified by the journal or rollable tables
             self.folders.save()
-            self.items.save()
+            self.finalizeSystemDocuments(self.items).save()
             self.world = World(self).save()
         self.logAssetIdentitySummary()
         scaled_scenes = [scene.entity.get("flags", {}).get("R20Converter", {}).get("sceneScale")
