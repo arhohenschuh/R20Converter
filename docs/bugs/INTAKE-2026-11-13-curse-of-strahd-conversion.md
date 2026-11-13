@@ -21,6 +21,8 @@
 - Evidence: console logs `Reports\Logs\convert-c1-failed-degenerate-path.console.log`, `convert-c2-failed-font-size.console.log`, `convert-c3-failed-guard-link.console.log`; workaround shim `Tools\make-path-shim.mjs` / `Reports\path-shim-003.json`; output repairs `Tools\fix-cos-actors.mjs` and `Tools\fix-aliases.mjs` (all in the run folder).
 
 > **Note on upstream issues.** This fork has GitHub issues disabled, so `gh issue create` in this checkout went to the public upstream `kakaroto/R20Converter` as #98-#103 under the owner's account. The owner decides whether to keep or close them; this file is the fork-side record.
+>
+> **Resolved 2026-11-13:** on the owner's decision, #98-#103 were closed upstream as *not planned* with a note that they were filed there by mistake.
 
 > **Overlap with B130.** The pending v1.17.1 B130 fix (flat/point Jumpgate ellipses skipped on every layer) appears to cover the D1 ellipse (points `[[0,0],[0,-0.51]]`). The zero-width **rectangle** `-OmocrgJSUwA3kBjW6kB` in D1 is not covered by B130 and is unverified.
 
