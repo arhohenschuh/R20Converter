@@ -1,5 +1,22 @@
 # R20Converter Repository
 
+## Fork boundary
+
+This repository is the fork `arhohenschuh/R20Converter` of `kakaroto/R20Converter`. All writes go
+to the fork only: pushes, tags, releases, issues, pull requests and comments. Nothing is ever
+pushed, filed or posted to the upstream repository; `upstream` is a fetch-only remote.
+
+The fork has GitHub issues disabled, and an unqualified `gh issue create` resolves to the
+upstream repository instead. Record defects in [`docs/bugs/`](bugs/README.md), and pass
+`--repo arhohenschuh/R20Converter` to every `gh` command that writes.
+
+Configure every clone so the boundary is enforced, not just documented:
+
+```powershell
+git remote set-url --push upstream no-push://upstream-is-fetch-only
+gh repo set-default arhohenschuh/R20Converter
+```
+
 ## Write lease
 
 Take the repository-scoped lease before modifying source, tests, documentation, commits, tags, or
