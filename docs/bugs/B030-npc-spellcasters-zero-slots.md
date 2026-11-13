@@ -86,6 +86,10 @@ sheet labels that field "SLOTS REMAINING" (`slots_remaining-u` in
 `translations.py`). It maps onto `value` unchanged; the original code was right
 about that and the mapping was deliberately left alone.
 
+**Corrected by [B134](B134-printed-npc-slot-spread-ignored.md) (v1.17.1):** the sheet's
+`lvlN_slots_total` does not always reproduce the printed statblock. Roll20 fills it from the
+full-caster table, so a slot spread printed in the Spellcasting trait now takes precedence.
+
 ## Note on PCs
 
 Characters get slots from their class items' spellcasting progression, so they

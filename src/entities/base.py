@@ -437,16 +437,19 @@ class Entity(object):
         reference = getattr(getattr(self, "_converter", None), "compendium_export", None)
         if reference is not None:
             content = reference.rewrite_links(content, self._converter)
-        return re.sub('<a ([^>]*)href=[\'"]https?://roll20.net/compendium/dnd5e/([^\'"]+)(?:(?:%3[aA])|:)([^\'"]+)[\'"]([^>]*)>(.*?)</a>', self._foundCompendium, content)
+        return re.sub('<a ([^>]*)href=[\'"]https?://(app\\.|www\\.)?roll20\\.net/compendium/dnd5e/([^\'"]+)(?:(?:%3[aA])|:)([^\'"]+)[\'"]([^>]*)>(.*?)</a>', self._foundCompendium, content)
 
     def _foundCompendium(self, match):
         converter = self._converter
         before_href = match.group(1)
-        compendium = match.group(2)
-        name = urllib.parse.unquote(match.group(3))
-        name = name.split("#")[0].split("?")[0]
-        after_href = match.group(4)
-        text = match.group(5)
+        # Links on these hosts were never rewritten; when unresolved they stay unchanged (B135).
+        alternate_host = match.group(2) is not None
+        compendium = match.group(3)
+        name = urllib.parse.unquote(match.group(4))
+        # Roll20 serves the same entry with a trailing slash (B135).
+        name = name.split("#")[0].split("?")[0].rstrip("/")
+        after_href = match.group(5)
+        text = match.group(6)
         item = converter.items.getByName(name)
         if item is None:
             if compendium == "Spells":
@@ -465,7 +468,7 @@ class Entity(object):
                         Entity.compendiumUuid(compendium_item.getFullID(), "Item"), name)
                 self.logWarning("Could not find compendium item of type '%s' and name '%s'"
                                 % (compendium, name))
-                return text
+                return match.group(0) if alternate_host else text
             elif compendium_item:
                 converter.folders.ensureFolder(folder_id, folder, "Item")
                 item = converter.items.createItemFromCompendium(None, compendium_item)

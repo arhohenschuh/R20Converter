@@ -1765,6 +1765,38 @@ class Actor(Entity):
                 return int(match.group(1))
         return 0
 
+    PRINTED_SLOT_COUNTS = {word: index for index, word in enumerate(
+        ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"), 1)}
+
+    def getNPCPrintedSpellSlots(self):
+        """Slot spread printed in an NPC Spellcasting trait, e.g. ``1st level (4 slots)`` (B134).
+
+        Roll20 fills ``lvl<N>_slots_total`` from a full-caster table, so half casters
+        and statblocks with a non-standard spread print counts the sheet does not hold.
+        """
+        if not self.isNPC():
+            return {}
+        pattern = re.compile(r"\b([1-9])(?:st|nd|rd|th)[- ]level\s*\(\s*(\d+|%s)\s+slots?\s*\)"
+                             % "|".join(self.PRINTED_SLOT_COUNTS), re.IGNORECASE)
+        spread = {}
+        for trait in self.getRepeatingAttributes("npctrait").values():
+            name = str(self.getAttribute("name", "", from_dict=trait)[0])
+            if not re.search(r"spellcasting", name, re.IGNORECASE) or re.search(r"innate", name, re.IGNORECASE):
+                continue
+            description = (self.getAttribute("description", "", from_dict=trait)[0]
+                           or self.getAttribute("desc", "", from_dict=trait)[0])
+            text = " ".join(BeautifulSoup(self._descriptionToString(description), "html.parser").get_text(" ").split())
+            for match in pattern.finditer(text):
+                level = int(match.group(1))
+                count_text = match.group(2)
+                count = int(count_text) if count_text.isdigit() else self.PRINTED_SLOT_COUNTS[count_text.lower()]
+                if spread.get(level, count) != count:
+                    self.logWarning("NPC '%s' prints conflicting level %d spell slots; using the sheet"
+                                    % (self.getName(), level))
+                    return {}
+                spread[level] = count
+        return spread
+
     def getNPCSharedSpellSlots(self):
         if not self.isNPC():
             return None
@@ -1836,23 +1868,29 @@ class Actor(Entity):
         if self.isNPC():
             return
         classes = [item["system"] for item in items if item.get("type") == "class"]
+        progressions = [(entry.get("spellcasting", {}).get("progression"), entry.get("levels", 0)) for entry in classes]
         pact_classes = [entry for entry in classes if entry.get("spellcasting", {}).get("progression") == "pact"]
         if not pact_classes:
             return
-        if any(entry.get("spellcasting", {}).get("progression") not in (None, "", "none", "pact") for entry in classes):
-            raise ValueError("Cannot split mixed pact and ordinary spellcasting from one source slot row")
+        unknown = sorted({progression for progression, _ in progressions
+                          if progression not in (None, "", "none", "pact") and progression not in dnd5e.SPELL_PROGRESSIONS})
+        if unknown:
+            raise ValueError("Unsupported spellcasting progression %s alongside pact magic" % ", ".join(unknown))
         pact_level = sum(int(entry.get("levels", 0)) for entry in pact_classes)
         if not 1 <= pact_level <= 20:
             raise ValueError("Pact class level must be between 1 and 20")
-        slot_level = min(5, (pact_level + 1) // 2)
-        capacity = 1 if pact_level == 1 else (2 if pact_level < 11 else (3 if pact_level < 17 else 4))
-        remaining = max(0, self.getAttributeInt("lvl%d_slots_expended" % slot_level, 0))
-        if remaining > capacity:
-            self.logWarning("Pact slots report %d remaining from capacity %d; clamped" % (remaining, capacity))
-        slots["pact"] = {"value": capacity if self.getArgument("export_as_module", False) else min(remaining, capacity),
-                         "override": None}
-        for level in range(1, 10):
-            slots["spell%d" % level] = {"value": 0, "override": None}
+        slot_level, capacity = dnd5e.pactSlots(pact_level)
+        module = self.getArgument("export_as_module", False)
+        ordinary = dnd5e.spellSlots(dnd5e.ordinaryCasterLevel(progressions))
+        if ordinary:
+            self.splitMixedSlotRows(slots, ordinary, slot_level, capacity, module)
+        else:
+            remaining = max(0, self.getAttributeInt("lvl%d_slots_expended" % slot_level, 0))
+            if remaining > capacity:
+                self.logWarning("Pact slots report %d remaining from capacity %d; clamped" % (remaining, capacity))
+            slots["pact"] = {"value": capacity if module else min(remaining, capacity), "override": None}
+            for level in range(1, 10):
+                slots["spell%d" % level] = {"value": 0, "override": None}
         grant_texts = []
         for trait in self.getRepeatingAttributes("traits").values():
             description = (self.getAttribute("description", "", from_dict=trait)[0]
@@ -1869,11 +1907,49 @@ class Actor(Entity):
             spell_name = self.normalizeSpellName(item["name"])
             grant_pattern = r"\byou can cast (?:the )?%s(?: spell)? at will\b" % re.escape(spell_name)
             at_will = any(re.search(grant_pattern, text) for text in grant_texts)
+            # Mixed casters keep "spell": neither method is exclusive, so both pools can pay for it.
+            if ordinary and not at_will:
+                continue
             item["system"]["method"] = "atwill" if at_will else "pact"
             item["system"]["prepared"] = 1
             if at_will:
                 for activity in item["system"].get("activities", {}).values():
                     activity.setdefault("consumption", {})["spellSlot"] = False
+
+    def splitMixedSlotRows(self, slots, ordinary, pact_level, pact_capacity, module):
+        """Divide OGL's merged per-level slot rows between ordinary and pact pools (B129).
+
+        Only the pact slot level is shared. A partial row there is filled pact-first, which keeps
+        the available total and never over-credits after a short rest restores pact slots.
+        """
+        mismatched = []
+        for level in range(1, 10):
+            capacity = ordinary.get(level, 0)
+            expected = capacity + (pact_capacity if level == pact_level else 0)
+            total = max(0, self.getAttributeInt("lvl%d_slots_total" % level, 0))
+            if total != expected:
+                mismatched.append("level %d sheet %d, classes %d" % (level, total, expected))
+            remaining = max(0, self.getAttributeInt("lvl%d_slots_expended" % level, 0))
+            if remaining > expected:
+                self.logWarning("Level %d spell slots report %d remaining from capacity %d; clamped"
+                                % (level, remaining, expected))
+                remaining = expected
+            if module:
+                spell, pact = capacity, pact_capacity
+            elif level == pact_level:
+                pact = min(remaining, pact_capacity)
+                spell = remaining - pact
+                if capacity and 0 < remaining < expected:
+                    self.logWarning("'%s' has %d of %d level %d slots left in one Roll20 row; assigned %d pact "
+                                    "and %d ordinary (pact first)" % (self.getName(), remaining, expected, level, pact, spell))
+            else:
+                spell = remaining
+            slots["spell%d" % level] = {"value": spell, "override": None}
+            if level == pact_level:
+                slots["pact"] = {"value": pact, "override": None}
+        if mismatched:
+            self.logWarning("Mixed pact and ordinary slot totals for '%s' differ from class progression: %s"
+                            % (self.getName(), "; ".join(mismatched)))
 
     def createActorSpells(self):
         """Build ``system.spells``.
@@ -1899,6 +1975,8 @@ class Actor(Entity):
         module_source = self.getArgument("export_as_module", False)
         derived = dnd5e.spellSlots(self.getNPCCasterLevel()) \
             if npc and module_source else {}
+        printed = self.getNPCPrintedSpellSlots() if npc and not shared_slots else {}
+        replaced = {}
         for level in range(1, 10):
             if shared_slots:
                 spells["spell%d" % level] = {"value": 0, "override": 0}
@@ -1907,7 +1985,15 @@ class Actor(Entity):
             # relying on Foundry to cast them is the habit ADR-008 exists to break.
             remaining = max(0, self.getAttributeInt("lvl%d_slots_expended" % level, 0))
             total = max(0, self.getAttributeInt("lvl%d_slots_total" % level, remaining))
-            capacity = total or derived.get(level, 0)
+            if printed:
+                # The printed spread is complete: unprinted levels are pinned to 0 so
+                # dnd5e's full-caster table cannot add slots (B134).
+                if total and total != printed.get(level, 0):
+                    replaced[level] = total
+                if remaining >= total:
+                    remaining = printed.get(level, 0)
+                total = printed.get(level, 0)
+            capacity = total if printed else (total or derived.get(level, 0))
             if capacity and remaining > capacity:
                 self.logWarning(
                     "Level %d spell slots report %d remaining from capacity %d; clamped"
@@ -1917,8 +2003,11 @@ class Actor(Entity):
                 remaining = capacity
             spells["spell%d" % level] = {
                 "value": remaining,
-                "override": total if (npc and total) else None,
+                "override": total if (npc and (total or printed)) else None,
             }
+        if replaced:
+            self.logWarning("NPC '%s' uses printed spell slots %s instead of sheet totals %s"
+                            % (self.getName(), printed, replaced))
         spells["pact"] = {"value": 0, "override": 0 if shared_slots else None}
         return spells
 

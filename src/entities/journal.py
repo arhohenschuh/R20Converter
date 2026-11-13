@@ -133,9 +133,12 @@ class Handout(Entity):
         Page ownership defaults to `INHERIT` so that the permissions computed for
         the containing entry apply to its pages, rather than being duplicated on
         every page and drifting out of sync.
+
+        The ID derives from the handout ID and page type, so reconversion keeps
+        page links stable (B136).
         """
         return {
-            "_id": self.genID(),
+            "_id": Entity.normalizeID("%s-%s" % (self.getID(normalized=False), page_type)),
             "name": name,
             "type": page_type,
             "title": {"show": False, "level": 1},

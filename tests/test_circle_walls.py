@@ -111,6 +111,69 @@ def test_exact_zero_area_jumpgate_ellipse_is_source_debris():
     assert Scene.isZeroAreaJumpgateEllipse(path) is True
 
 
+def jumpgate_ellipse(points, identifier="renamed-ellipse-0001", layer="objects"):
+    return {"id": identifier, "path": None, "points": points, "shape": "eli", "width": 0, "height": 0,
+            "layer": layer, "left": 0, "top": 0, "x": 140, "y": 140, "scaleX": 1, "scaleY": 1, "rotation": 0,
+            "stroke": "#ffd966", "stroke_width": 5, "fill": "transparent", "controlledby": "", "barrierType": "wall"}
+
+
+@pytest.mark.parametrize("points,expected", [
+    ([[0, 0], [-2.08, 0]], True), ([[3, 1], [3, 9]], True), ([[5, 5], [5, 5]], True),
+    ([[0, 0], [26.25, 26.25]], False), ([[0, 0], [math.inf, 0]], False), ([[0, 0]], False)])
+def test_b130_flat_or_point_jumpgate_ellipse_is_source_debris(points, expected):
+    assert Scene.isZeroAreaJumpgateEllipse(jumpgate_ellipse(points)) is expected
+
+
+@pytest.mark.parametrize("layer", ["objects", "map", "gmlayer", "walls"])
+def test_b130_flat_ellipse_is_skipped_without_aborting_the_scene(tmp_path, layer):
+    from test_scene_exploration import make_scene
+    flat = jumpgate_ellipse([[0, 0], [-2.08, 0]], layer=layer)
+    control = jumpgate_ellipse([[0, 0], [26.25, 26.25]], identifier="renamed-ellipse-0002", layer=layer)
+    scene = make_scene(tmp_path, page_overrides={"paths": [flat, control]})
+    emitted = scene["walls"] if layer == "walls" else scene["drawings"]
+    assert len(emitted) == (16 if layer == "walls" else 1)
+
+
+def jumpgate_rectangle(points, identifier="renamed-rectangle-0001", layer="walls", rotation=0):
+    return dict(jumpgate_ellipse(points, identifier, layer), shape="rec", rotation=rotation)
+
+
+def test_b137_jumpgate_rectangle_walls_trace_all_four_sides(tmp_path):
+    from test_scene_exploration import make_scene
+    scene = make_scene(tmp_path, page_overrides={"paths": [jumpgate_rectangle([[0, 0], [140, 70]])]})
+    corners = [tuple(wall["c"][:2]) for wall in scene["walls"]]
+    assert len(scene["walls"]) == 4
+    assert len(set(corners)) == 4
+    assert scene["walls"][0]["c"][:2] == scene["walls"][-1]["c"][2:]
+    assert all(wall["c"][0] == wall["c"][2] or wall["c"][1] == wall["c"][3] for wall in scene["walls"])
+
+
+def test_b137_rotated_rectangle_walls_keep_the_source_rotation(tmp_path):
+    from test_scene_exploration import make_scene
+    scene = make_scene(tmp_path, page_overrides={"paths": [jumpgate_rectangle([[0, 0], [140, 70]], rotation=90)]})
+    xs = [value for wall in scene["walls"] for value in wall["c"][0::2]]
+    ys = [value for wall in scene["walls"] for value in wall["c"][1::2]]
+    assert len(scene["walls"]) == 4
+    assert max(xs) - min(xs) < max(ys) - min(ys)
+
+
+@pytest.mark.parametrize("points,walls", [([[0, 0], [0, -2.22]], 1), ([[0, 0], [90, 0]], 1), ([[5, 5], [5, 5]], 0)])
+def test_b137_flat_rectangle_is_one_wall_and_a_point_is_debris(tmp_path, points, walls):
+    from test_scene_exploration import make_scene
+    scene = make_scene(tmp_path, page_overrides={"paths": [jumpgate_rectangle(points)]})
+    assert len(scene["walls"]) == walls
+
+
+@pytest.mark.parametrize("layer", ["objects", "gmlayer"])
+def test_b137_rectangle_drawings_are_unchanged_and_points_are_skipped(tmp_path, layer):
+    from test_scene_exploration import make_scene
+    box = jumpgate_rectangle([[0, 0], [140, 70]], layer=layer)
+    point = jumpgate_rectangle([[5, 5], [5, 5]], identifier="renamed-rectangle-0002", layer=layer)
+    scene = make_scene(tmp_path, page_overrides={"paths": [box, point]})
+    drawing, = scene["drawings"]
+    assert drawing["shape"]["type"] == Entity.SHAPE_RECTANGLE and drawing["shape"]["points"] == []
+
+
 def test_two_point_jumpgate_ellipse_is_reconstructed():
     path = {
         "id": "-OfdX0FtG4sM1hLknO8q",

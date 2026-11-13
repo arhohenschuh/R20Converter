@@ -165,6 +165,15 @@ mechanically for the physical-item class of defect.
 | [B126](B126-roll20-on-checkbox-flags-disable-token-vision.md) | Moderate | Fixed (v1.17.0) | Roll20 `"on"` checkbox strings are parsed as true; token vision, light, mirroring, name/bar visibility, and Scene global light no longer depend on Foundry casting the raw string to false. |
 | [B127](B127-dnd5e6-doubles-initiative-bonus.md) | Moderate | Fixed (v1.17.0) | Initiative persists only an extra-bonus formula string; dnd5e 6 no longer migrates `init.value` on top of `init.bonus`. |
 | [B128](B128-unresolved-data-path-reads-other-installation-in-place.md) | High | Fixed (v1.17.0) | An unresolved explicit `--fvtt-data-path` skips enrichment instead of auto-detecting another installation, and LevelDB packs are read from a disposable copy, never in place. |
+| [B129](B129-mixed-pact-and-ordinary-caster-aborts-conversion.md) | High | Fixed (v1.17.1) | A PC combining pact and ordinary spellcasting converts: the merged OGL slot row splits by dnd5e class progression, exactly where determinable and pact-first otherwise. |
+| [B130](B130-flat-jumpgate-ellipse-outside-walls-aborts-conversion.md) | High | Fixed (v1.17.1) | A flat or point-sized Jumpgate ellipse is skipped as source debris on every layer instead of aborting the conversion. |
+| [B131](B131-numeric-string-font-size-aborts-conversion.md) | High | Fixed (v1.17.1) | A text object whose `font_size` is a numeric string converts like a number; an unusable size falls back to 12 with a warning instead of aborting. |
+| [B132](B132-token-for-deleted-character-aborts-module-assembly.md) | High | Fixed (v1.17.1) | A placed token whose Roll20 character was deleted converts without an Actor, with a warning, instead of aborting module assembly. |
+| [B133](B133-npc-without-source-spellcasting-has-no-slots.md) | Info | Not a converter defect | An NPC whose Roll20 sheet has spellcasting off and no Spellcasting trait converts without slots; the source holds no caster data. |
+| [B134](B134-printed-npc-slot-spread-ignored.md) | High | Fixed (v1.17.1) | A slot spread printed in an NPC Spellcasting trait outranks Roll20's full-caster sheet totals; unprinted levels are pinned to 0. |
+| [B135](B135-equivalent-compendium-link-forms-resolve-differently.md) | Moderate | Fixed (v1.17.1) | Roll20 compendium category links resolve alike on `roll20.net`, `app.` and `www.` hosts and with a trailing slash; unresolved links keep their previous output. |
+| [B136](B136-journal-page-ids-change-on-reconversion.md) | Moderate | Fixed (v1.17.1) | JournalEntryPage IDs derive from the handout ID and page type, so reconversion keeps page links stable. |
+| [B137](B137-jumpgate-rectangle-wall-becomes-one-diagonal.md) | High | Fixed (v1.17.1) | A Jumpgate rectangle on the walls layer becomes its four closed sides instead of one corner-to-corner Wall. |
 
 ## Cross-cutting observations
 
@@ -175,7 +184,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B129**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B138**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent

@@ -556,11 +556,11 @@ class TestPCPactMagic(object):
         assert items[2]["system"]["method"] == "atwill"
         assert items[2]["system"]["activities"]["cast"]["consumption"]["spellSlot"] is False
 
-    @pytest.mark.parametrize("progression", ["full", "half", "third", "artificer"])
-    def test_mixed_caster_pool_is_rejected_without_inventing_availability(self, progression):
+    @pytest.mark.parametrize("progression", ["custom-table", "spellpoints"])
+    def test_unknown_progression_beside_pact_is_rejected(self, progression):
         actor, items = self.fixture()
         items.append({"type": "class", "system": {"levels": 4, "spellcasting": {"progression": progression}}})
-        with pytest.raises(ValueError, match="mixed pact and ordinary"):
+        with pytest.raises(ValueError, match="Unsupported spellcasting progression"):
             actor.applyPCPactMagic(items, actor.createActorSpells())
 
     def test_noncasting_multiclass_is_not_an_ambiguous_pool(self):
@@ -578,6 +578,144 @@ class TestPCPactMagic(object):
         before = copy.deepcopy((items, slots))
         actor.applyPCPactMagic(items, slots)
         assert (items, slots) == before
+
+
+class NamedSlotActor(SlotActor):
+    def getName(self):
+        return "Renamed Multiclass"
+
+
+class TestMixedPactAndOrdinarySlots(object):
+    """B129: a merged OGL slot row splits by dnd5e class progression instead of aborting."""
+
+    def fixture(self, rows, ordinary=("full", 4), pact_level=4, module=False):
+        actor = NamedSlotActor(npc=False, attributes=_slots(**rows), export_as_module=module)
+        items = [{"_id": "renamedordinary1", "name": "Renamed Song Class", "type": "class",
+                  "system": {"levels": ordinary[1], "spellcasting": {"progression": ordinary[0]}}},
+                 {"_id": "renamedpactclass", "name": "Renamed Patron Class", "type": "class",
+                  "system": {"levels": pact_level, "spellcasting": {"progression": "pact"}}}]
+        for index, method in enumerate(("spell", "spell", "innate")):
+            items.append({"_id": "mixedspell%06d" % index, "name": "Mixed Spell %d" % index, "type": "spell",
+                          "system": {"level": 1 + index % 2, "method": method, "prepared": 0,
+                                     "activities": {"cast": {"consumption": {"spellSlot": method == "spell", "targets": []}}}}})
+        return actor, items
+
+    def apply(self, actor, items):
+        slots = actor.createActorSpells()
+        actor.applyPCPactMagic(items, slots)
+        return slots
+
+    @pytest.mark.parametrize("remaining,module,spell2,pact,warned", [
+        (0, False, 0, 0, False), (5, False, 3, 2, False), (0, True, 3, 2, False),
+        (1, False, 0, 1, True), (4, False, 2, 2, True)])
+    def test_shared_pact_level_splits_exactly_or_pact_first(self, remaining, module, spell2, pact, warned):
+        actor, items = self.fixture({"l1": (4, 3), "l2": (5, remaining)}, module=module)
+        slots = self.apply(actor, items)
+        assert slots["spell1"] == {"value": 4 if module else 3, "override": None}
+        assert slots["spell2"] == {"value": spell2, "override": None}
+        assert slots["pact"] == {"value": pact, "override": None}
+        assert any("pact first" in warning for warning in actor.warnings) is warned
+        assert not any("differ from class progression" in warning for warning in actor.warnings)
+
+    def test_ordinary_spells_keep_their_method_and_grants_stay_free(self):
+        actor, items = self.fixture({"l1": (4, 4), "l2": (5, 5)})
+        items.append({"_id": "renamedinvocatio", "name": "Renamed Invocation", "type": "feat",
+                      "system": {"description": {"value": "<p>You can cast Mixed Spell 1 at will.</p>"}}})
+        self.apply(actor, items)
+        assert [item["system"]["method"] for item in items[2:5]] == ["spell", "atwill", "innate"]
+        assert items[3]["system"]["activities"]["cast"]["consumption"]["spellSlot"] is False
+        assert items[2]["system"]["prepared"] == 0
+
+    def test_pact_level_above_the_ordinary_maximum_does_not_overlap(self):
+        # Ordinary level 1 caster (two 1st-level slots), pact 5 gives two 3rd-level slots.
+        actor, items = self.fixture({"l1": (2, 1), "l3": (2, 1)}, ordinary=("full", 1), pact_level=5)
+        slots = self.apply(actor, items)
+        assert slots["spell1"]["value"] == 1 and slots["spell3"]["value"] == 0
+        assert slots["pact"]["value"] == 1
+        assert actor.warnings == []
+
+    @pytest.mark.parametrize("progression,levels,l1,l2", [("half", 4, 3, 0), ("third", 7, 4, 2), ("artificer", 3, 3, 0)])
+    def test_partial_caster_partners_use_dnd5e_rounding(self, progression, levels, l1, l2):
+        actor, items = self.fixture({"l1": (l1 + 2, l1 + 2), "l2": (l2, l2)}, ordinary=(progression, levels), pact_level=2)
+        slots = self.apply(actor, items)
+        assert (slots["spell1"]["value"], slots["spell2"]["value"], slots["pact"]["value"]) == (l1, l2, 2)
+        assert actor.warnings == []
+
+    def test_totals_that_disagree_with_the_classes_warn_instead_of_aborting(self):
+        actor, items = self.fixture({"l1": (4, 4), "l2": (3, 3)})
+        slots = self.apply(actor, items)
+        assert slots["spell2"]["value"] == 1 and slots["pact"]["value"] == 2
+        assert any("level 2 sheet 3, classes 5" in warning for warning in actor.warnings)
+
+
+class TestOrdinaryCasterLevel(object):
+    """Mirrors dnd5e ``SlotSpellcasting.computeProgression`` (5.3.3 and 6.0.6 are identical)."""
+
+    @pytest.mark.parametrize("classes,expected", [
+        ([("full", 4)], 4), ([("half", 4)], 2), ([("half", 5)], 3), ([("third", 7)], 3),
+        ([("artificer", 3)], 2), ([("half", 3), ("full", 2)], 4), ([("third", 7), ("full", 1)], 3),
+        ([("full", 4), ("pact", 4), ("none", 3)], 4), ([("pact", 4)], 0), ([], 0)])
+    def test_multiclass_caster_level(self, classes, expected):
+        assert dnd5e.ordinaryCasterLevel(classes) == expected
+
+    @pytest.mark.parametrize("level,expected", [(1, (1, 1)), (2, (1, 2)), (4, (2, 2)), (9, (5, 2)), (11, (5, 3)), (17, (5, 4))])
+    def test_pact_table(self, level, expected):
+        assert dnd5e.pactSlots(level) == expected
+
+
+class TestNPCPrintedSpellSlots(object):
+    """B134: a printed slot spread outranks full-caster sheet totals and progression."""
+
+    PALADIN = ("The knight is a 16th-level spellcaster. Its spellcasting ability is Wisdom. It has the "
+               "following paladin spells prepared:<br>\u2022 1st level (4 slots): command, bless<br>"
+               "\u2022 2nd level (3 slots): aid<br>\u2022 3rd level (3 slots): dispel magic<br>"
+               "\u2022 4th level (2 slots): staggering smite")
+
+    def actor(self, description, name="Spellcasting", attributes=None, export_as_module=False):
+        return NamedSlotActor(attributes=attributes or {}, export_as_module=export_as_module,
+                              traits={"t1": {"name": name, "description": description}})
+
+    @pytest.mark.parametrize("export_as_module", [False, True])
+    def test_half_caster_without_sheet_totals_pins_the_printed_spread(self, export_as_module):
+        actor = self.actor(self.PALADIN, export_as_module=export_as_module)
+        spells = actor.createActorSpells()
+        expected = [4, 3, 3, 2, 0, 0, 0, 0, 0]
+        assert [spells["spell%d" % level] for level in range(1, 10)] == [
+            {"value": count, "override": count} for count in expected]
+        assert actor.warnings == []
+
+    @pytest.mark.parametrize("export_as_module", [False, True])
+    def test_printed_spread_replaces_full_caster_sheet_totals(self, export_as_module):
+        description = ("The skull is a 5th-level spellcaster. 1st level (3 slots): shield "
+                       "2nd level (2 slots): blur 3rd level (1 slot): fireball")
+        actor = self.actor(description, attributes=_slots(l1=(4, 4), l2=(3, 3), l3=(2, 2)),
+                           export_as_module=export_as_module)
+        spells = actor.createActorSpells()
+        assert [(spells["spell%d" % level]["value"], spells["spell%d" % level]["override"])
+                for level in range(1, 5)] == [(3, 3), (2, 2), (1, 1), (0, 0)]
+        warning, = actor.warnings
+        assert "Renamed Multiclass" in warning and "sheet totals" in warning
+
+    def test_partially_spent_sheet_pool_is_clamped_to_the_printed_capacity(self):
+        actor = self.actor("A 1st-level spellcaster. 1st level (3 slots): bless",
+                           attributes=_slots(l1=(2, 1)))
+        assert actor.createActorSpells()["spell1"] == {"value": 1, "override": 3}
+
+    @pytest.mark.parametrize("name,description", [
+        ("Innate Spellcasting", "1st level (4 slots): bless"),
+        ("Spellcasting", "The mage is a 5th-level spellcaster. It knows magic missile."),
+        ("Spellcasting", "1st level (4 slots): bless. 1st level (2 slots): shield"),
+    ])
+    def test_without_one_unambiguous_printed_spread_sheet_totals_remain(self, name, description):
+        actor = self.actor(description, name=name, attributes=_slots(l3=(4, 2)))
+        spells = actor.createActorSpells()
+        assert spells["spell3"] == {"value": 2, "override": 4}
+        assert spells["spell9"]["override"] is None
+
+    def test_characters_ignore_printed_npc_spreads(self):
+        actor = NamedSlotActor(npc=False, attributes=_slots(l3=(4, 2)),
+                               traits={"t1": {"name": "Spellcasting", "description": self.PALADIN}})
+        assert actor.createActorSpells()["spell3"] == {"value": 2, "override": None}
 
 
 class TestNPCSharedSpellSlots(object):

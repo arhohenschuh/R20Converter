@@ -190,6 +190,14 @@ class TestJournalPages(object):
         ids = [page["_id"] for page in handout.entity["pages"]]
         assert len(set(ids)) == len(ids)
 
+    def testPageIdsDeriveFromTheHandoutAndPageType(self, tmp_path):
+        # B136: random page IDs broke JournalEntryPage links on every reconversion.
+        handout = self.makeHandout(tmp_path, notes="<p>hello</p>",
+                                   avatar="http://example.com/a.png")
+        assert [page["_id"] for page in handout.entity["pages"]] == [
+            Entity.strToID("h1-text"), Entity.strToID("h1-image")]
+        assert handout.entity["_id"] not in [page["_id"] for page in handout.entity["pages"]]
+
 
 class TestDocumentLinks(object):
     """v10 replaced the per-type enrichers (@Actor[], @Compendium[]) with @UUID[]."""
@@ -278,6 +286,54 @@ class TestDocumentLinks(object):
 
         assert linker.replaceCompendiumLinks(html) == "@UUID[%s.%s]{Light}" % (prefix, item.getID())
         assert linker._database.warnings == []
+
+    @pytest.mark.parametrize("href", [
+        "https://roll20.net/compendium/dnd5e/Spells:Light/#h-Light",
+        "https://app.roll20.net/compendium/dnd5e/Spells:Light/#h-Light",
+        "https://app.roll20.net/compendium/dnd5e/Spells:Light",
+        "https://www.roll20.net/compendium/dnd5e/Spells%3ALight/?expansion=1",
+    ])
+    @pytest.mark.parametrize("compendium", [False, True])
+    def testEquivalentCompendiumLinkFormsResolveAlike(self, tmp_path, compendium, href):
+        # B135: the same Roll20 entry behind another host or a trailing slash.
+        linker = self.makeLinker(tmp_path, compendium=compendium, exists=False)
+        item = Entity(linker._database, "-renamed-linked-spell")
+        names = []
+        linker._converter = type("Converter", (), {
+            "items": type("Items", (), {
+                "getByName": lambda self, name: names.append(name) or (item if name == "Light" else None),
+                "getById": lambda self, identifier: item if identifier == item.getID() else None,
+            })(),
+        })()
+        html = '<a href="%s">Light</a>' % href
+        prefix = "Compendium.r20-module.items.Item" if compendium else "Item"
+        assert linker.replaceCompendiumLinks(html) == "@UUID[%s.%s]{Light}" % (prefix, item.getID())
+        assert names == ["Light"]
+
+    def testTrailingSlashDonorLookupUsesTheEntryName(self, tmp_path):
+        linker = self.makeLinker(tmp_path, compendium=True)
+        linker._database._arguments["export_as_module"] = True
+        linker._converter = type("Converter", (), {
+            "items": type("Items", (), {"getByName": lambda self, name: None})(),
+        })()
+        lookups = []
+        donor = type("Donor", (), {"getFullID": lambda self: "renamed-donor.spells.RenamedBless0000"})()
+        linker.findCompendiumItem = lambda compendium, name: lookups.append((compendium, name)) or donor
+        html = '<a href="https://roll20.net/compendium/dnd5e/Spells:Bless/#h-Bless">bless</a>'
+        assert linker.replaceCompendiumLinks(html) == \
+            "@UUID[Compendium.renamed-donor.spells.Item.RenamedBless0000]{Bless}"
+        assert lookups == [("Spells", "Bless")]
+
+    def testUnresolvedAlternateHostLinkIsLeftUnchanged(self, tmp_path):
+        linker = self.makeLinker(tmp_path, compendium=True)
+        linker._database._arguments["export_as_module"] = True
+        linker._converter = type("Converter", (), {
+            "items": type("Items", (), {"getByName": lambda self, name: None})(),
+        })()
+        linker.findCompendiumItem = lambda compendium, name: None
+        html = ('<a href="https://app.roll20.net/compendium/dnd5e/'
+                'Monsters:Renamed%20Wraith#content">Renamed Wraith</a>')
+        assert linker.replaceCompendiumLinks(html) == html
 
     def testBracesInLabelAreEscaped(self, tmp_path):
         # Unescaped braces would terminate the @UUID label early.

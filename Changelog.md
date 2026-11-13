@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.17.1
+
+- Convert PCs that combine pact and ordinary spellcasting instead of aborting the conversion
+  (B129). The merged Roll20 slot row is split by dnd5e's class progression; at the pact slot level
+  the split is exact where determinable and pact-first otherwise, with a warning.
+- Skip flat or point-sized Jumpgate ellipses as source debris on every layer instead of aborting
+  the conversion (B130).
+- Read a text object's numeric-string `font_size` as a number; an unusable size falls back to 12
+  with a warning (B131).
+- Convert a placed token whose Roll20 character was deleted without an Actor, with a warning,
+  instead of aborting module assembly (B132).
+- Use the slot spread printed in an NPC Spellcasting trait ("1st level (4 slots)") ahead of
+  Roll20's full-caster sheet totals and pin unprinted levels to 0. This fixes half casters and
+  non-standard statblocks (B134). NPCs without a printed spread are unchanged.
+- Resolve Roll20 compendium category links alike on `roll20.net`, `app.roll20.net` and
+  `www.roll20.net`, and with a trailing slash. Unresolved links keep their previous output (B135).
+- Derive JournalEntryPage IDs from the handout ID and page type, so reconversion keeps page links
+  stable (B136).
+- Convert a Jumpgate rectangle on the walls layer to its four closed sides instead of one
+  corner-to-corner Wall. A flat rectangle is one Wall; a point rectangle is skipped (B137).
+
+B133 (an NPC whose source sheet has no spellcasting) is not a converter defect and needs no change.
+
+Source validation: **1,394 tests pass**; exported v1.17.0 fails the new regressions. The reported
+*Eberron - Rising from the Last War* export converts completely. So does the unmodified *Curse of
+Strahd* 1.5.7 export with the pipeline's arguments, where 1.17.0 aborted three times. In that
+output, Sir Godfrey Gwilym's slots are 4/3/3/2 and the cross-map diagonals on Ravenloft Maps 3-6
+become border Walls. Every token links to an Actor or to none, and the Adventure matches the packs.
+Two independent conversions produce identical IDs for all 512 Journal pages.
+
+Existing converted outputs are not repaired. Page IDs in earlier modules change once on their next
+reconversion.
+
 ## v1.17.0
 
 - Add `--dnd5e-version {6.x,5.3.3}` and the GUI **D&D 5e system version** selector, defaulting to

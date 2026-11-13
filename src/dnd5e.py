@@ -12,6 +12,7 @@ for ``DamageData``, ``module/documents/activity/attack.mjs`` for activity shape.
 import ast
 import copy
 import hashlib
+import math
 import re
 
 
@@ -133,6 +134,30 @@ def spellSlots(caster_level):
         return {}
     row = SPELL_SLOT_TABLE[min(level, len(SPELL_SLOT_TABLE)) - 1]
     return {slot_level: count for slot_level, count in enumerate(row, 1)}
+
+
+#: ``CONFIG.DND5E.spellcasting.spell.progression`` as ``(divisor, roundUp)``; identical in 5.3.3 and 6.0.6.
+SPELL_PROGRESSIONS = {"full": (1, False), "half": (2, True), "third": (3, False), "artificer": (2, True)}
+
+
+def ordinaryCasterLevel(classes):
+    """Multiclass caster level for ``[(progression, levels), ...]`` (``SlotSpellcasting.computeProgression``)."""
+    casters = [(progression, int(levels or 0)) for progression, levels in classes
+               if progression in SPELL_PROGRESSIONS]
+    total = 0
+    for progression, levels in casters:
+        divisor, round_up = SPELL_PROGRESSIONS[progression]
+        total += (math.ceil if round_up else math.floor)(levels / divisor)
+    if len(casters) == 1 and SPELL_PROGRESSIONS[casters[0][0]][0] > 1 and total:
+        total = math.ceil(casters[0][1] / SPELL_PROGRESSIONS[casters[0][0]][0])
+    return total
+
+
+def pactSlots(pact_level):
+    """``(slot level, slot count)`` from ``pactCastingProgression``."""
+    level = int(pact_level)
+    count = 1 if level == 1 else (2 if level < 11 else (3 if level < 17 else 4))
+    return min(5, (level + 1) // 2), count
 
 
 # --- baseItem resolution ---------------------------------------------------

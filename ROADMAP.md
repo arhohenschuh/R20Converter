@@ -90,10 +90,16 @@ Adopt this incrementally rather than rewriting the converter:
 27. **Done in v1.17.0:** select the dnd5e output generation with
   `--dnd5e-version`, defaulting to 6.x. The 6.x target stores the dnd5e 6.0 persisted shape,
   proven against a native 6.0.6 replay (ADR-013).
-28. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+28. **Done in v1.17.1:** convert PCs that combine pact and ordinary spellcasting by splitting the
+  merged Roll20 slot row with dnd5e class progression, and skip zero-area Jumpgate ellipses on
+  every layer instead of aborting (B129-B130). Accept numeric-string text sizes and tokens for
+  deleted characters without aborting. Prefer printed NPC slot spreads over Roll20's full-caster
+  sheet totals. Resolve equivalent compendium link forms alike, keep Journal page IDs stable across
+  reconversions, and convert Jumpgate rectangles to closed Walls (B131-B137; B133 is source data).
+29. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-29. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+30. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 ## Future module-policy enhancements

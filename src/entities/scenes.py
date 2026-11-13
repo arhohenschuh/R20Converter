@@ -453,6 +453,12 @@ class Scene(Entity):
                     # Actors are converted before scenes, so the placed token can
                     # follow its actor rather than defaulting everything hostile.
                     actor = self._converter.actors.getById(token.actor_id)
+                    if token.actor_id and actor is None:
+                        # Roll20 keeps a placed token after its character is deleted (B132).
+                        self.logWarning("Token '%s' (%s) on page '%s' represents missing character '%s'; "
+                                        "converted without an Actor" % (graphic.get("name", ""), graphic["id"],
+                                                                        page.get("name", ""), char_id))
+                        token.actor_id = None
                     if actor is not None and actor.entity.get("type") == "character":
                         token.disposition = Token.DISPOSITION_FRIENDLY
                     # Redo the dim/bright depending on the token size in this map
@@ -577,6 +583,7 @@ class Scene(Entity):
             elif text and text["text"].strip() != "":
                 # NOTE: We ignore text items without any text.. there's a lot of those...
                 # graphic's left/top position is for the rotation point (center of image)
+                text = dict(text, font_size=self.textFontSize(text))
 
                 if tile_width == 0 or tile_height == 0:
                     (tile_width, tile_height) = self.getTextSize(text["text"], text["font_family"], text["font_size"], rotation)
@@ -601,6 +608,10 @@ class Scene(Entity):
                 drawing["fontSize"] = text["font_size"] * grid_multiplier
                 drawings.append(drawing)
             elif path and layer != "walls":
+                if self.isZeroAreaJumpgateEllipse(path) or self.isPointJumpgateRectangle(path):
+                    self.logInfo("Skipping zero-area source %s '%s'" %
+                                 (path.get("shape"), path.get("id", "unknown")))
+                    continue
                 tile_width = tile_width * path["scaleX"]
                 tile_height = tile_height * path["scaleY"]
                 x = (left - (tile_width / 2))
@@ -639,9 +650,9 @@ class Scene(Entity):
                 })
                 drawings.append(drawing)
             elif path and layer == "walls":
-                if self.isZeroAreaJumpgateEllipse(path):
-                    self.logInfo("Skipping zero-area source ellipse '%s'" %
-                                 path.get("id", "unknown"))
+                if self.isZeroAreaJumpgateEllipse(path) or self.isPointJumpgateRectangle(path):
+                    self.logInfo("Skipping zero-area source %s '%s'" %
+                                 (path.get("shape"), path.get("id", "unknown")))
                     continue
                 # Since Jumpgate, a path's width/height needs to be calculated
                 (polygon, path_type, tile_width, tile_height) = self.pathToPolygonList(path, tile_width, tile_height)
@@ -1189,15 +1200,49 @@ class Scene(Entity):
             size = self.getRotatedBoxSize(size[0], size[1], rotation)
         return size
 
+    DEFAULT_FONT_SIZE = 12
+
+    def textFontSize(self, text):
+        """Roll20 text size as a number; some exports store it as a numeric string (B131)."""
+        value = text.get("font_size")
+        try:
+            size = float(value)
+        except (TypeError, ValueError):
+            size = math.nan
+        if not math.isfinite(size) or size <= 0:
+            self.logWarning("Text '%s' has invalid font size %r; using %d"
+                            % (text.get("id", "unknown"), value, self.DEFAULT_FONT_SIZE))
+            return self.DEFAULT_FONT_SIZE
+        return int(size) if size.is_integer() else size
+
+    @staticmethod
+    def jumpgateRectangleCorners(path):
+        """Finite bounding box ``(min_x, min_y, max_x, max_y)`` of a Jumpgate rectangle, else None."""
+        points = path.get("points") or []
+        if not (path.get("path") is None and path.get("shape") == "rec" and len(points) >= 2
+                and all(len(point) >= 2 and math.isfinite(point[0]) and math.isfinite(point[1])
+                        for point in points)):
+            return None
+        xs = [point[0] for point in points]
+        ys = [point[1] for point in points]
+        return (min(xs), min(ys), max(xs), max(ys))
+
+    @staticmethod
+    def isPointJumpgateRectangle(path):
+        """A Jumpgate rectangle whose corners coincide has no outline to convert (B137)."""
+        corners = Scene.jumpgateRectangleCorners(path)
+        return corners is not None and corners[0] == corners[2] and corners[1] == corners[3]
+
     @staticmethod
     def isZeroAreaJumpgateEllipse(path):
+        """A finite Jumpgate ellipse whose bounding box is flat or a point has no area (B084, B130)."""
         points = path.get("points") or []
-        return (path.get("path") is None and path.get("shape") == "eli"
-            and path.get("width") == 0 and path.get("height") == 0
-            and len(points) >= 2
-            and all(len(point) >= 2 and math.isfinite(point[0])
-                and math.isfinite(point[1]) for point in points)
-            and len(set((point[0], point[1]) for point in points)) == 1)
+        if not (path.get("path") is None and path.get("shape") == "eli"
+                and path.get("width") == 0 and path.get("height") == 0 and len(points) >= 2
+                and all(len(point) >= 2 and math.isfinite(point[0]) and math.isfinite(point[1])
+                        for point in points)):
+            return False
+        return len({point[0] for point in points}) == 1 or len({point[1] for point in points}) == 1
 
     @staticmethod
     def flattenBezier(controls, tolerance):
@@ -1297,6 +1342,15 @@ class Scene(Entity):
                     for step in range(17)
                 ]
                 points[-1] = points[0]
+            elif path_type == PATH_TYPE.RECTANGLE and Scene.jumpgateRectangleCorners(path):
+                # Jumpgate stores a rectangle as two opposite corners; its outline is the closed box (B137).
+                min_x, min_y, max_x, max_y = Scene.jumpgateRectangleCorners(path)
+                w = max_x - min_x
+                h = max_y - min_y
+                if w == 0 or h == 0:
+                    points = [(min_x, min_y), (max_x, max_y)]
+                else:
+                    points = [(min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y), (min_x, min_y)]
             else:
                 points = source_points
                 min_x = min(point[0] for point in points)

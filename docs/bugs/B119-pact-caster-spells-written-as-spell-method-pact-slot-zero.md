@@ -73,6 +73,9 @@ slot row`. OGL's merged row and absent class provenance cannot establish two ind
 current-use counts; the converter neither credits the count twice nor guesses a distribution.
 This is an explicit unsupported-input boundary, not a module-specific exception.
 
+**Superseded for mixed casters by [B129](B129-mixed-pact-and-ordinary-caster-aborts-conversion.md):**
+the merged row is split by dnd5e class progression instead of being rejected.
+
 Renamed class/spell fixtures, current/exhausted/module pools, explicit grants, ordinary-caster
 controls, and mixed-progression rejection are in
 [test_dnd5e_schema_diff.py](../../tests/test_dnd5e_schema_diff.py).

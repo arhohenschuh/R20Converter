@@ -56,12 +56,13 @@ def light_graphic(**overrides):
     return graphic
 
 
-def make_scene(tmp_path, graphics=None, pins=None, journal=None, page_overrides=None, **arguments):
+def make_scene(tmp_path, graphics=None, pins=None, journal=None, page_overrides=None, actors=None, **arguments):
     database = FakeDatabase(str(tmp_path), {"use_original_image_urls": True, "maximum_wall_angle": 30, **arguments})
+    known = dict(actors or {})
     database._converter = type("Converter", (), {
         "journal": journal,
         "name": "test-module",
-        "actors": type("Actors", (), {"getById": lambda database, identifier: None})(),
+        "actors": type("Actors", (), {"getById": lambda database, identifier: known.get(identifier)})(),
     })()
     scene_page = page()
     scene_page.update(page_overrides or {})
@@ -282,3 +283,48 @@ def test_curved_walls_honor_source_rotation_and_nonuniform_scale(tmp_path, rotat
                          int(margin + (200 + horizontal * math.sin(angle) - 25 * math.cos(angle)) * multiplier)])
     assert scene["walls"][0]["c"][:2] == expected[0]
     assert scene["walls"][-1]["c"][2:] == expected[1]
+
+
+def scene_text(identifier, font_size):
+    return {"id": identifier, "layer": "gmlayer", "left": 210, "top": 210, "width": 140, "height": 70,
+            "rotation": 0, "text": "Renamed Note", "font_family": "Signika", "font_size": font_size,
+            "color": "#ffffff", "controlledby": ""}
+
+
+@pytest.mark.parametrize("font_size,expected", [("12", 12), ("10.5", 10.5), (18, 18)])
+def test_b131_numeric_text_size_strings_convert_like_numbers(tmp_path, font_size, expected):
+    scene = make_scene(tmp_path, page_overrides={"texts": [scene_text("renamed-text-0001", font_size)]})
+    drawing, = scene["drawings"]
+    assert drawing["fontSize"] == pytest.approx(expected * max(1, 50 / 70))
+    assert isinstance(drawing["fontSize"], (int, float))
+
+
+@pytest.mark.parametrize("font_size", ["large", "", None, "-4", "nan"])
+def test_b131_unusable_text_size_uses_the_default_with_a_warning(tmp_path, monkeypatch, font_size):
+    warnings = []
+    monkeypatch.setattr(FakeDatabase, "logWarning", lambda database, message: warnings.append(message))
+    scene = make_scene(tmp_path, page_overrides={"texts": [scene_text("renamed-text-0002", font_size)]})
+    assert scene["drawings"][0]["fontSize"] == pytest.approx(Scene.DEFAULT_FONT_SIZE * max(1, 50 / 70))
+    assert any("renamed-text-0002" in message for message in warnings)
+
+
+def represented_token(identifier, represents):
+    return {"id": identifier, "layer": "gmlayer", "imgsrc": "https://example.invalid/token.png",
+            "left": 350, "top": 350, "width": 70, "height": 70, "rotation": 0, "represents": represents,
+            "showname": True, "name": "Renamed Watch", "fliph": False, "flipv": False, "isdrawing": False,
+            "bar1_link": "", "bar2_link": ""}
+
+
+def test_b132_token_for_a_deleted_character_converts_without_an_actor(tmp_path, monkeypatch):
+    monkeypatch.setattr(Entity, "findID", lambda entity, identifier, kind: None)
+    warnings = []
+    monkeypatch.setattr(FakeDatabase, "logWarning", lambda database, message: warnings.append(message))
+    present = type("Actor", (), {"entity": {"type": "npc"}})()
+    present_id = Entity.normalizeID("-renamed-present-character")
+    scene = make_scene(tmp_path, graphics=[represented_token("-renamed-orphan-token", "-renamed-deleted-character"),
+                                           represented_token("-renamed-linked-token", "-renamed-present-character")],
+                       actors={present_id: present})
+    assert [token["actorId"] for token in scene["tokens"]] == [None, present_id]
+    assert [token["name"] for token in scene["tokens"]] == ["Renamed Watch", "Renamed Watch"]
+    warning, = [message for message in warnings if "missing character" in message]
+    assert "-renamed-orphan-token" in warning and "-renamed-deleted-character" in warning
