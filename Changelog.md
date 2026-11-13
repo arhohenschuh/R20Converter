@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.17.2
+
+- Leave asset paths in other packages' flags as authored, for example Tokenizer layer recipes
+  carried by Beyond5e donor Actors. They are neither copied into the module nor required in the
+  data root, so a missing `tokenizer-2` no longer aborts module assembly (B138). Rendered art and
+  the core, game-system and converter flag namespaces are still internalized and fail closed.
+- Resolve Roll20's category-less compendium links (`compendium/dnd5e/Detect%20Magic#content`)
+  when exactly one spell or item has that name. Names that are both, unknown names, empty targets
+  and other Roll20 books stay unchanged. A URL now ends at the quote that opened it, so names such
+  as *Tasha's Hideous Laughter* are no longer cut at the apostrophe in either link form (B139).
+
+Source validation: **1,413 tests pass**; exported v1.17.1 fails the new regressions. The
+unmodified *Waterdeep: Dragon Heist* 1.3.0 export converts completely without Tokenizer
+installed. Its raw category-less links fall from 27 to 0. On *Curse of Strahd* 1.5.7 they fall from
+497 to 38, and the rest name NPCs, monsters and book-only items. Pages, Walls and Tokens are
+unchanged on both. Modules now internalize more Beyond5e spells and their summon profiles,
+following the existing B071 policy.
+
 ## v1.17.1
 
 - Convert PCs that combine pact and ordinary spellcasting instead of aborting the conversion

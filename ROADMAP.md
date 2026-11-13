@@ -96,10 +96,13 @@ Adopt this incrementally rather than rewriting the converter:
   deleted characters without aborting. Prefer printed NPC slot spreads over Roll20's full-caster
   sheet totals. Resolve equivalent compendium link forms alike, keep Journal page IDs stable across
   reconversions, and convert Jumpgate rectangles to closed Walls (B131-B137; B133 is source data).
-29. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
+29. **Done in v1.17.2:** leave asset paths in other packages' flags as authored instead of
+  internalizing them, and resolve Roll20's category-less compendium links when exactly one spell
+  or item has that name (B138-B139).
+30. **Next:** add a native Foundry 14 module target profile. Keep the core-13 profile as rollback until
   several real exports prove canonical document, activity, folder, Scene, token, and runtime
   parity with Foundry's own migration.
-30. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
+31. Promote native-v14 module output only after frozen-binary conversion, zero-migration launch,
   clean Adventure import, and independent migration-parity review.
 
 ## Future module-policy enhancements

@@ -455,6 +455,71 @@ class TestWildcardModuleArt(object):
         assert not any(entry.is_file() for entry in output.rglob("*"))
 
 
+class TestForeignFlagAssets(object):
+    """B138: another package's flags are private data and never need local assets."""
+
+    TOOL = {"layerStack": [{"src": "modules/renamed-token-tool/img/texture.webp",
+                            "masks": [{"src": "modules/renamed-token-tool/img/frame.webp"}]}]}
+
+    def actor(self, **overrides):
+        entity = {"_id": "actor00000000001", "name": "Renamed Familiar", "type": "npc",
+                  "img": "modules/renamed-donor/art.webp",
+                  "flags": {"renamed-token-tool": copy.deepcopy(self.TOOL),
+                            "dnd5e": {"portrait": "modules/renamed-donor/flag-art.webp"}},
+                  "prototypeToken": {"texture": {"src": "modules/renamed-donor/token.webp"},
+                                     "flags": {"renamed-token-tool": {"src": "modules/renamed-token-tool/img/token.webp"}}},
+                  "items": [], "effects": []}
+        entity.update(overrides)
+        return Document(entity)
+
+    def assemble(self, tmp_path, document, available=lambda url: "renamed-token-tool" not in url):
+        converter = Converter(tmp_path)
+        logs = []
+        converter.logInfo = logs.append
+        converter.actors.entities = [document]
+        assembler = ModuleAssembler(converter)
+        copied = []
+
+        def copy_asset(url):
+            copied.append(url)
+            return "modules/test-module/assets/external/" + url.rsplit("/", 1)[-1] if available(url) else ""
+
+        assembler._copyExternalAsset = copy_asset
+        assembler.internalizeAssets()
+        return copied, logs
+
+    def test_foreign_flag_paths_stay_unchanged_without_aborting(self, tmp_path):
+        document = self.actor()
+        copied, logs = self.assemble(tmp_path, document)
+        entity = document.entity
+        assert entity["flags"]["renamed-token-tool"] == self.TOOL
+        assert entity["prototypeToken"]["flags"]["renamed-token-tool"]["src"] == \
+            "modules/renamed-token-tool/img/token.webp"
+        assert sorted(copied) == ["modules/renamed-donor/art.webp", "modules/renamed-donor/flag-art.webp",
+                                  "modules/renamed-donor/token.webp"]
+        assert entity["flags"]["dnd5e"]["portrait"] == "modules/test-module/assets/external/flag-art.webp"
+        assert logs == ["Asset paths in other packages' flags left unchanged: renamed-token-tool 3"]
+
+    def test_installed_foreign_flag_assets_are_not_copied_either(self, tmp_path):
+        document = self.actor()
+        copied, _logs = self.assemble(tmp_path, document, available=lambda url: True)
+        assert not any("renamed-token-tool" in url for url in copied)
+        assert document.entity["flags"]["renamed-token-tool"] == self.TOOL
+
+    @pytest.mark.parametrize("field", ["img", "own-flag", "system-flag"])
+    def test_rendered_and_converter_flag_assets_still_fail_closed(self, tmp_path, field):
+        missing = "modules/renamed-absent/art.webp"
+        document = self.actor()
+        if field == "img":
+            document.entity["img"] = missing
+        else:
+            namespace = "test-module" if field == "own-flag" else "dnd5e"
+            document.entity["flags"].setdefault(namespace, {})["art"] = missing
+        with pytest.raises(ValueError, match="could not internalize module asset"):
+            self.assemble(tmp_path, document, available=lambda url: "renamed-absent" not in url
+                          and "renamed-token-tool" not in url)
+
+
 class TestEmbeddedHtmlArt(object):
     def test_external_img_is_rewritten_through_existing_asset_copier(self, tmp_path):
         converter = Converter(tmp_path)

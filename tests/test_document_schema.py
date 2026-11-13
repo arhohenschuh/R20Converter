@@ -335,6 +335,87 @@ class TestDocumentLinks(object):
                 'Monsters:Renamed%20Wraith#content">Renamed Wraith</a>')
         assert linker.replaceCompendiumLinks(html) == html
 
+    def bareLinker(self, tmp_path, donors, module=True, items=None):
+        linker = self.makeLinker(tmp_path, compendium=module, exists=False)
+        linker._database._arguments["export_as_module"] = module
+        known = dict(items or {})
+        linker._converter = type("Converter", (), {
+            "items": type("Items", (), {
+                "getByName": lambda self, name: known.get(name),
+                "getById": lambda self, identifier: next(
+                    (item for item in known.values() if item.getID() == identifier), None),
+            })(),
+        })()
+        lookups = []
+
+        def find(compendium, name):
+            lookups.append((compendium, name))
+            full_id = donors.get((compendium, name.lower()))
+            return type("Donor", (), {"getFullID": lambda self: full_id})() if full_id else None
+
+        linker.findCompendiumItem = find
+        return linker, lookups
+
+    @pytest.mark.parametrize("href", [
+        "https://roll20.net/compendium/dnd5e/Renamed%20Ward#content",
+        "https://app.roll20.net/compendium/dnd5e/Renamed%20Ward",
+        "https://www.roll20.net/compendium/dnd5e/Renamed%20Ward/#h-Renamed%20Ward",
+        "https://roll20.net/compendium/dnd5e/Renamed%20Ward?expansion=7",
+    ])
+    def testCategorylessLinkResolvesItsOnlyMatchingEntry(self, tmp_path, href):
+        # B139: Roll20's current URLs carry no category, with or without a fragment.
+        linker, _lookups = self.bareLinker(tmp_path, {("Spells", "renamed ward"): "renamed-donor.spells.RenamedWard00000"})
+        html = '<p>Cast <a href="%s"><i>renamed ward</i></a>.</p>' % href
+        assert linker.replaceCompendiumLinks(html) == \
+            "<p>Cast @UUID[Compendium.renamed-donor.spells.Item.RenamedWard00000]{Renamed Ward}.</p>"
+
+    def testCategorylessLinkPrefersAnExistingSourceItem(self, tmp_path):
+        item = Entity(FakeDatabase(str(tmp_path)), "-renamed-source-item")
+        linker, lookups = self.bareLinker(tmp_path, {("Spells", "renamed ward"): "renamed-donor.spells.RenamedWard00000"},
+                                          module=False, items={"Renamed Ward": item})
+        html = '<a href="https://roll20.net/compendium/dnd5e/Renamed%20Ward#content">ward</a>'
+        assert linker.replaceCompendiumLinks(html) == "@UUID[Item.%s]{ward}" % item.getID()
+        assert lookups == []
+
+    @pytest.mark.parametrize("donors", [
+        {},
+        {("Spells", "renamed guard"): "renamed-donor.spells.RenamedGuard0000",
+         ("Items", "renamed guard"): "renamed-donor.items.RenamedGuard0000"},
+    ])
+    def testUnresolvedOrAmbiguousCategorylessLinkIsLeftUnchanged(self, tmp_path, donors):
+        linker, _lookups = self.bareLinker(tmp_path, donors)
+        html = '<a href="https://roll20.net/compendium/dnd5e/Renamed%20Guard#content">renamed guard</a>'
+        assert linker.replaceCompendiumLinks(html) == html
+        assert linker._database.warnings == []
+
+    @pytest.mark.parametrize("href", [
+        "https://roll20.net/compendium/dnd5e/",
+        "https://roll20.net/compendium/dnd5e/&lt;em&gt;renamed ward",
+        "https://roll20.net/compendium/monstermanual/Renamed%20Ward#content",
+    ])
+    def testOtherCompendiumUrlFormsAreNotCategorylessEntries(self, tmp_path, href):
+        linker, lookups = self.bareLinker(tmp_path, {("Spells", "renamed ward"): "renamed-donor.spells.RenamedWard00000"})
+        html = '<a href="%s">,</a>' % href
+        assert linker.replaceCompendiumLinks(html) == html
+        assert all(name != "Renamed Ward" for _kind, name in lookups)
+
+    def testUnresolvedCategoryLinkIsNotRetriedAsCategoryless(self, tmp_path):
+        linker, lookups = self.bareLinker(tmp_path, {}, module=False)
+        html = '<a href="https://roll20.net/compendium/dnd5e/Rules:Renamed%20Rule">rule</a>'
+        assert linker.replaceCompendiumLinks(html) == html
+        assert lookups == [("Rules", "Renamed Rule")]
+
+    @pytest.mark.parametrize("html", [
+        '<a href="https://roll20.net/compendium/dnd5e/Renamed\'s Ward">ward</a>',
+        '<a href="https://roll20.net/compendium/dnd5e/Spells:Renamed\'s Ward#content">ward</a>',
+        '<a href=\'https://roll20.net/compendium/dnd5e/Renamed%27s%20Ward\'>ward</a>',
+    ])
+    def testApostropheInsideTheUrlDoesNotEndIt(self, tmp_path, html):
+        # B139: a double-quoted URL may contain an apostrophe, as in "Tasha's".
+        linker, _lookups = self.bareLinker(tmp_path, {("Spells", "renamed's ward"): "renamed-donor.spells.RenamedWard00000"})
+        assert linker.replaceCompendiumLinks(html) == \
+            "@UUID[Compendium.renamed-donor.spells.Item.RenamedWard00000]{Renamed's Ward}"
+
     def testBracesInLabelAreEscaped(self, tmp_path):
         # Unescaped braces would terminate the @UUID label early.
         linker = self.makeLinker(tmp_path)

@@ -437,19 +437,38 @@ class Entity(object):
         reference = getattr(getattr(self, "_converter", None), "compendium_export", None)
         if reference is not None:
             content = reference.rewrite_links(content, self._converter)
-        return re.sub('<a ([^>]*)href=[\'"]https?://(app\\.|www\\.)?roll20\\.net/compendium/dnd5e/([^\'"]+)(?:(?:%3[aA])|:)([^\'"]+)[\'"]([^>]*)>(.*?)</a>', self._foundCompendium, content)
+        # The URL ends at the quote that opened it; names such as "Tasha's" contain the other one (B139).
+        content = re.sub('<a ([^>]*)href=([\'"])https?://(app\\.|www\\.)?roll20\\.net/compendium/dnd5e/((?:(?!\\2).)+)(?:(?:%3[aA])|:)((?:(?!\\2).)+)\\2([^>]*)>(.*?)</a>', self._foundCompendium, content)
+        # Roll20's current URLs name the entry without a category (B139).
+        return re.sub('<a ([^>]*)href=([\'"])https?://(app\\.|www\\.)?roll20\\.net/compendium/dnd5e/((?:(?!%3[aA]|\\2)[^#?:])+)(?:[#?](?:(?!\\2).)*)?\\2([^>]*)>(.*?)</a>', self._foundBareCompendium, content)
 
     def _foundCompendium(self, match):
-        converter = self._converter
-        before_href = match.group(1)
         # Links on these hosts were never rewritten; when unresolved they stay unchanged (B135).
-        alternate_host = match.group(2) is not None
-        compendium = match.group(3)
-        name = urllib.parse.unquote(match.group(4))
+        alternate_host = match.group(3) is not None
+        name = urllib.parse.unquote(match.group(5))
         # Roll20 serves the same entry with a trailing slash (B135).
         name = name.split("#")[0].split("?")[0].rstrip("/")
-        after_href = match.group(5)
-        text = match.group(6)
+        return self._linkCompendiumEntry(match.group(0), match.group(1), match.group(4), name,
+                                         match.group(6), match.group(7), alternate_host)
+
+    def _foundBareCompendium(self, match):
+        """Resolve a category-less entry only when exactly one supported type has that name (B139)."""
+        name = urllib.parse.unquote(match.group(4)).rstrip("/").strip()
+        if not name:
+            return match.group(0)
+        compendium = "Items"
+        if self._converter.items.getByName(name) is None:
+            found = [kind for kind in ("Spells", "Items") if self.findCompendiumItem(kind, name)]
+            if len(found) != 1:
+                if found:
+                    self.logInfo("Compendium link '%s' matches both a spell and an item; left unchanged" % name)
+                return match.group(0)
+            compendium = found[0]
+        return self._linkCompendiumEntry(match.group(0), match.group(1), compendium, name,
+                                         match.group(5), match.group(6), True)
+
+    def _linkCompendiumEntry(self, original, before_href, compendium, name, after_href, text, keep_unresolved):
+        converter = self._converter
         item = converter.items.getByName(name)
         if item is None:
             if compendium == "Spells":
@@ -468,7 +487,7 @@ class Entity(object):
                         Entity.compendiumUuid(compendium_item.getFullID(), "Item"), name)
                 self.logWarning("Could not find compendium item of type '%s' and name '%s'"
                                 % (compendium, name))
-                return match.group(0) if alternate_host else text
+                return original if keep_unresolved else text
             elif compendium_item:
                 converter.folders.ensureFolder(folder_id, folder, "Item")
                 item = converter.items.createItemFromCompendium(None, compendium_item)
@@ -478,7 +497,7 @@ class Entity(object):
             return self.replaceEntityLinks('<a %shref="http://journal.roll20.net/item/%s"%s>%s</a>' % (before_href, item.getID(normalized=False), after_href, text))
         else:
             self.logWarning("Could not find compendium item of type '%s' and name '%s'" % (compendium, name))
-            return match.group(0)
+            return original
         
 
     def _foundJournal(self, match):

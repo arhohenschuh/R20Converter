@@ -174,6 +174,8 @@ mechanically for the physical-item class of defect.
 | [B135](B135-equivalent-compendium-link-forms-resolve-differently.md) | Moderate | Fixed (v1.17.1) | Roll20 compendium category links resolve alike on `roll20.net`, `app.` and `www.` hosts and with a trailing slash; unresolved links keep their previous output. |
 | [B136](B136-journal-page-ids-change-on-reconversion.md) | Moderate | Fixed (v1.17.1) | JournalEntryPage IDs derive from the handout ID and page type, so reconversion keeps page links stable. |
 | [B137](B137-jumpgate-rectangle-wall-becomes-one-diagonal.md) | High | Fixed (v1.17.1) | A Jumpgate rectangle on the walls layer becomes its four closed sides instead of one corner-to-corner Wall. |
+| [B138](B138-foreign-flag-asset-paths-abort-module-assembly.md) | High | Fixed (v1.17.2) | Asset paths in another package's flags (e.g. Tokenizer layer recipes on Beyond5e donors) stay as authored instead of aborting module assembly when that package is not installed. |
+| [B139](B139-categoryless-compendium-links-never-resolved.md) | Moderate | Fixed (v1.17.2) | Category-less Roll20 compendium links resolve when exactly one spell or item has that name, and apostrophes inside a URL no longer end it. |
 
 ## Cross-cutting observations
 
@@ -184,7 +186,7 @@ mechanically for the physical-item class of defect.
   ported for the item types the tests looked at and missed elsewhere. All four
   are now closed, and `tests/test_dnd5e_schema_diff.py` covers both the item and
   actor sides so the next one fails a test rather than waiting for an audit.
-- **Numbering**: next free ID is **B138**; fixes take F0xx numbers.
+- **Numbering**: next free ID is **B140**; fixes take F0xx numbers.
 - **B049 × B053**: the clearest case yet of a workaround hiding its own cause. B049's
   download fallback repaired 112 of 116 assets, so a systematic path-derivation bug
   presented as flaky CDN behaviour and survived two days — including a day spent

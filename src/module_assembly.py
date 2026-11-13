@@ -439,12 +439,47 @@ class ModuleAssembler(object):
             return local
         return updated
 
+    def _internalizableValues(self, value, skipped):
+        """Yield ``(owner, key, value)`` outside other packages' flag namespaces (B138).
+
+        Another package's flags are its private data, which Foundry and the game system never
+        render, so their asset paths are neither internalized nor required to exist.
+        """
+        trusted = {"core", "R20Converter", self.converter.name,
+                   getattr(self.converter, "game_system", None)}
+        if isinstance(value, dict):
+            for key, child in list(value.items()):
+                yield value, key, child
+                if key == "flags" and isinstance(child, dict):
+                    for namespace, data in list(child.items()):
+                        if namespace in trusted:
+                            yield child, namespace, data
+                            for result in self._internalizableValues(data, skipped):
+                                yield result
+                            continue
+                        for _owner, _key, leaf in self._walk({namespace: data}):
+                            if isinstance(leaf, str) and self._externalAsset(leaf):
+                                skipped[namespace] = skipped.get(namespace, 0) + 1
+                    continue
+                for result in self._internalizableValues(child, skipped):
+                    yield result
+        elif isinstance(value, list):
+            for index, child in enumerate(list(value)):
+                yield value, index, child
+                for result in self._internalizableValues(child, skipped):
+                    yield result
+
     def internalizeAssets(self):
         """Move external document and HTML image references under this module."""
+        skipped = {}
         for document in self._documents():
-            for owner, key, value in self._walk(document):
+            for owner, key, value in self._internalizableValues(document, skipped):
                 if isinstance(value, str):
                     owner[key] = self._internalizeString(value)
+        if skipped and hasattr(self.converter, "logInfo"):
+            self.converter.logInfo(
+                "Asset paths in other packages' flags left unchanged: %s" % ", ".join(
+                    "%s %d" % (namespace, count) for namespace, count in sorted(skipped.items())))
         if self.placeholder_tags_stripped and hasattr(self.converter, "logInfo"):
             self.converter.logInfo(
                 "Roll20 placeholder art: %d URLs, %d references, %d stripped HTML tags, "
